@@ -112,7 +112,8 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	if (k <= fs) {
 		C = SA + n;
 		B = (k <= fs - k) ? C + k : C;
-	} else if ((C = B = (int*)malloc(k * sizeof(int))) == NULL) return -2;
+	} else if ((C = (int*)malloc(2 * k * sizeof(int))) == NULL) return -2;
+	else B = C + k;
 	getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
 	for (i = 0; i < n; ++i) SA[i] = 0;
@@ -134,7 +135,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	for (i = m; i < n; ++i) SA[i] = 0;	/* init the name array buffer */
 	/* store the length of all substrings */
 	for (i = n - 2, j = n, c = 0, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
-		if ((c0 = chr(i)) < (c1 + c)) c = 1; /* c1 = chr(i+1) */
+		if ((c0 = chr(i)) < c1 + c) c = 1; /* c1 = chr(i+1) */
 		else if (c != 0) {
 			SA[m + ((i + 1) >> 1)] = j - i - 1;
 			j = i + 1;
@@ -168,8 +169,9 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	/* STAGE III: induce the result for the original problem */
 	if (k <= fs) {
 		C = SA + n;
-		B = (k <= (fs - k)) ? C + k : C;
-	} else if ((C = B = (int *) malloc(k * sizeof(int))) == NULL) return -2;
+		B = (k <= fs - k) ? C + k : C;
+	} else if ((C = (int *)malloc(2 * k * sizeof(int))) == NULL) return -2;
+	else B = C + k;
 	/* put all LMS characters into their buckets */
 	getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
