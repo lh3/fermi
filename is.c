@@ -104,9 +104,9 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
  */
 static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 {
-	int *C, *B, *RA;
-	int  i, j, c, m, p, q, plen, qlen, name;
-	int  c0, c1, diff;
+	int *C, *B;
+	int  i, j, c, m, q, qlen, name;
+	int  c0, c1;
 
 	/* STAGE I: reduce the problem by at least 1/2 sort all the S-substrings */
 	if (k <= fs) {
@@ -127,7 +127,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	/* pack all the sorted substrings into the first m items of SA 
 	   2*m must be not larger than n (see Nong et al. for the proof) */
 	for (i = 0, m = 0; i < n; ++i) {
-		p = SA[i];
+		int p = SA[i];
 		if ((0 < p) && (chr(p - 1) > (c0 = chr(p)))) {
 			for (j = p + 1; j < n && c0 == (c1 = chr(j)); ++j);
 			if (j < n && c0 < c1) SA[m++] = p;
@@ -145,7 +145,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	}
 	/* find the lexicographic names of all substrings */
 	for (i = 0, name = 0, q = n, qlen = 0; i < m; ++i) {
-		p = SA[i], plen = SA[m + (p >> 1)], diff = 1;
+		int p = SA[i], plen = SA[m + (p >> 1)], diff = 1;
 		if (plen == qlen) {
 			for (j = 0; (j < plen) && (chr(p + j) == chr(q + j)); j++);
 			if (j == plen) diff = 0;
@@ -156,7 +156,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 
 	/* STAGE II: solve the reduced problem; recurse if names are not yet unique */
 	if (name < m) {
-		RA = SA + n + fs - m;
+		int *RA = SA + n + fs - m;
 		for (i = n - 1, j = m - 1; m <= i; --i) {
 			if (SA[i] != 0) RA[j--] = SA[i] - 1;
 		}
