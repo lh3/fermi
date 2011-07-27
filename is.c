@@ -25,16 +25,20 @@
  */
 
 #include <stdlib.h>
+#include <limits.h>
 
 typedef unsigned char ubyte_t;
-#define chr(i) (cs == sizeof(int) ? ((const int *)T)[i]:((const unsigned char *)T)[i])
+#define chr(i) (cs == sizeof(int) ? ((const int *)T)[i] : (T[i]? (int)T[i] : i-INT_MAX))
 
 /** Count the occurrences of each symbol */
 static void getCounts(const unsigned char *T, int *C, int n, int k, int cs)
 {
 	int i;
 	for (i = 0; i < k; ++i) C[i] = 0;
-	for (i = 0; i < n; ++i) ++C[chr(i)];
+	for (i = 0; i < n; ++i) {
+		int c = chr(i);
+		++C[c > 0? c : 0];
+	}
 }
 
 /**
@@ -60,32 +64,33 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 {
 	int *b, i, j;
 	int  c0, c1;
-	/* left-to-right induced sort */
+	/* left-to-right induced sort (for L-type) */
 	if (C == B) getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 0);	/* find starts of buckets */
-	j = n - 1;
-	b = SA + B[c1 = chr(j)];
-	*b++ = ((0 < j) && (chr(j - 1) < c1)) ? ~j : j;
+	c1 = chr(SA[0]); b = SA + B[c1 > 0? c1 : 0];
 	for (i = 0; i < n; ++i) {
 		j = SA[i], SA[i] = ~j;
-		if (0 < j) {
+		if (0 < j) { // >0 if j-1 is L-type
 			--j;
 			if ((c0 = chr(j)) != c1) {
-				B[c1] = b - SA;
-				b = SA + B[c1 = c0];
+				B[c1 > 0? c1 : 0] = b - SA;
+				c1 = c0;
+				b = SA + B[c1 > 0? c1 : 0];
 			}
 			*b++ = ((0 < j) && (chr(j - 1) < c1)) ? ~j : j;
 		}
 	}
-	/* right-to-left induced sort */
+	/* right-to-left induced sort (for S-type) */
 	if (C == B) getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
+	--B[0];
 	for (i = n - 1, b = SA + B[c1 = 0]; 0 <= i; --i) {
-		if (0 < (j = SA[i])) {
+		if (0 < (j = SA[i])) { // the prefix is S-type
 			--j;
 			if ((c0 = chr(j)) != c1) {
-				B[c1] = b - SA;
-				b = SA + B[c1 = c0];
+				B[c1 > 0? c1 : 0] = b - SA;
+				c1 = c0;
+				b = SA + B[c1 > 0? c1 : 0];
 			}
 			*--b = ((j == 0) || (chr(j - 1) > c1)) ? ~j : j;
 		} else SA[i] = ~j;
@@ -118,24 +123,25 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
 	for (i = 0; i < n; ++i) SA[i] = 0;
 	/* mark L and S (the t array in Nong et al.), and keep the positions of LMS in the buckets */
-	for (i = n - 2, c = 0, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
-		if ((c0 = chr(i)) < c1 + c) c = 1; /* c1 = chr(i+1) */
-		else if (c != 0) SA[--B[c1]] = i + 1, c = 0;
+	for (i = n - 2, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
+		if ((c0 = chr(i)) < c1 + c) c = 1; /* c1 = chr(i+1); c==1 if in an S run */
+		else if (c != 0) SA[--B[c1 > 0? c1 : 0]] = i + 1, c = 0;
 	}
 	induceSA(T, SA, C, B, n, k, cs);
 	if (fs < k) free(C);
-	/* pack all the sorted substrings into the first m items of SA 
+	/* pack all the sorted LMS into the first m items of SA 
 	   2*m must be not larger than n (see Nong et al. for the proof) */
 	for (i = 0, m = 0; i < n; ++i) {
 		int p = SA[i];
-		if ((0 < p) && (chr(p - 1) > (c0 = chr(p)))) {
+		if (p == n - 1) SA[m++] = p;
+		else if (0 < p && chr(p - 1) > (c0 = chr(p))) {
 			for (j = p + 1; j < n && c0 == (c1 = chr(j)); ++j);
 			if (j < n && c0 < c1) SA[m++] = p;
 		}
 	}
 	for (i = m; i < n; ++i) SA[i] = 0;	/* init the name array buffer */
 	/* store the length of all substrings */
-	for (i = n - 2, j = n, c = 0, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
+	for (i = n - 2, j = n, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 		if ((c0 = chr(i)) < c1 + c) c = 1; /* c1 = chr(i+1) */
 		else if (c != 0) {
 			SA[m + ((i + 1) >> 1)] = j - i - 1;
@@ -160,9 +166,9 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 		for (i = n - 1, j = m - 1; m <= i; --i) {
 			if (SA[i] != 0) RA[j--] = SA[i] - 1;
 		}
-		if (sais_main((unsigned char *) RA, SA, fs + n - m * 2, m, name, sizeof(int)) != 0) return -2;
-		for (i = n - 2, j = m - 1, c = 0, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
-			if ((c0 = chr(i)) < (c1 + c)) c = 1;
+		if (sais_main((unsigned char *)RA, SA, fs + n - m * 2, m, name, sizeof(int)) != 0) return -2;
+		for (i = n - 2, j = m - 1, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
+			if ((c0 = chr(i)) < c1 + c) c = 1;
 			else if (c != 0) RA[j--] = i + 1, c = 0; /* get p1 */
 		}
 		for (i = 0; i < m; ++i) SA[i] = RA[SA[i]]; /* get index */
@@ -179,7 +185,8 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	for (i = m; i < n; ++i) SA[i] = 0; /* init SA[m..n-1] */
 	for (i = m - 1; 0 <= i; --i) {
 		j = SA[i], SA[i] = 0;
-		SA[--B[chr(j)]] = j;
+		c = chr(j);
+		SA[--B[c > 0? c : 0]] = j;
 	}
 	induceSA(T, SA, C, B, n, k, cs);
 	if (fs < k) free(C);
@@ -195,11 +202,6 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
  */
 int is_sa(const ubyte_t *T, int *SA, int n)
 {
-	if ((T == NULL) || (SA == NULL) || (n < 0)) return -1;
-	SA[0] = n;
-	if (n <= 1) {
-		if (n == 1) SA[1] = 0;
-		return 0;
-	}
-	return sais_main(T, SA+1, 0, n, 256, 1);
+	if ((T == NULL) || (SA == NULL) || (n <= 0)) return -1;
+	return sais_main(T, SA, 0, n, 256, 1);
 }
