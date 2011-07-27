@@ -124,12 +124,13 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	}
 	induceSA(T, SA, C, B, n, k, cs);
 	if (fs < k) free(C);
-	/* compact all the sorted substrings into the first m items of SA 2*m must be not larger than n (proveable) */
+	/* pack all the sorted substrings into the first m items of SA 
+	   2*m must be not larger than n (see Nong et al. for the proof) */
 	for (i = 0, m = 0; i < n; ++i) {
 		p = SA[i];
 		if ((0 < p) && (chr(p - 1) > (c0 = chr(p)))) {
-			for (j = p + 1; (j < n) && (c0 == (c1 = chr(j))); ++j);
-			if ((j < n) && (c0 < c1)) SA[m++] = p;
+			for (j = p + 1; j < n && c0 == (c1 = chr(j)); ++j);
+			if (j < n && c0 < c1) SA[m++] = p;
 		}
 	}
 	for (i = m; i < n; ++i) SA[i] = 0;	/* init the name array buffer */
