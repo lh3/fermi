@@ -28,6 +28,7 @@
 #include <limits.h>
 
 typedef unsigned char ubyte_t;
+/* T is of type "const unsigned char*". If T[i] is a sentinel, chr(i) takes a negative value */
 #define chr(i) (cs == sizeof(int) ? ((const int *)T)[i] : (T[i]? (int)T[i] : i-INT_MAX))
 
 /** Count the occurrences of each symbol */
@@ -52,11 +53,8 @@ static void getCounts(const unsigned char *T, int *C, int n, int k, int cs)
 static inline void getBuckets(const int *C, int *B, int k, int end)
 {
 	int i, sum = 0;
-	if (end) {
-		for (i = 0; i < k; ++i) sum += C[i], B[i] = sum;
-	} else {
-		for (i = 0; i < k; ++i) sum += C[i], B[i] = sum - C[i];
-	}
+	if (end) for (i = 0; i < k; ++i) sum += C[i], B[i] = sum;
+	else for (i = 0; i < k; ++i) sum += C[i], B[i] = sum - C[i];
 }
 
 /* compute SA */
@@ -70,7 +68,7 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	c1 = chr(SA[0]); b = SA + B[c1 > 0? c1 : 0];
 	for (i = 0; i < n; ++i) {
 		j = SA[i], SA[i] = ~j;
-		if (0 < j) { // >0 if j-1 is L-type
+		if (0 < j) { // >0 if j-1 is L-type; <0 if S-type; ==0 undefined
 			--j;
 			if ((c0 = chr(j)) != c1) {
 				B[c1 > 0? c1 : 0] = b - SA;
@@ -83,7 +81,7 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	/* right-to-left induced sort (for S-type) */
 	if (C == B) getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
-	--B[0];
+	--B[0]; /* This line to deal with the last sentinel. */
 	for (i = n - 1, b = SA + B[c1 = 0]; 0 <= i; --i) {
 		if (0 < (j = SA[i])) { // the prefix is S-type
 			--j;
@@ -93,7 +91,7 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 				b = SA + B[c1 > 0? c1 : 0];
 			}
 			*--b = ((j == 0) || (chr(j - 1) > c1)) ? ~j : j;
-		} else SA[i] = ~j;
+		} else SA[i] = ~j; // if L-type, change the sign
 	}
 }
 
@@ -117,7 +115,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	if (k <= fs) {
 		C = SA + n;
 		B = (k <= fs - k) ? C + k : C;
-	} else if ((C = (int*)malloc(2 * k * sizeof(int))) == NULL) return -2;
+	} else if ((C = (int*)malloc(k * 2 * sizeof(int))) == NULL) return -2;
 	else B = C + k;
 	getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
@@ -143,11 +141,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	/* store the length of all substrings */
 	for (i = n - 2, j = n, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 		if ((c0 = chr(i)) < c1 + c) c = 1; /* c1 = chr(i+1) */
-		else if (c != 0) {
-			SA[m + ((i + 1) >> 1)] = j - i - 1;
-			j = i + 1;
-			c = 0;
-		}
+		else if (c != 0) SA[m + ((i + 1) >> 1)] = j - i - 1, j = i + 1, c = 0;
 	}
 	/* find the lexicographic names of all substrings */
 	for (i = 0, name = 0, q = n, qlen = 0; i < m; ++i) {
@@ -173,11 +167,12 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 		}
 		for (i = 0; i < m; ++i) SA[i] = RA[SA[i]]; /* get index */
 	}
+
 	/* STAGE III: induce the result for the original problem */
 	if (k <= fs) {
 		C = SA + n;
 		B = (k <= fs - k) ? C + k : C;
-	} else if ((C = (int *)malloc(2 * k * sizeof(int))) == NULL) return -2;
+	} else if ((C = (int *)malloc(k * 2 * sizeof(int))) == NULL) return -2;
 	else B = C + k;
 	/* put all LMS characters into their buckets */
 	getCounts(T, C, n, k, cs);
@@ -195,10 +190,11 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 
 /**
  * Constructs the suffix array of a given string.
- * @param T[0..n-1] The input string.
- * @param SA[0..n] The output array of suffixes.
- * @param n The length of the given string.
- * @return 0 if no error occurred
+ *
+ * @param T[0..n-1]  NULL terminated input string
+ * @param SA[0..n-1] Output suffix array
+ * @param n          The length of the given string.
+ * @return 0         If no error occurred
  */
 int is_sa(const ubyte_t *T, int *SA, int n)
 {
