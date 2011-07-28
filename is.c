@@ -68,14 +68,14 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	c1 = chr(SA[0]); b = SA + B[c1 > 0? c1 : 0];
 	for (i = 0; i < n; ++i) {
 		j = SA[i], SA[i] = ~j;
-		if (0 < j) { // >0 if j-1 is L-type; <0 if S-type; ==0 undefined
+		if (0 < j) { /* >0 if j-1 is L-type; <0 if S-type; ==0 undefined */
 			--j;
 			if ((c0 = chr(j)) != c1) {
 				B[c1 > 0? c1 : 0] = b - SA;
 				c1 = c0;
 				b = SA + B[c1 > 0? c1 : 0];
 			}
-			*b++ = ((0 < j) && (chr(j - 1) < c1)) ? ~j : j;
+			*b++ = (0 < j && chr(j - 1) < c1) ? ~j : j;
 		}
 	}
 	/* right-to-left induced sort (for S-type) */
@@ -83,15 +83,15 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
 	--B[0]; /* This line to deal with the last sentinel. */
 	for (i = n - 1, b = SA + B[c1 = 0]; 0 <= i; --i) {
-		if (0 < (j = SA[i])) { // the prefix is S-type
+		if (0 < (j = SA[i])) { /* the prefix is S-type */
 			--j;
 			if ((c0 = chr(j)) != c1) {
 				B[c1 > 0? c1 : 0] = b - SA;
 				c1 = c0;
 				b = SA + B[c1 > 0? c1 : 0];
 			}
-			*--b = ((j == 0) || (chr(j - 1) > c1)) ? ~j : j;
-		} else SA[i] = ~j; // if L-type, change the sign
+			*--b = (j == 0 || chr(j - 1) > c1) ? ~j : j;
+		} else SA[i] = ~j; /* if L-type, change the sign */
 	}
 }
 
@@ -112,10 +112,8 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	int  c0, c1;
 
 	/* STAGE I: reduce the problem by at least 1/2 sort all the S-substrings */
-	if (k <= fs) {
-		C = SA + n;
-		B = (k <= fs - k) ? C + k : C;
-	} else if ((C = (int*)malloc(k * 2 * sizeof(int))) == NULL) return -2;
+	if (k <= fs) C = SA + n, B = (k <= fs - k) ? C + k : C;
+	else if ((C = (int*)malloc(k * 2 * sizeof(int))) == NULL) return -2;
 	else B = C + k;
 	getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
@@ -123,7 +121,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	/* mark L and S (the t array in Nong et al.), and keep the positions of LMS in the buckets */
 	for (i = n - 2, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 		if ((c0 = chr(i)) < c1 + c) c = 1; /* c1 = chr(i+1); c==1 if in an S run */
-		else if (c != 0) SA[--B[c1 > 0? c1 : 0]] = i + 1, c = 0;
+		else if (c) SA[--B[c1 > 0? c1 : 0]] = i + 1, c = 0;
 	}
 	induceSA(T, SA, C, B, n, k, cs);
 	if (fs < k) free(C);
@@ -141,7 +139,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	/* store the length of all substrings */
 	for (i = n - 2, j = n, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 		if ((c0 = chr(i)) < c1 + c) c = 1; /* c1 = chr(i+1) */
-		else if (c != 0) SA[m + ((i + 1) >> 1)] = j - i - 1, j = i + 1, c = 0;
+		else if (c) SA[m + ((i + 1) >> 1)] = j - i - 1, j = i + 1, c = 0;
 	}
 	/* find the lexicographic names of all substrings */
 	for (i = 0, name = 0, q = n, qlen = 0; i < m; ++i) {
@@ -150,29 +148,26 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 			for (j = 0; (j < plen) && (chr(p + j) == chr(q + j)); j++);
 			if (j == plen) diff = 0;
 		}
-		if (diff != 0) ++name, q = p, qlen = plen;
+		if (diff) ++name, q = p, qlen = plen;
 		SA[m + (p >> 1)] = name;
 	}
 
 	/* STAGE II: solve the reduced problem; recurse if names are not yet unique */
 	if (name < m) {
 		int *RA = SA + n + fs - m;
-		for (i = n - 1, j = m - 1; m <= i; --i) {
+		for (i = n - 1, j = m - 1; m <= i; --i)
 			if (SA[i] != 0) RA[j--] = SA[i] - 1;
-		}
 		if (sais_main((unsigned char *)RA, SA, fs + n - m * 2, m, name, sizeof(int)) != 0) return -2;
 		for (i = n - 2, j = m - 1, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 			if ((c0 = chr(i)) < c1 + c) c = 1;
-			else if (c != 0) RA[j--] = i + 1, c = 0; /* get p1 */
+			else if (c) RA[j--] = i + 1, c = 0; /* get p1 */
 		}
 		for (i = 0; i < m; ++i) SA[i] = RA[SA[i]]; /* get index */
 	}
 
 	/* STAGE III: induce the result for the original problem */
-	if (k <= fs) {
-		C = SA + n;
-		B = (k <= fs - k) ? C + k : C;
-	} else if ((C = (int *)malloc(k * 2 * sizeof(int))) == NULL) return -2;
+	if (k <= fs) C = SA + n, B = (k <= fs - k) ? C + k : C;
+	else if ((C = (int*)malloc(k * 2 * sizeof(int))) == NULL) return -2;
 	else B = C + k;
 	/* put all LMS characters into their buckets */
 	getCounts(T, C, n, k, cs);
@@ -198,6 +193,6 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
  */
 int is_sa(const ubyte_t *T, int *SA, int n)
 {
-	if ((T == NULL) || (SA == NULL) || (n <= 0)) return -1;
+	if (T == NULL || SA == NULL || n <= 0) return -1;
 	return sais_main(T, SA, 0, n, 256, 1);
 }
