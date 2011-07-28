@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2008 Yuta Mori All Rights Reserved.
- *               2011 Heng Li
+ * Copyright (c) 2008 Yuta Mori    All Rights Reserved.
+ *               2011 Heng Li <lh3@live.co.uk>
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -24,10 +24,11 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/** Compute the suffix array for a string containing multiple sentinels, represented by NULL. */
+
 #include <stdlib.h>
 #include <limits.h>
 
-typedef unsigned char ubyte_t;
 /* T is of type "const unsigned char*". If T[i] is a sentinel, chr(i) takes a negative value */
 #define chr(i) (cs == sizeof(int) ? ((const int *)T)[i] : (T[i]? (int)T[i] : i-INT_MAX))
 
@@ -43,7 +44,7 @@ static void getCounts(const unsigned char *T, int *C, int n, int k, int cs)
 }
 
 /**
- * Fine the end of each bucket
+ * Find the end of each bucket
  *
  * @param C   occurrences computed by getCounts(); input
  * @param B   start/end of each bucket; output
@@ -57,7 +58,7 @@ static inline void getBuckets(const int *C, int *B, int k, int end)
 	else for (i = 0; i < k; ++i) sum += C[i], B[i] = sum - C[i];
 }
 
-/* compute SA */
+/** Induced sort */
 static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int k, int cs)
 {
 	int *b, i, j;
@@ -96,16 +97,19 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 }
 
 /**
- * Recursively compute the suffix array.
+ * Recursively construct the suffix array for a string containing multiple
+ * sentinels. NULL is taken as the sentinel.
  *
- * @param T   input string
+ * @param T   NULL terminated input string (there can be multiple NULLs)
  * @param SA  output suffix array
- * @param fs  working space available in SA
- * @param n   length of T
- * @param k   size of the alphabet, which may vary with recursion
- * @param cs  # bytes per element in T which can be 1 (uint8_t) or 4 (int32_t)
+ * @param fs  working space available in SA (typically 0 when first called)
+ * @param n   length of T, including the trailing NULL
+ * @param k   size of the alphabet (typically 256 when first called)
+ * @param cs  # bytes per element in T; 1 or sizeof(int) (typically 1 when first called)
+ *
+ * @return    0 upon success
  */
-static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
+int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 {
 	int *C, *B;
 	int  i, j, c, m, q, qlen, name;
@@ -157,7 +161,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 		int *RA = SA + n + fs - m;
 		for (i = n - 1, j = m - 1; m <= i; --i)
 			if (SA[i] != 0) RA[j--] = SA[i] - 1;
-		if (sais_main((unsigned char *)RA, SA, fs + n - m * 2, m, name, sizeof(int)) != 0) return -2;
+		if (sais_core((unsigned char *)RA, SA, fs + n - m * 2, m, name, sizeof(int)) != 0) return -2;
 		for (i = n - 2, j = m - 1, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 			if ((c0 = chr(i)) < c1 + c) c = 1;
 			else if (c) RA[j--] = i + 1, c = 0; /* get p1 */
@@ -184,15 +188,18 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 }
 
 /**
- * Constructs the suffix array of a given string.
+ * Construct the suffix array for a NULL terminated string possibly containing
+ * multiple sentinels (NULLs).
  *
  * @param T[0..n-1]  NULL terminated input string
- * @param SA[0..n-1] Output suffix array
- * @param n          The length of the given string.
- * @return 0         If no error occurred
+ * @param SA[0..n-1] output suffix array
+ * @param n          length of the given string, including NULL
+ * @param k          size of the alphabet including the sentinel; no more than 256
+ * @return           0 upon success
  */
-int is_sa(const ubyte_t *T, int *SA, int n)
+int sais(const unsigned char *T, int *SA, int n, int k)
 {
-	if (T == NULL || SA == NULL || n <= 0) return -1;
-	return sais_main(T, SA, 0, n, 256, 1);
+	if (T == NULL || SA == NULL || T[n - 1] != '\0' || n <= 0) return -1;
+	if (k < 0 || k > 256) k = 256;
+	return sais_core(T, SA, 0, n, k, 1);
 }
