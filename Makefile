@@ -18,7 +18,5 @@ bwa2:$(OBJS) main.o
 
 rld.o:rld.h
 
-cleanlocal:
+clean:
 		rm -fr gmon.out *.o a.out $(PROG) *~ *.a *.dSYM
-
-clean:cleanlocal-recur

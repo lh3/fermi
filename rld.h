@@ -19,6 +19,6 @@ typedef struct {
 
 rldenc_t *rld_enc_init(int asize, int bbits);
 int rld_push(rldenc_t *e, int l, uint8_t c);
-int rld_finish(rldenc_t *e);
+uint64_t rld_finish(rldenc_t *e);
 
 #endif
