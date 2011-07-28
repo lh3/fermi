@@ -145,7 +145,7 @@ static int sais_main(const unsigned char *T, int *SA, int fs, int n, int k, int 
 	for (i = 0, name = 0, q = n, qlen = 0; i < m; ++i) {
 		int p = SA[i], plen = SA[m + (p >> 1)], diff = 1;
 		if (plen == qlen) {
-			for (j = 0; (j < plen) && (chr(p + j) == chr(q + j)); j++);
+			for (j = 0; j < plen && chr(p + j) == chr(q + j); j++);
 			if (j == plen) diff = 0;
 		}
 		if (diff) ++name, q = p, qlen = plen;
