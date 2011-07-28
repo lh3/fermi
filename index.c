@@ -16,14 +16,6 @@ unsigned char seq_nt5_table[256] = {
     5, 5, 5, 5,  3, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
     5, 4, 5, 1,  5, 5, 5, 2,  5, 5, 5, 5,  5, 5, 5, 5, 
     5, 5, 5, 5,  3, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5, 
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5
 };
 
 int sais(const unsigned char *T, int *SA, int n, int k);
@@ -66,7 +58,7 @@ int main_index(int argc, char *argv[])
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
-		for (i = 0; i < l; ++i) s[i] = seq_nt5_table[s[i]];
+		for (i = 0; i < l; ++i) s[i] = s[i] > 127? 5 : seq_nt5_table[s[i]];
 	}
 	
 	{ // construct BWT
@@ -80,13 +72,27 @@ int main_index(int argc, char *argv[])
 		free(SA);
 	}
 
-	if (plain) {
-		for (i = 0; i < l; ++i) putchar("$CGTAN"[s[i]]);
-	} else {
+	if (!plain) {
+		uint64_t len;
+		int k, c;
 		rldenc_t *e;
 		e = rld_enc_init(6, bbits);
+		k = 1; c = s[0];
+		for (i = 1; i < l; ++i) {
+			if (s[i] != c) {
+				rld_push(e, k, c);
+				c = s[i];
+				k = 1;
+			} else ++l;
+		}
+		rld_push(e, k, c);
+		len = rld_finish(e);
+		printf("%lld\n", len);
 		free(e->cnt); free(e);
+	} else {
+		for (i = 0; i < l; ++i) putchar("$CGTAN"[s[i]]);
 	}
+
 	free(s);
 	return 0;
 }
