@@ -83,7 +83,7 @@ int main_index(int argc, char *argv[])
 				rld_push(e, k, c);
 				c = s[i];
 				k = 1;
-			} else ++l;
+			} else ++k;
 		}
 		rld_push(e, k, c);
 		len = rld_finish(e);

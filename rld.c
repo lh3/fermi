@@ -108,7 +108,7 @@ int rld_push(rld_t *e, int l, uint8_t c)
 			if (e->p + 1 - e->head == RLD_SUPBLK_SIZE) { // allocate a new superblock
 				++e->n;
 				e->z = realloc(e->z, e->n * sizeof(void*));
-				e->p = e->head = e->bhead = calloc(RLD_SUPBLK_SIZE, 8);
+				e->p = e->head = e->bhead = e->z[e->n - 1] = calloc(RLD_SUPBLK_SIZE, 8);
 			} else e->bhead += e->bsize;
 			e->btail = e->bhead + e->bsize - 1;
 			e->p = e->bhead + e->asize;
