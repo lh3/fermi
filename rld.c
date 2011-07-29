@@ -88,7 +88,7 @@ rld_t *rld_enc_init(int asize, int bbits)
 	e->bhead = e->head = e->z[0];
 	e->p = e->head + asize;
 	e->bsize = 1<<bbits;
-	e->btail = e->bhead + e->bsize;
+	e->btail = e->bhead + e->bsize - 1;
 	e->cnt = calloc(asize, 8);
 	e->abits = ilog2(asize) + 1;
 	e->r = 64;
@@ -102,19 +102,16 @@ int rld_push(rld_t *e, int l, uint8_t c)
 	int i, w;
 	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;
 	w += e->abits;
-	if (w >= e->r) {
-		if (e->p + 1 == e->btail) { // jump to the next block
+	if (w > e->r) {
+		if (e->p == e->btail) { // jump to the next block
 			for (i = 0; i < e->asize; ++i) e->bhead[i] = e->cnt[i];
 			if (e->p + 1 - e->head == RLD_SUPBLK_SIZE) { // allocate a new superblock
 				++e->n;
 				e->z = realloc(e->z, e->n * sizeof(void*));
 				e->p = e->head = e->bhead = calloc(RLD_SUPBLK_SIZE, 8);
-				e->btail += e->bsize;
-			} else {
-				e->bhead = ++e->p;
-				e->btail = e->bhead + e->bsize;
-			}
-			e->p += e->asize;
+			} else e->bhead += e->bsize;
+			e->btail = e->bhead + e->bsize - 1;
+			e->p = e->bhead + e->asize;
 			e->r = 64 - w;
 			*e->p |= x << e->r;
 		} else {
@@ -138,10 +135,8 @@ inline uint32_t rld_pullb(rld_t *e)
 {
 	int y, w;
 	uint64_t x;
-	x = e->p[0] << (64 - e->r) | (e->p + 1 < e->btail? e->p[1] >> e->r : 1);
-	y = rld_delta_dec1(x, &w);
-	y = y << e->abits | (x << w >> (64 - e->abits));
-	printf("%d, %d, %ld, %.16llx\n", y>>3, e->r, e->p - e->bhead, x);
+	x = e->p[0] << (64 - e->r) | (e->p < e->btail && e->r < 64? e->p[1] >> e->r : 0);
+	y = rld_delta_dec1(x, &w) << e->abits | (x << w >> (64 - e->abits));
 	w += e->abits;
 	if (e->r > w) e->r -= w;
 	else ++e->p, e->r = 64 + e->r - w;
@@ -159,12 +154,20 @@ int main(int argc, char *argv[])
 		z = rld_delta_dec1(y, &ww);
 		printf("%d==%d, %d==%d\n", z, atoi(argv[1]), w, ww);
 	}
-	int i;
+	int i, j = 0;
 	rld_t *e = rld_enc_init(6, 5);
-	for (i = 1; i < 15; ++i) rld_push(e, i, 0);
+	for (i = 1; i < 100; ++i) rld_push(e, i, 0);
 	rld_finish(e);
-	rld_dec_initb(e, 0);
-	for (i = 1; i < 15; ++i) rld_pullb(e);
+	rld_dec_initb(e, j);
+	for (i = 1; i < 100; ++i) {
+		int y = rld_pullb(e);
+		if (y == 0) {
+			j += e->bsize;
+			rld_dec_initb(e, j);
+			y = rld_pullb(e);
+		}
+		printf("%d, %d\n", i, y>>3);
+	}
 	return 0;
 }
 
