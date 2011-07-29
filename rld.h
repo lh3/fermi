@@ -9,7 +9,9 @@
 #define rld_blk_size(bbits, balpha) (((1<<(bbits)) << 6) / ((balpha) + 1))
 #define rld_dec_initb(_e, _k) do { \
 		(_e)->head = (_e)->z[(_k)/RLD_SUPBLK_SIZE]; \
-		(_e)->p = (_e)->head + (_k)%RLD_SUPBLK_SIZE; \
+		(_e)->bhead = (_e)->head + (_k)%RLD_SUPBLK_SIZE; \
+		(_e)->btail = (_e)->bhead + (_e)->bsize; \
+		(_e)->p = (_e)->bhead + (_e)->asize; \
 		(_e)->r = 64; \
 	} while (0)
 

@@ -109,6 +109,7 @@ int rld_push(rld_t *e, int l, uint8_t c)
 				++e->n;
 				e->z = realloc(e->z, e->n * sizeof(void*));
 				e->p = e->head = e->bhead = calloc(RLD_SUPBLK_SIZE, 8);
+				e->btail += e->bsize;
 			} else {
 				e->bhead = ++e->p;
 				e->btail = e->bhead + e->bsize;
@@ -137,10 +138,10 @@ inline uint32_t rld_pullb(rld_t *e)
 {
 	int y, w;
 	uint64_t x;
-	x = e->p[0] << (64 - e->r) | (e->p + 1 < e->btail? e->p[1] >> (64 - e->r) : 1);
+	x = e->p[0] << (64 - e->r) | (e->p + 1 < e->btail? e->p[1] >> e->r : 1);
 	y = rld_delta_dec1(x, &w);
 	y = y << e->abits | (x << w >> (64 - e->abits));
-	printf("%d, %d\n", y>>3, e->r);
+	printf("%d, %d, %ld, %.16llx\n", y>>3, e->r, e->p - e->bhead, x);
 	w += e->abits;
 	if (e->r > w) e->r -= w;
 	else ++e->p, e->r = 64 + e->r - w;
@@ -160,10 +161,10 @@ int main(int argc, char *argv[])
 	}
 	int i;
 	rld_t *e = rld_enc_init(6, 5);
-	for (i = 1; i < 20; ++i) rld_push(e, i, 0);
+	for (i = 1; i < 15; ++i) rld_push(e, i, 0);
 	rld_finish(e);
-	rld_dec_initb(e, 6);
-	for (i = 1; i < 20; ++i) rld_pullb(e);
+	rld_dec_initb(e, 0);
+	for (i = 1; i < 15; ++i) rld_pullb(e);
 	return 0;
 }
 
