@@ -75,7 +75,7 @@ int main_index(int argc, char *argv[])
 	if (!plain) {
 		uint64_t len;
 		int k, c;
-		rldenc_t *e;
+		rld_t *e;
 		e = rld_enc_init(6, bbits);
 		k = 1; c = s[0];
 		for (i = 1; i < l; ++i) {

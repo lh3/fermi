@@ -75,15 +75,17 @@ inline int rld_delta_dec1(uint64_t x, int *w)
 			return z>>4;
 		}
 	}
+	return 0;
 }
 
-rldenc_t *rld_enc_init(int asize, int bbits)
+rld_t *rld_enc_init(int asize, int bbits)
 {
-	rldenc_t *e;
-	e = calloc(1, sizeof(rldenc_t));
+	rld_t *e;
+	e = calloc(1, sizeof(rld_t));
 	e->z = malloc(sizeof(void*));
 	e->z[0] = calloc(RLD_SUPBLK_SIZE, 8);
-	e->p = e->z[0] + asize;
+	e->n = 1;
+	e->p = e->head = e->z[0] + asize;
 	e->cnt = calloc(asize, 8);
 	e->b = ilog2(asize) + 1;
 	e->r = 64;
@@ -93,20 +95,20 @@ rldenc_t *rld_enc_init(int asize, int bbits)
 	return e;
 }
 
-int rld_push(rldenc_t *e, int l, uint8_t c)
+int rld_push(rld_t *e, int l, uint8_t c)
 {
 	int i, w;
 	uint64_t x = rld_delta_enc1(l, &w) << e->b | c;
 	w += e->b;
 	if (w > e->r) {
-		if (((e->p - e->z[e->n] + 1) & e->bmask) == 0) { // jump to the next block
-			int y = (e->p - e->z[e->n]) & e->bmask;
+		if (((e->p - e->head + 1) & e->bmask) == 0) { // jump to the next block
+			int y = (e->p - e->head) & e->bmask;
 			for (i = 0; i < e->asize; ++i)
-				e->z[e->n][y + i] = e->cnt[i];
-			if (e->p - e->z[e->n] + 1 == RLD_SUPBLK_SIZE) { // allocate a new superblock
+				e->head[y + i] = e->cnt[i];
+			if (e->p - e->head + 1 == RLD_SUPBLK_SIZE) { // allocate a new superblock
 				++e->n;
-				e->z = realloc(e->z, (e->n + 1) * sizeof(void*));
-				e->p = e->z[e->n] = calloc(RLD_SUPBLK_SIZE, 8);
+				e->z = realloc(e->z, e->n * sizeof(void*));
+				e->p = e->head = calloc(RLD_SUPBLK_SIZE, 8);
 			} else ++e->p;
 			e->p += e->asize;
 			e->r = 64 - w;
@@ -121,15 +123,20 @@ int rld_push(rldenc_t *e, int l, uint8_t c)
 	return 0;
 }
 
-uint64_t rld_finish(rldenc_t *e)
+uint64_t rld_finish(rld_t *e)
 {
-	int i, y = (e->p - e->z[e->n]) & e->bmask;
+	int i, y = (e->p - e->head) & e->bmask;
 	for (i = 0; i < e->asize; ++i)
-		e->z[e->n][y + i] = e->cnt[i];
-	return (((uint64_t)e->n * RLD_SUPBLK_SIZE) + (e->p - e->z[e->n])) * 64 + (64 - e->r);
+		e->head[y + i] = e->cnt[i];
+	return (((uint64_t)(e->n - 1) * RLD_SUPBLK_SIZE) + (e->p - e->head)) * 64 + (64 - e->r);
 }
 
-int rld_dec_block(uint64_t *z, int bbits, int balpha, int asize, uint32_t *r) // FIXME: can be faster
+int rld_set_block(rld_t *e, uint64_t k)
+{
+	return 0;
+}
+
+int rld_pull0(uint64_t *z, int bbits, int balpha, int asize, uint32_t *r)
 {
 	int i = 0, j, k, n = 1<<bbits, t = 0;
 	uint64_t *p = z, x;
@@ -142,8 +149,9 @@ int rld_dec_block(uint64_t *z, int bbits, int balpha, int asize, uint32_t *r) //
 		if (j < 0) break;
 		y = ((63 - j)<<1) + 1;
 	}
+	return 0;
 }
-
+/*
 int main(int argc, char *argv[])
 {
 	int w, x, z, ww;
@@ -157,3 +165,4 @@ int main(int argc, char *argv[])
 	}
 	return 0;
 }
+*/
