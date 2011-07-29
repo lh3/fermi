@@ -133,16 +133,17 @@ uint64_t rld_finish(rld_t *e)
 
 inline uint32_t rld_pullb(rld_t *e)
 {
-	int y, w;
+	int y, w = 0;
 	uint64_t x;
 	x = e->p[0] << (64 - e->r) | (e->p < e->btail && e->r < 64? e->p[1] >> e->r : 0);
-	y = rld_delta_dec1(x, &w) << e->abits | (x << w >> (64 - e->abits));
+	y = rld_delta_dec1(x, &w);
+	y = y << e->abits | (x << w >> (64 - e->abits));
 	w += e->abits;
 	if (e->r > w) e->r -= w;
 	else ++e->p, e->r = 64 + e->r - w;
 	return y;
 }
-
+/*
 int main(int argc, char *argv[])
 {
 	//rld_gen_ddec_table();
@@ -156,18 +157,18 @@ int main(int argc, char *argv[])
 	}
 	int i, j = 0;
 	rld_t *e = rld_enc_init(6, 5);
-	for (i = 1; i < 100; ++i) rld_push(e, i, 0);
+	for (i = 1; i < 5550; ++i) rld_push(e, i, 0);
 	rld_finish(e);
 	rld_dec_initb(e, j);
-	for (i = 1; i < 100; ++i) {
+	for (i = 1; i < 5550; ++i) {
 		int y = rld_pullb(e);
 		if (y == 0) {
 			j += e->bsize;
 			rld_dec_initb(e, j);
 			y = rld_pullb(e);
 		}
-		printf("%d, %d\n", i, y>>3);
+		printf("%d\t%d\n", i, y>>3);
 	}
 	return 0;
 }
-
+*/
