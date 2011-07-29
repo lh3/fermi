@@ -110,7 +110,8 @@ uint64_t rld_enc_finish(rld_t *e)
 	for (i = 0; i < e->asize; ++i) e->shead[i] = e->cnt[i];
 	return (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64 + (64 - e->r);
 }
-/*
+
+#ifdef RLD_MAIN
 int main(int argc, char *argv[])
 {
 	int k, i, n = 10000, N = 5000;
@@ -129,4 +130,4 @@ int main(int argc, char *argv[])
 	free(r->cnt); free(r->z); free(r);
 	return 0;
 }
-*/
+#endif

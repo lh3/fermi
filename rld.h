@@ -68,10 +68,20 @@ static inline void rld_dec_init(rld_t *e, uint64_t k)
 
 static inline uint32_t rld_dec0(rld_t *e)
 {
-	int y, w = 0;
+	int y = 0, w;
 	uint64_t x;
 	x = e->p[0] << (64 - e->r) | (e->p < e->stail && e->r < 64? e->p[1] >> e->r : 0);
-	y = rld_delta_dec1(x, &w);
+	/* The following block does delta decoding. Code is duplicated here because this is faster. */
+	if (x >> 63 == 0) {
+		int z = rld_ddec_table[x >> 55];
+		if (z < 0) {
+			z = ~z, w = z & 0xf, y = z >> 4;
+		} else { // when z == 0, w = 0
+			int a = z>>4, b = z&0xf;
+			w = a + b, y = x << b >> (64 - a) | 1u << a;
+		}
+	} else w = y = 1;
+	if (w == 0) return 0;
 	y = y << e->abits | (x << w >> (64 - e->abits));
 	w += e->abits;
 	if (e->r > w) e->r -= w;
