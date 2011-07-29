@@ -82,7 +82,7 @@ static inline uint32_t rld_dec0(rld_t *e)
 		}
 	} else w = y = 1;
 	if (w == 0) return 0;
-	y = y << e->abits | (x << w >> (64 - e->abits));
+	y = y << e->abits | x << w >> (64 - e->abits);
 	w += e->abits;
 	if (e->r > w) e->r -= w;
 	else ++e->p, e->r = 64 + e->r - w;
