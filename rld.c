@@ -85,9 +85,10 @@ rld_t *rld_enc_init(int asize, int bbits)
 	e->z = malloc(sizeof(void*));
 	e->z[0] = calloc(RLD_SUPBLK_SIZE, 8);
 	e->n = 1;
-	e->p = e->head = e->z[0] + asize;
+	e->head = e->z[0];
+	e->p = e->head + asize;
 	e->cnt = calloc(asize, 8);
-	e->b = ilog2(asize) + 1;
+	e->abits = ilog2(asize) + 1;
 	e->r = 64;
 	e->asize = asize;
 	e->bbits = bbits;
@@ -98,9 +99,9 @@ rld_t *rld_enc_init(int asize, int bbits)
 int rld_push(rld_t *e, int l, uint8_t c)
 {
 	int i, w;
-	uint64_t x = rld_delta_enc1(l, &w) << e->b | c;
-	w += e->b;
-	if (w > e->r) {
+	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;
+	w += e->abits;
+	if (w >= e->r) {
 		if (((e->p - e->head + 1) & e->bmask) == 0) { // jump to the next block
 			int y = (e->p - e->head) & e->bmask;
 			for (i = 0; i < e->asize; ++i)
@@ -125,44 +126,44 @@ int rld_push(rld_t *e, int l, uint8_t c)
 
 uint64_t rld_finish(rld_t *e)
 {
-	int i, y = (e->p - e->head) & e->bmask;
+	int i, y = (e->p - e->head) & ~e->bmask;
 	for (i = 0; i < e->asize; ++i)
 		e->head[y + i] = e->cnt[i];
 	return (((uint64_t)(e->n - 1) * RLD_SUPBLK_SIZE) + (e->p - e->head)) * 64 + (64 - e->r);
 }
 
-int rld_set_block(rld_t *e, uint64_t k)
+inline uint32_t rld_pullb(rld_t *e)
 {
-	return 0;
+	int y, w;
+	uint64_t x;
+	x = e->p[0] << (64 - e->r) | (((e->p - e->head) & e->bmask) != e->bmask? e->p[1] >> (64 - e->r) : 1);
+	//printf("+ %d, %llx, %llx\n", e->r, e->p[0], e->p[0]);
+	y = rld_delta_dec1(x, &w);
+	y = y << e->abits | (x << w >> (64 - e->abits));
+	printf("%d, %d\n", y>>3, e->r);
+	w += e->abits;
+	if (e->r > w) e->r -= w;
+	else ++e->p, e->r = 64 + e->r - w;
+	return y;
 }
 
-int rld_pull0(uint64_t *z, int bbits, int balpha, int asize, uint32_t *r)
-{
-	int i = 0, j, k, n = 1<<bbits, t = 0;
-	uint64_t *p = z, x;
-	while (i < n) {
-		int y;
-		if (i < n - 1) x = z[i] << t | (z[i+1] >> (64-t));
-		else x = z[i] << t;
-		for (j = 63; j >= 0; --j)
-			if (x >> j) break;
-		if (j < 0) break;
-		y = ((63 - j)<<1) + 1;
-	}
-	return 0;
-}
-/*
 int main(int argc, char *argv[])
 {
-	int w, x, z, ww;
 	//rld_gen_ddec_table();
 	if (argc > 1) {
+		int w, x, z, ww;
 		uint64_t y;
 		x = rld_delta_enc1(atoi(argv[1]), &w);
 		y = (uint64_t)x << (64 - w);
 		z = rld_delta_dec1(y, &ww);
 		printf("%d==%d, %d==%d\n", z, atoi(argv[1]), w, ww);
 	}
+	int i;
+	rld_t *e = rld_enc_init(6, 5);
+	for (i = 1; i < 11; ++i) rld_push(e, i, 0);
+	rld_finish(e);
+	rld_dec_initb(e, 6);
+	for (i = 1; i < 11; ++i) rld_pullb(e);
 	return 0;
 }
-*/
+
