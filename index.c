@@ -23,14 +23,16 @@ int sais(const unsigned char *T, int *SA, int n, int k);
 
 int main_index(int argc, char *argv[])
 {
-	int i, max = 0, l = 0, bbits = 5, plain = 0;
+	int i, max = 0, l = 0, bbits = 5, plain = 0, use_rld = 0;
 	uint8_t *s = 0;
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "P")) >= 0) {
+		while ((c = getopt(argc, argv, "Pb:d")) >= 0) {
 			switch (c) {
 				case 'P': plain = 1; break;
+				case 'b': bbits = atoi(optarg); break;
+				case 'd': use_rld = 1; break;
 			}
 		}
 		if (argc == optind) {
@@ -74,7 +76,7 @@ int main_index(int argc, char *argv[])
 	}
 
 	if (!plain) {
-#if 1
+		if (use_rld) {
 		uint64_t len;
 		int k, c;
 		rld_t *e;
@@ -82,16 +84,16 @@ int main_index(int argc, char *argv[])
 		k = 1; c = s[0];
 		for (i = 1; i < l; ++i) {
 			if (s[i] != c) {
-				rld_push(e, k, c);
+				rld_enc(e, k, c);
 				c = s[i];
 				k = 1;
 			} else ++k;
 		}
-		rld_push(e, k, c);
-		len = rld_finish(e);
+		rld_enc(e, k, c);
+		len = rld_enc_finish(e);
 		printf("%lf\n", len/8.);
-		free(e);
-#else
+		free(e->cnt); free(e);
+		} else {
 		uint64_t len;
 		int k, c;
 		rle6_t *e;
@@ -106,9 +108,9 @@ int main_index(int argc, char *argv[])
 		}
 		rle6_enc(e, k, c);
 		len = rle6_enc_finish(e);
-		printf("%lld\n", len);
+		printf("%lf\n", len/8.);
 		free(e);
-#endif
+		}
 	} else {
 		for (i = 0; i < l; ++i) putchar("$CGTAN"[s[i]]);
 	}

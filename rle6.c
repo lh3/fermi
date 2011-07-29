@@ -57,7 +57,7 @@ uint64_t rle6_enc_finish(rle6_t *r)
 	*r->p++ = 0xff;
 	return ((uint64_t)(r->n - 1) * RLE6_LSIZE + (r->p - r->lhead)) * 8;
 }
-
+/*
 #include <stdio.h>
 int main()
 {
@@ -76,3 +76,4 @@ int main()
 	free(r->z); free(r);
 	return 0;
 }
+*/

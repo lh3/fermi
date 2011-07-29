@@ -11,9 +11,9 @@
 typedef struct {
 	// static members
 	int asize; // alphabet size
-	int sbits; // bits per small block
-	int ssize;
 	int abits; // bits required to store a symbol
+	int sbits; // bits per small block
+	int ssize; // ssize = 1<<sbits
 	// dynamic members in encoding
 	int n; // number of blocks
 	// dynamic members in decoding
