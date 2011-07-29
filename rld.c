@@ -85,14 +85,15 @@ rld_t *rld_enc_init(int asize, int bbits)
 	e->z = malloc(sizeof(void*));
 	e->z[0] = calloc(RLD_SUPBLK_SIZE, 8);
 	e->n = 1;
-	e->head = e->z[0];
+	e->bhead = e->head = e->z[0];
 	e->p = e->head + asize;
+	e->bsize = 1<<bbits;
+	e->btail = e->bhead + e->bsize;
 	e->cnt = calloc(asize, 8);
 	e->abits = ilog2(asize) + 1;
 	e->r = 64;
 	e->asize = asize;
 	e->bbits = bbits;
-	e->bmask = (1<<bbits) - 1;
 	return e;
 }
 
@@ -102,15 +103,16 @@ int rld_push(rld_t *e, int l, uint8_t c)
 	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;
 	w += e->abits;
 	if (w >= e->r) {
-		if (((e->p - e->head + 1) & e->bmask) == 0) { // jump to the next block
-			int y = (e->p - e->head) & e->bmask;
-			for (i = 0; i < e->asize; ++i)
-				e->head[y + i] = e->cnt[i];
-			if (e->p - e->head + 1 == RLD_SUPBLK_SIZE) { // allocate a new superblock
+		if (e->p + 1 == e->btail) { // jump to the next block
+			for (i = 0; i < e->asize; ++i) e->bhead[i] = e->cnt[i];
+			if (e->p + 1 - e->head == RLD_SUPBLK_SIZE) { // allocate a new superblock
 				++e->n;
 				e->z = realloc(e->z, e->n * sizeof(void*));
-				e->p = e->head = calloc(RLD_SUPBLK_SIZE, 8);
-			} else ++e->p;
+				e->p = e->head = e->bhead = calloc(RLD_SUPBLK_SIZE, 8);
+			} else {
+				e->bhead = ++e->p;
+				e->btail = e->bhead + e->bsize;
+			}
 			e->p += e->asize;
 			e->r = 64 - w;
 			*e->p |= x << e->r;
@@ -126,9 +128,8 @@ int rld_push(rld_t *e, int l, uint8_t c)
 
 uint64_t rld_finish(rld_t *e)
 {
-	int i, y = (e->p - e->head) & ~e->bmask;
-	for (i = 0; i < e->asize; ++i)
-		e->head[y + i] = e->cnt[i];
+	int i;
+	for (i = 0; i < e->asize; ++i) e->bhead[i] = e->cnt[i];
 	return (((uint64_t)(e->n - 1) * RLD_SUPBLK_SIZE) + (e->p - e->head)) * 64 + (64 - e->r);
 }
 
@@ -136,8 +137,7 @@ inline uint32_t rld_pullb(rld_t *e)
 {
 	int y, w;
 	uint64_t x;
-	x = e->p[0] << (64 - e->r) | (((e->p - e->head) & e->bmask) != e->bmask? e->p[1] >> (64 - e->r) : 1);
-	//printf("+ %d, %llx, %llx\n", e->r, e->p[0], e->p[0]);
+	x = e->p[0] << (64 - e->r) | (e->p + 1 < e->btail? e->p[1] >> (64 - e->r) : 1);
 	y = rld_delta_dec1(x, &w);
 	y = y << e->abits | (x << w >> (64 - e->abits));
 	printf("%d, %d\n", y>>3, e->r);
@@ -160,10 +160,10 @@ int main(int argc, char *argv[])
 	}
 	int i;
 	rld_t *e = rld_enc_init(6, 5);
-	for (i = 1; i < 11; ++i) rld_push(e, i, 0);
+	for (i = 1; i < 20; ++i) rld_push(e, i, 0);
 	rld_finish(e);
 	rld_dec_initb(e, 6);
-	for (i = 1; i < 11; ++i) rld_pullb(e);
+	for (i = 1; i < 20; ++i) rld_pullb(e);
 	return 0;
 }
 

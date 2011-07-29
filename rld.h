@@ -17,7 +17,7 @@ typedef struct {
 	// static members
 	int asize; // alphabet size
 	int bbits; // bits per small block
-	int bmask;
+	int bsize;
 	int abits; // bits required to store a symbol
 	// dynamic members in encoding
 	int n; // number of blocks
@@ -25,7 +25,7 @@ typedef struct {
 	int r; // bits remaining in the last 64-bit integer
 	uint64_t *cnt;
 	uint64_t **z;
-	uint64_t *p, *head;
+	uint64_t *p, *head, *bhead, *btail;
 } rld_t;
 
 #ifdef __cplusplus
