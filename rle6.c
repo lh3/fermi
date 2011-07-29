@@ -41,7 +41,7 @@ int rle6_enc(rle6_t *r, int l, int c)
 		*r->p++ = l>>2&0xff;
 	} else {
 		*r->p++ = 6<<5 | 6<<2 | (c&0x3);
-		*r->p++ = (c>>2)<<7 | l&0x7f;
+		*r->p++ = (c>>2)<<7 | (l&0x7f);
 		*r->p++ = l>>7&0xff;
 		*r->p++ = l>>15;
 	}
@@ -55,19 +55,24 @@ uint64_t rle6_enc_finish(rle6_t *r)
 	uint64_t *q = (uint64_t*)r->shead;
 	for (i = 0; i < 6; ++i) q[i] = r->cnt[i];
 	*r->p++ = 0xff;
-	return (uint64_t)(r->n - 1) * RLE6_LSIZE + (r->p - r->lhead);
+	return ((uint64_t)(r->n - 1) * RLE6_LSIZE + (r->p - r->lhead)) * 8;
 }
 
 #include <stdio.h>
 int main()
 {
-	int i, n = 20000;
+	int k, i, n = 10000, N = 5000;
 	rle6_t *r = rle6_enc_init();
 	for (i = 1; i < n; ++i)
 		rle6_enc(r, i, 0);
-	rle6_enc_finish(r);
-	rle6_dec_init(r, 0);
-	for (i = 1; i < n; ++i)
-		printf("%d\t%d\n", i, rle6_dec(r)>>3);
+	fprintf(stderr, "# bytes: %f\n", rle6_enc_finish(r) / 8.);
+	for (k = 0; k < N; ++k) {
+		rle6_dec_init(r, 0);
+		for (i = 1; i < n; ++i)
+			if (i != rle6_dec(r) >> 3)
+				fprintf(stderr, "Bug!\n");
+	}
+	for (i = 1; i < r->n; ++i) free(r->z);
+	free(r->z); free(r);
 	return 0;
 }

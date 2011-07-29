@@ -131,7 +131,7 @@ uint64_t rld_finish(rld_t *e)
 	return (((uint64_t)(e->n - 1) * RLD_SUPBLK_SIZE) + (e->p - e->head)) * 64 + (64 - e->r);
 }
 
-inline uint32_t rld_pullb(rld_t *e)
+inline uint32_t rld_pull0(rld_t *e)
 {
 	int y, w = 0;
 	uint64_t x;
@@ -143,32 +143,30 @@ inline uint32_t rld_pullb(rld_t *e)
 	else ++e->p, e->r = 64 + e->r - w;
 	return y;
 }
-/*
+
 int main(int argc, char *argv[])
 {
-	//rld_gen_ddec_table();
-	if (argc > 1) {
-		int w, x, z, ww;
-		uint64_t y;
-		x = rld_delta_enc1(atoi(argv[1]), &w);
-		y = (uint64_t)x << (64 - w);
-		z = rld_delta_dec1(y, &ww);
-		printf("%d==%d, %d==%d\n", z, atoi(argv[1]), w, ww);
-	}
-	int i, j = 0;
-	rld_t *e = rld_enc_init(6, 5);
-	for (i = 1; i < 5550; ++i) rld_push(e, i, 0);
-	rld_finish(e);
-	rld_dec_initb(e, j);
-	for (i = 1; i < 5550; ++i) {
-		int y = rld_pullb(e);
-		if (y == 0) {
-			j += e->bsize;
-			rld_dec_initb(e, j);
-			y = rld_pullb(e);
+	int k, i, n = 10000, N = 5000;
+	rld_t *r = rld_enc_init(6, 5);
+	for (i = 1; i < n; ++i)
+		rld_push(r, i, 0);
+	fprintf(stderr, "# bytes: %f\n", rld_finish(r) / 8.);
+	for (k = 0; k < N; ++k) {
+		int j = 0;
+		rld_dec_initb(r, j);
+		for (i = 1; i < n; ++i) {
+			int x = rld_pull0(r);
+			if (x == 0) {
+				j += r->bsize;
+				rld_dec_initb(r, j);
+				x = rld_pull0(r);
+			}
+			if (i != x >> 3)
+				fprintf(stderr, "Bug!\n");
 		}
-		printf("%d\t%d\n", i, y>>3);
 	}
+	for (i = 1; i < r->n; ++i) free(r->z);
+	free(r->cnt); free(r->z); free(r);
 	return 0;
 }
-*/
+
