@@ -16,8 +16,9 @@ all:$(PROG)
 bwa2:$(OBJS) main.o
 		$(CC) $(CFLAGS) $(DFLAGS) $(OBJS) main.o -o $@ $(LIBS)
 
+rld.o:rld.h
 rle6.o:rle6.h
-index.o:rle6.h
+index.o:rle6.h rld.h
 
 clean:
 		rm -fr gmon.out *.o a.out $(PROG) *~ *.a *.dSYM
