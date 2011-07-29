@@ -62,15 +62,15 @@ uint64_t rle6_enc_finish(rle6_t *r)
 #include <stdio.h>
 int main()
 {
-	int k, i, n = 10000, N = 5000;
+	int k, i, n = 100000, N = 500, a = 10, b = 1;
 	rle6_t *r = rle6_enc_init();
 	for (i = 1; i < n; ++i)
-		rle6_enc(r, i, 0);
+		rle6_enc(r, i%a+b, 0);
 	fprintf(stderr, "# bytes: %f\n", rle6_enc_finish(r) / 8.);
 	for (k = 0; k < N; ++k) {
 		rle6_dec_init(r, 0);
 		for (i = 1; i < n; ++i)
-			if (i != rle6_dec(r) >> 3)
+			if (i%a+b != rle6_dec(r) >> 3)
 				fprintf(stderr, "Bug!\n");
 	}
 	for (i = 1; i < r->n; ++i) free(r->z);

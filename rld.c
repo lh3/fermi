@@ -114,16 +114,16 @@ uint64_t rld_enc_finish(rld_t *e)
 #ifdef RLD_MAIN
 int main(int argc, char *argv[])
 {
-	int k, i, n = 10000, N = 5000;
+	int k, i, n = 100000, N = 500, a = 10, b = 1;
 	rld_t *r = rld_enc_init(6, 5);
 	for (i = 1; i < n; ++i)
-		rld_enc(r, i, 0);
+		rld_enc(r, i%a+b, 0);
 	fprintf(stderr, "# bytes: %f\n", rld_enc_finish(r) / 8.);
 	for (k = 0; k < N; ++k) {
 		int j = 0;
 		rld_dec_init(r, j);
 		for (i = 1; i < n; ++i)
-			if (i != rld_dec(r) >> 3)
+			if (i%a+b != rld_dec(r) >> 3)
 				fprintf(stderr, "Bug!\n");
 	}
 	for (i = 1; i < r->n; ++i) free(r->z);
