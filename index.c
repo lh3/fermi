@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <zlib.h>
+#include "rle6.h"
 #include "rld.h"
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
@@ -73,6 +74,7 @@ int main_index(int argc, char *argv[])
 	}
 
 	if (!plain) {
+#if 1
 		uint64_t len;
 		int k, c;
 		rld_t *e;
@@ -87,8 +89,26 @@ int main_index(int argc, char *argv[])
 		}
 		rld_push(e, k, c);
 		len = rld_finish(e);
+		printf("%lf\n", len/8.);
+		free(e);
+#else
+		uint64_t len;
+		int k, c;
+		rle6_t *e;
+		e = rle6_enc_init();
+		k = 1; c = s[0];
+		for (i = 1; i < l; ++i) {
+			if (s[i] != c) {
+				rle6_enc(e, k, c);
+				c = s[i];
+				k = 1;
+			} else ++k;
+		}
+		rle6_enc(e, k, c);
+		len = rle6_enc_finish(e);
 		printf("%lld\n", len);
-		free(e->cnt); free(e);
+		free(e);
+#endif
 	} else {
 		for (i = 0; i < l; ++i) putchar("$CGTAN"[s[i]]);
 	}
