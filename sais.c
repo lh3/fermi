@@ -82,7 +82,7 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	/* right-to-left induced sort (for S-type) */
 	if (C == B) getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
-	if (cs == 1) --B[0]; /* This line to deal with the last sentinel. */
+	--B[0]; /* This line to deal with the last sentinel. */
 	for (i = n - 1, b = SA + B[c1 = 0]; 0 <= i; --i) {
 		if (0 < (j = SA[i])) { /* the prefix is S-type */
 			--j;
@@ -158,15 +158,16 @@ int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 
 	/* STAGE II: solve the reduced problem; recurse if names are not yet unique */
 	if (name < m) {
-		int *RA = SA + n + fs - m;
+		int *RA = SA + n + fs - m - 1;
 		for (i = n - 1, j = m - 1; m <= i; --i)
-			if (SA[i] != 0) RA[j--] = SA[i] - 1;
-		if (sais_core((unsigned char *)RA, SA, fs + n - m * 2, m, name, sizeof(int)) != 0) return -2;
+			if (SA[i] != 0) RA[j--] = SA[i];
+		RA[m] = 0; // add a sentinel; in the resulting SA, SA[0]==m always stands
+		if (sais_core((unsigned char *)RA, SA, fs + n - m * 2 - 2, m + 1, name + 1, sizeof(int)) != 0) return -2;
 		for (i = n - 2, j = m - 1, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 			if ((c0 = chr(i)) < c1 + c) c = 1;
 			else if (c) RA[j--] = i + 1, c = 0; /* get p1 */
 		}
-		for (i = 0; i < m; ++i) SA[i] = RA[SA[i]]; /* get index */
+		for (i = 0; i < m; ++i) SA[i] = RA[SA[i+1]]; /* get index  */
 	}
 
 	/* STAGE III: induce the result for the original problem */
