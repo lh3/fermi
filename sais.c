@@ -66,8 +66,7 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	/* left-to-right induced sort (for L-type) */
 	if (C == B) getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 0);	/* find starts of buckets */
-	c1 = chr(SA[0]); b = SA + B[c1 > 0? c1 : 0];
-	for (i = 0; i < n; ++i) {
+	for (i = 0, b = 0, c1 = -1; i < n; ++i) {
 		j = SA[i], SA[i] = ~j;
 		if (0 < j) { /* >0 if j-1 is L-type; <0 if S-type; ==0 undefined */
 			--j;
@@ -82,16 +81,17 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	/* right-to-left induced sort (for S-type) */
 	if (C == B) getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
-	--B[0]; /* This line to deal with the last sentinel. */
-	for (i = n - 1, b = SA + B[c1 = 0]; 0 <= i; --i) {
+	for (i = n - 1, b = 0, c1 = -1; 0 <= i; --i) {
 		if (0 < (j = SA[i])) { /* the prefix is S-type */
 			--j;
-			if ((c0 = chr(j)) != c1) {
-				B[c1 > 0? c1 : 0] = b - SA;
-				c1 = c0;
-				b = SA + B[c1 > 0? c1 : 0];
+			if ((c0 = chr(j)) > 0) {
+				if (c0 != c1) {
+					B[c1 > 0? c1 : 0] = b - SA;
+					c1 = c0;
+					b = SA + B[c1 > 0? c1 : 0];
+				}
+				*--b = (j == 0 || chr(j - 1) > c1) ? ~j : j;
 			}
-			*--b = (j == 0 || chr(j - 1) > c1) ? ~j : j;
 		} else SA[i] = ~j; /* if L-type, change the sign */
 	}
 }
