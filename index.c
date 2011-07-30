@@ -20,16 +20,18 @@ unsigned char seq_nt5_table[256] = {
 };
 
 int sais(const unsigned char *T, int *SA, int n, int k);
+int sa_check(const unsigned char *T, const int *SA, int n);
 
 int main_index(int argc, char *argv[])
 {
-	int i, max = 0, l = 0, bbits = 5, plain = 0, use_rld = 0;
+	int i, max = 0, l = 0, bbits = 5, plain = 0, use_rld = 0, check = 0;
 	uint8_t *s = 0;
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "Pb:d")) >= 0) {
+		while ((c = getopt(argc, argv, "CPb:d")) >= 0) {
 			switch (c) {
+				case 'C': check = 1; break;
 				case 'P': plain = 1; break;
 				case 'b': bbits = atoi(optarg); break;
 				case 'd': use_rld = 1; break;
@@ -67,6 +69,8 @@ int main_index(int argc, char *argv[])
 	{ // construct BWT
 		int *SA = malloc(l * sizeof(int));
 		sais(s, SA, l, 6);
+		if (check)
+			fprintf(stderr, "[M::%s] SA checking returned value: %d\n", __func__, sa_check(s, SA, l));
 		for (i = 0; i < l; ++i) {
 			if (SA[i] == 0) SA[i] = 0;
 			else SA[i] = s[SA[i] - 1];

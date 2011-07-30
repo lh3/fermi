@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2
 DFLAGS=
-OBJS=		sais.o rle6.o rld.o index.o
+OBJS=		sais.o saux.o rle6.o rld.o index.o
 PROG=		bwa2
 INCLUDES=	
 LIBS=		-lm -lz
