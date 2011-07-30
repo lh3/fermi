@@ -84,14 +84,12 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	for (i = n - 1, b = 0, c1 = -1; 0 <= i; --i) {
 		if (0 < (j = SA[i])) { /* the prefix is S-type */
 			--j;
-			if ((c0 = chr(j)) > 0) {
-				if (c0 != c1) {
-					B[c1 > 0? c1 : 0] = b - SA;
-					c1 = c0;
-					b = SA + B[c1 > 0? c1 : 0];
-				}
-				*--b = (j == 0 || chr(j - 1) > c1) ? ~j : j;
+			if ((c0 = chr(j)) != c1) {
+				B[c1 > 0? c1 : 0] = b - SA;
+				c1 = c0;
+				b = SA + B[c1 > 0? c1 : 0];
 			}
+			if (c0 > 0) *--b = (j == 0 || chr(j - 1) > c1) ? ~j : j;
 		} else SA[i] = ~j; /* if L-type, change the sign */
 	}
 }
