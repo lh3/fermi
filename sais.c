@@ -29,16 +29,19 @@
 #include <stdlib.h>
 #include <limits.h>
 
+typedef int saint_t;
+#define SAINT_MAX INT_MAX
+
 /* T is of type "const unsigned char*". If T[i] is a sentinel, chr(i) takes a negative value */
-#define chr(i) (cs == sizeof(int) ? ((const int *)T)[i] : (T[i]? (int)T[i] : i-INT_MAX))
+#define chr(i) (cs == sizeof(saint_t) ? ((const saint_t *)T)[i] : (T[i]? (saint_t)T[i] : i - SAINT_MAX))
 
 /** Count the occurrences of each symbol */
-static void getCounts(const unsigned char *T, int *C, int n, int k, int cs)
+static void getCounts(const unsigned char *T, saint_t *C, saint_t n, saint_t k, int cs)
 {
-	int i;
+	saint_t i;
 	for (i = 0; i < k; ++i) C[i] = 0;
 	for (i = 0; i < n; ++i) {
-		int c = chr(i);
+		saint_t c = chr(i);
 		++C[c > 0? c : 0];
 	}
 }
@@ -51,18 +54,18 @@ static void getCounts(const unsigned char *T, int *C, int n, int k, int cs)
  * @param k   size of alphabet
  * @param end compute the end of bucket if true; otherwise compute the end
  */
-static inline void getBuckets(const int *C, int *B, int k, int end)
+static inline void getBuckets(const saint_t *C, saint_t *B, saint_t k, saint_t end)
 {
-	int i, sum = 0;
+	saint_t i, sum = 0;
 	if (end) for (i = 0; i < k; ++i) sum += C[i], B[i] = sum;
 	else for (i = 0; i < k; ++i) sum += C[i], B[i] = sum - C[i];
 }
 
 /** Induced sort */
-static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int k, int cs)
+static void induceSA(const unsigned char *T, saint_t *SA, saint_t *C, saint_t *B, saint_t n, saint_t k, saint_t cs)
 {
-	int *b, i, j;
-	int  c0, c1;
+	saint_t *b, i, j;
+	saint_t  c0, c1;
 	/* left-to-right induced sort (for L-type) */
 	if (C == B) getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 0);	/* find starts of buckets */
@@ -103,20 +106,20 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
  * @param fs  working space available in SA (typically 0 when first called)
  * @param n   length of T, including the trailing NULL
  * @param k   size of the alphabet (typically 256 when first called)
- * @param cs  # bytes per element in T; 1 or sizeof(int) (typically 1 when first called)
+ * @param cs  # bytes per element in T; 1 or sizeof(saint_t) (typically 1 when first called)
  *
  * @return    0 upon success
  */
-int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
+saint_t sais_core(const unsigned char *T, saint_t *SA, saint_t fs, saint_t n, saint_t k, int cs)
 {
-	int *C, *B;
-	int  i, j, c, m, q, qlen, name;
-	int  c0, c1;
+	saint_t *C, *B;
+	saint_t  i, j, c, m, q, qlen, name;
+	saint_t  c0, c1;
 
 	/* STAGE I: reduce the problem by at least 1/2 sort all the S-substrings */
 	if (k <= fs) C = SA + n, B = (k <= fs - k) ? C + k : C;
 	else {
-		if ((C = (int*)malloc(k * (1 + (cs == 1)) * sizeof(int))) == NULL) return -2;
+		if ((C = (saint_t*)malloc(k * (1 + (cs == 1)) * sizeof(saint_t))) == NULL) return -2;
 		B = cs == 1? C + k : C;
 	}
 	getCounts(T, C, n, k, cs);
@@ -132,7 +135,7 @@ int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 	/* pack all the sorted LMS into the first m items of SA 
 	   2*m must be not larger than n (see Nong et al. for the proof) */
 	for (i = 0, m = 0; i < n; ++i) {
-		int p = SA[i];
+		saint_t p = SA[i];
 		if (p == n - 1) SA[m++] = p;
 		else if (0 < p && chr(p - 1) > (c0 = chr(p))) {
 			for (j = p + 1; j < n && c0 == (c1 = chr(j)); ++j);
@@ -147,7 +150,7 @@ int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 	}
 	/* find the lexicographic names of all substrings */
 	for (i = 0, name = 0, q = n, qlen = 0; i < m; ++i) {
-		int p = SA[i], plen = SA[m + (p >> 1)], diff = 1;
+		saint_t p = SA[i], plen = SA[m + (p >> 1)], diff = 1;
 		if (plen == qlen) {
 			for (j = 0; j < plen && chr(p + j) == chr(q + j); j++);
 			if (j == plen) diff = 0;
@@ -158,11 +161,11 @@ int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 
 	/* STAGE II: solve the reduced problem; recurse if names are not yet unique */
 	if (name < m) {
-		int *RA = SA + n + fs - m - 1;
+		saint_t *RA = SA + n + fs - m - 1;
 		for (i = n - 1, j = m - 1; m <= i; --i)
 			if (SA[i] != 0) RA[j--] = SA[i];
 		RA[m] = 0; // add a sentinel; in the resulting SA, SA[0]==m always stands
-		if (sais_core((unsigned char *)RA, SA, fs + n - m * 2 - 2, m + 1, name + 1, sizeof(int)) != 0) return -2;
+		if (sais_core((unsigned char *)RA, SA, fs + n - m * 2 - 2, m + 1, name + 1, sizeof(saint_t)) != 0) return -2;
 		for (i = n - 2, j = m - 1, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 			if ((c0 = chr(i)) < c1 + c) c = 1;
 			else if (c) RA[j--] = i + 1, c = 0; /* get p1 */
@@ -173,7 +176,7 @@ int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 	/* STAGE III: induce the result for the original problem */
 	if (k <= fs) C = SA + n, B = (k <= fs - k) ? C + k : C;
 	else {
-		if ((C = (int*)malloc(k * (1 + (cs == 1)) * sizeof(int))) == NULL) return -2;
+		if ((C = (saint_t*)malloc(k * (1 + (cs == 1)) * sizeof(saint_t))) == NULL) return -2;
 		B = cs == 1? C + k : C;
 	}
 	/* put all LMS characters into their buckets */
@@ -200,7 +203,7 @@ int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
  * @param k          size of the alphabet including the sentinel; no more than 256
  * @return           0 upon success
  */
-int sais(const unsigned char *T, int *SA, int n, int k)
+saint_t sais(const unsigned char *T, saint_t *SA, saint_t n, saint_t k)
 {
 	if (T == NULL || SA == NULL || T[n - 1] != '\0' || n <= 0) return -1;
 	if (k < 0 || k > 256) k = 256;
