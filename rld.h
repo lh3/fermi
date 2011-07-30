@@ -95,13 +95,16 @@ static inline uint32_t rld_dec0(rld_t *e)
 	uint64_t x;
 	x = e->p[0] << (64 - e->r) | (e->p < e->stail && e->r < 64? e->p[1] >> e->r : 0);
 	if (x>>63 == 0) {
-		for (l = 62; l >= 0; --l) if (x >> l) break;
-		w = ((63 - l)<<1) + 1;
+		//w = 0x3333333355557790ll>>(x>>59<<2)&0xf;
+		if (x>>62 == 0) {
+			if (x>>61 == 0) {
+				if ((w = 0x55555555777799b0ll>>(x>>58<<2)&0xf) == 0) return 0;
+			} else w = 5;
+		} else w = 3;
 		l = (x >> (64 - w)) - 1;
 		y = x << w >> (64 - l) | 1u << l;
 		w += l;
 	} else w = y = 1;
-	if (y == 0) return 0;
 	y = y << e->abits | x << w >> (64 - e->abits);
 	w += e->abits;
 	if (e->r > w) e->r -= w;
