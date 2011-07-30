@@ -82,7 +82,7 @@ static void induceSA(const unsigned char *T, int *SA, int *C, int *B, int n, int
 	/* right-to-left induced sort (for S-type) */
 	if (C == B) getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
-	--B[0]; /* This line to deal with the last sentinel. */
+	if (cs == 1) --B[0]; /* This line to deal with the last sentinel. */
 	for (i = n - 1, b = SA + B[c1 = 0]; 0 <= i; --i) {
 		if (0 < (j = SA[i])) { /* the prefix is S-type */
 			--j;
