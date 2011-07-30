@@ -115,8 +115,10 @@ int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 
 	/* STAGE I: reduce the problem by at least 1/2 sort all the S-substrings */
 	if (k <= fs) C = SA + n, B = (k <= fs - k) ? C + k : C;
-	else if ((C = (int*)malloc(k * 2 * sizeof(int))) == NULL) return -2;
-	else B = C + k;
+	else {
+		if ((C = (int*)malloc(k * (1 + (cs == 1)) * sizeof(int))) == NULL) return -2;
+		B = cs == 1? C + k : C;
+	}
 	getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
 	for (i = 0; i < n; ++i) SA[i] = 0;
@@ -170,8 +172,10 @@ int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs)
 
 	/* STAGE III: induce the result for the original problem */
 	if (k <= fs) C = SA + n, B = (k <= fs - k) ? C + k : C;
-	else if ((C = (int*)malloc(k * 2 * sizeof(int))) == NULL) return -2;
-	else B = C + k;
+	else {
+		if ((C = (int*)malloc(k * (1 + (cs == 1)) * sizeof(int))) == NULL) return -2;
+		B = cs == 1? C + k : C;
+	}
 	/* put all LMS characters into their buckets */
 	getCounts(T, C, n, k, cs);
 	getBuckets(C, B, k, 1);	/* find ends of buckets */
