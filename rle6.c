@@ -2,8 +2,6 @@
 #include <assert.h>
 #include "rle6.h"
 
-#define NDEBUG
-
 rle6_t *rle6_enc_init()
 {
 	rle6_t *r;
@@ -16,7 +14,7 @@ rle6_t *rle6_enc_init()
 	return r;
 }
 
-int rle6_enc(rle6_t *r, int l, int c)
+int rle6_enc0(rle6_t *r, int l, int c)
 {
 	int i, w;
 	assert(c < 6);
@@ -46,6 +44,15 @@ int rle6_enc(rle6_t *r, int l, int c)
 		*r->p++ = l>>15;
 	}
 	++r->cnt[c];
+	return 0;
+}
+
+int rle6_enc(rle6_t *r, int l, int c)
+{
+	const int max_l = (1<<23) - 1;
+	for (; l > max_l; l -= max_l)
+		rle6_enc0(r, max_l, c);
+	rle6_enc0(r, l, c);
 	return 0;
 }
 
