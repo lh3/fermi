@@ -67,7 +67,8 @@ int rld_enc(rld_t *e, int l, uint8_t c)
 			*e->p = x << (e->r = 64 - w);
 		}
 	} else e->r -= w, *e->p |= x << e->r;
-	++e->cnt[c];
+	e->cnt[0] += l;
+	if (c) e->cnt[c] += l;
 	return 0;
 }
 
@@ -75,7 +76,35 @@ uint64_t rld_enc_finish(rld_t *e)
 {
 	int i;
 	for (i = 0; i < e->asize; ++i) e->shead[i] = e->cnt[i];
-	return (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64 + (64 - e->r);
+	e->n_bits = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64 + (64 - e->r);
+	return e->n_bits;
+}
+
+uint64_t rld_rawlen(const rld_t *e)
+{
+	uint64_t x = rld_last_blk(e);
+	return rld_seek_blk(e, x)[0];
+}
+
+rldidx_t *rld_index(rld_t *e)
+{
+	rldidx_t *idx;
+	uint64_t i, last, k, next, rawlen, n_blks;
+	idx = calloc(1, sizeof(rldidx_t));
+	n_blks = e->n_bits / 64 / e->ssize + 1;
+	last = rld_last_blk(e);
+	rawlen = rld_seek_blk(e, last)[0];
+	idx->ibits = ilog2(rawlen / n_blks) + 1;
+	idx->rsize = (rawlen + (1<<idx->ibits) - 1) >> idx->ibits;
+	idx->r = malloc(idx->rsize * 8);
+	for (i = k = 0, next = 0; i <= last; i += e->ssize)
+		if (*rld_seek_blk(e, i) > next)
+			idx->r[k++] = i, next += 1<<idx->ibits;
+	for (next = idx->r[k - 1]; k < idx->rsize; ++k) idx->r[k] = next; // is this necessary?
+	//for (k = 0; k < idx->rsize; ++k)
+	//	printf("%lld\t%lld\t%lld\n", idx->r[k], *rld_seek_blk(e, idx->r[k]), k<<idx->ibits);
+	//printf("%lld, %lld, %lld\n", idx->rsize, k, n_blks);
+	return idx;
 }
 
 #ifdef RLD_MAIN

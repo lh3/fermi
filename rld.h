@@ -5,23 +5,27 @@
 
 #define RLD_LBITS 23
 #define RLD_LSIZE (1<<RLD_LBITS)
-
-#define rld_blk_size(bbits, balpha) (((1<<(bbits)) << 6) / ((balpha) + 1))
+#define RLD_LMASK (RLD_LSIZE - 1)
 
 typedef struct {
-	// static members
+	// static members (initialized in the constructor)
 	int asize; // alphabet size
 	int abits; // bits required to store a symbol
 	int sbits; // bits per small block
 	int ssize; // ssize = 1<<sbits
-	// dynamic members in encoding
-	int n; // number of blocks
-	// dynamic members in decoding
+	// dynamic members
+	int n; // number of blocks (unchanged in decoding)
 	int r; // bits remaining in the last 64-bit integer
+	uint64_t n_bits; // total number of bits (unchanged in decoding)
+	uint64_t **z; // the actual data (unchanged in decoding)
 	uint64_t *cnt;
-	uint64_t **z;
 	uint64_t *p, *lhead, *shead, *stail;
 } rld_t;
+
+typedef struct {
+	int rsize, ibits;
+	uint64_t *r;
+} rldidx_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,32 +34,14 @@ extern "C" {
 	rld_t *rld_enc_init(int asize, int bbits);
 	int rld_enc(rld_t *e, int l, uint8_t c);
 	uint64_t rld_enc_finish(rld_t *e);
+	uint64_t rld_rawlen(const rld_t *e);
 
 #ifdef __cplusplus
 }
 #endif
 
-extern int16_t rld_ddec_table[256];
-
-static inline int rld_delta_dec1(uint64_t x, int *w)
-{
-	if (x >> 63) {
-		*w = 1;
-		return 1;
-	} else {
-		int z = rld_ddec_table[x >> 55];
-		if (z > 0) {
-			int a = z>>4, b = z&0xf;
-			*w = a + b;
-			return x << b >> (64 - a) | 1u << a;
-		} else if (z < 0) {
-			z = ~z;
-			*w = z & 0xf;
-			return z>>4;
-		}
-	}
-	return 0;
-}
+#define rld_last_blk(e) ((e)->n_bits>>6>>(e)->sbits<<(e)->sbits)
+#define rld_seek_blk(e, k) ((e)->z[(k)>>RLD_LBITS] + ((k)&RLD_LMASK))
 
 static inline void rld_dec_init(rld_t *e, uint64_t k)
 {
@@ -96,5 +82,24 @@ static inline uint32_t rld_dec(rld_t *e)
 		return rld_dec0(e);
 	} else return c;
 }
-
+/*
+static inline uint64_t rld_rank1(rld_t *e, const rldidx_t *r, uint64_t k, int c)
+{
+	uint64_t x = r->r[k>>r->ibits], *end, y;
+	uint32_t a;
+	int i;
+	e->p = rld_seek_blk(e, x); e->r = 64;
+	end = (x + RLD_LMASK) >> RLD_LBITS << RLD_LBITS;
+	while (*e->p > k) {
+		if ((x += e->ssize) == end) e->p = ld_seek_blk(e, end);
+		else e->p += e->ssize;
+	}
+	x = *e->p;
+	if (c == 0) {
+		int i;
+		for (i = 1, y = *e->p; i < e->asize; ++i) y -= e->p[i];
+	} else y = e->p[c];
+	return y;
+}
+*/
 #endif

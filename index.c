@@ -95,6 +95,7 @@ int main_index(int argc, char *argv[])
 		}
 		rld_enc(e, k, c);
 		len = rld_enc_finish(e);
+		rld_index(e);
 		printf("%lf\n", len/8.);
 		free(e->cnt); free(e);
 		} else {
