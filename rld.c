@@ -44,22 +44,28 @@ rld_t *rld_enc_init(int asize, int bbits)
 	return e;
 }
 
+static inline void enc_next_block(rld_t *e, int r)
+{
+	int i;
+	if (e->p + 1 - e->lhead == RLD_LSIZE) {
+		++e->n;
+		e->z = realloc(e->z, e->n * sizeof(void*));
+		e->lhead = e->shead = e->z[e->n - 1] = calloc(RLD_LSIZE, 8);
+	} else e->shead += e->ssize;
+	for (i = 0; i < e->asize; ++i) e->shead[i] = e->cnt[i];
+	e->stail = e->shead + e->ssize - 1;
+	e->p = e->shead + e->asize;
+	e->r = r;
+}
+
 int rld_enc(rld_t *e, int l, uint8_t c)
 {
-	int i, w;
+	int w;
 	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;
 	w += e->abits;
 	if (w > e->r) {
 		if (e->p == e->stail) { // jump to the next block
-			for (i = 0; i < e->asize; ++i) e->shead[i] = e->cnt[i];
-			if (e->p + 1 - e->lhead == RLD_LSIZE) { // allocate a new superblock
-				++e->n;
-				e->z = realloc(e->z, e->n * sizeof(void*));
-				e->p = e->lhead = e->shead = e->z[e->n - 1] = calloc(RLD_LSIZE, 8);
-			} else e->shead += e->ssize;
-			e->stail = e->shead + e->ssize - 1;
-			e->p = e->shead + e->asize;
-			e->r = 64 - w;
+			enc_next_block(e, 64 - w);
 			*e->p |= x << e->r;
 		} else {
 			w -= e->r;
@@ -74,9 +80,8 @@ int rld_enc(rld_t *e, int l, uint8_t c)
 
 uint64_t rld_enc_finish(rld_t *e)
 {
-	int i;
-	for (i = 0; i < e->asize; ++i) e->shead[i] = e->cnt[i];
-	e->n_bits = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64 + (64 - e->r);
+	enc_next_block(e, 64);
+	e->n_bits = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64;
 	return e->n_bits;
 }
 
@@ -98,12 +103,11 @@ rldidx_t *rld_index(rld_t *e)
 	idx->rsize = (rawlen + (1<<idx->ibits) - 1) >> idx->ibits;
 	idx->r = malloc(idx->rsize * 8);
 	for (i = k = 0, next = 0; i <= last; i += e->ssize)
-		if (*rld_seek_blk(e, i) > next)
-			idx->r[k++] = i, next += 1<<idx->ibits;
-	for (next = idx->r[k - 1]; k < idx->rsize; ++k) idx->r[k] = next; // is this necessary?
+		if (*rld_seek_blk(e, i) > next) idx->r[++k] = i, next += 1<<idx->ibits;
+		else idx->r[k] = i;
+	for (next = idx->r[k++]; k < idx->rsize; ++k) idx->r[k] = next; // is this necessary?
 	//for (k = 0; k < idx->rsize; ++k)
 	//	printf("%lld\t%lld\t%lld\n", idx->r[k], *rld_seek_blk(e, idx->r[k]), k<<idx->ibits);
-	//printf("%lld, %lld, %lld\n", idx->rsize, k, n_blks);
 	return idx;
 }
 
