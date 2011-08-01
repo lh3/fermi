@@ -52,7 +52,7 @@ static inline void rld_dec_init(rld_t *e, uint64_t k)
 	e->r = 64;
 }
 
-static inline uint32_t rld_dec0(rld_t *e)
+static inline int rld_dec0(rld_t *e, int *c)
 {
 	int y = 0, w, l;
 	uint64_t x;
@@ -63,43 +63,56 @@ static inline uint32_t rld_dec0(rld_t *e)
 		y = x << w >> (64 - l) | 1u << l;
 		w += l;
 	} else w = y = 1;
-	y = y << e->abits | x << w >> (64 - e->abits);
+	*c = x << w >> (64 - e->abits);
 	w += e->abits;
 	if (e->r > w) e->r -= w;
 	else ++e->p, e->r = 64 + e->r - w;
 	return y;
 }
 
-static inline uint32_t rld_dec(rld_t *e)
+static inline int rld_dec(rld_t *e, int *_c)
 {
-	uint32_t c = rld_dec0(e);
+	int c = rld_dec0(e, _c);
 	if (c == 0) {
 		if (e->p - e->lhead > RLD_LSIZE - e->ssize) e->shead = ++e->lhead;
 		else e->shead += e->ssize;
 		e->p = e->shead + e->asize;
 		e->stail = e->shead + e->ssize - 1;
 		e->r = 64;
-		return rld_dec0(e);
+		return rld_dec0(e, _c);
 	} else return c;
 }
-/*
+
 static inline uint64_t rld_rank1(rld_t *e, const rldidx_t *r, uint64_t k, int c)
 {
-	uint64_t x = r->r[k>>r->ibits], *end, y;
-	uint32_t a;
-	int i;
-	e->p = rld_seek_blk(e, x); e->r = 64;
-	end = (x + RLD_LMASK) >> RLD_LBITS << RLD_LBITS;
-	while (*e->p > k) {
-		if ((x += e->ssize) == end) e->p = ld_seek_blk(e, end);
-		else e->p += e->ssize;
+	uint64_t x = r->r[k>>r->ibits], y, *q, z;
+	e->lhead = e->z[x>>RLD_LBITS];
+	q = e->p = e->lhead + (x&RLD_LMASK);
+	while (1) {
+		if (q - e->lhead == RLD_LSIZE) q = ++e->lhead;
+		else q += e->ssize;
+		if (*q > k) break;
+		e->p = q;
 	}
-	x = *e->p;
 	if (c == 0) {
 		int i;
 		for (i = 1, y = *e->p; i < e->asize; ++i) y -= e->p[i];
 	} else y = e->p[c];
-	return y;
+	if (*e->p == k) return y;
+	z = *e->p;
+	e->shead = e->p;
+	e->p = e->shead + e->asize;
+	e->stail = e->shead + e->ssize - 1;
+	e->r = 64;
+	while (1) {
+		int a, l;
+		l = rld_dec0(e, &a);
+		if (z + l >= k) {
+			y += k - z;
+			return y;
+		}
+		if (a == c) y += l;
+	}
 }
-*/
+
 #endif
