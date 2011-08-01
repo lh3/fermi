@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <assert.h>
 #include "rld.h"
 
 static const char LogTable256[256] = {
@@ -91,23 +92,31 @@ uint64_t rld_rawlen(const rld_t *e)
 	return rld_seek_blk(e, x)[0];
 }
 
-rldidx_t *rld_index(rld_t *e)
+rldidx_t *rld_index(const rld_t *e)
 {
 	rldidx_t *idx;
-	uint64_t i, last, k, next, rawlen, n_blks;
+	uint64_t i, last, k, rawlen, n_blks;
 	idx = calloc(1, sizeof(rldidx_t));
 	n_blks = e->n_bits / 64 / e->ssize + 1;
 	last = rld_last_blk(e);
 	rawlen = rld_seek_blk(e, last)[0];
 	idx->ibits = ilog2(rawlen / n_blks) + 1;
-	idx->rsize = (rawlen + (1<<idx->ibits) - 1) >> idx->ibits;
-	idx->r = malloc(idx->rsize * 8);
-	for (i = k = 0, next = 0; i <= last; i += e->ssize)
-		if (*rld_seek_blk(e, i) > next) idx->r[++k] = i, next += 1<<idx->ibits;
-		else idx->r[k] = i;
-	for (next = idx->r[k++]; k < idx->rsize; ++k) idx->r[k] = next; // is this necessary?
+	idx->rsize = ((rawlen + (1<<idx->ibits) - 1) >> idx->ibits) + 1;
+	idx->r = calloc(idx->rsize, 8);
+	idx->r[0] = 0;
+	for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
+		uint64_t x = *rld_seek_blk(e, i);
+		while (x >= k<<idx->ibits) ++k;
+		idx->r[k] = i;
+	}
+	assert(k == idx->rsize - 1);
+	for (k = 1, last = 0; k < idx->rsize; ++k) {
+		if (idx->r[k]) last = idx->r[k];
+		else idx->r[k] = last;
+	}
 	//for (k = 0; k < idx->rsize; ++k)
-	//	printf("%lld\t%lld\t%lld\n", idx->r[k], *rld_seek_blk(e, idx->r[k]), k<<idx->ibits);
+	//	if (*rld_seek_blk(e, idx->r[k]) > k<<idx->ibits)
+	//		printf("%lld > %lld\n", *rld_seek_blk(e, idx->r[k]), k<<idx->ibits);
 	return idx;
 }
 

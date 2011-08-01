@@ -35,6 +35,7 @@ extern "C" {
 	int rld_enc(rld_t *e, int l, uint8_t c);
 	uint64_t rld_enc_finish(rld_t *e);
 	uint64_t rld_rawlen(const rld_t *e);
+	rldidx_t *rld_index(const rld_t *e);
 
 #ifdef __cplusplus
 }
@@ -83,27 +84,28 @@ static inline int rld_dec(rld_t *e, int *_c)
 	} else return c;
 }
 
-static inline uint64_t rld_rank1(rld_t *e, const rldidx_t *r, uint64_t k, int c)
+static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c)
 {
 	uint64_t x = r->r[k>>r->ibits], y, *q, z;
 	e->lhead = e->z[x>>RLD_LBITS];
 	q = e->p = e->lhead + (x&RLD_LMASK);
-	while (1) {
+	while (1) { // seek to the small block
 		if (q - e->lhead == RLD_LSIZE) q = ++e->lhead;
 		else q += e->ssize;
 		if (*q > k) break;
 		e->p = q;
 	}
-	if (*e->p == k) return e->p[c + 1];
 	y = e->p[c + 1]; z = *e->p;
 	e->shead = e->p;
 	e->p += e->asize + 1;
 	e->stail = e->shead + e->ssize - 1;
 	e->r = 64;
+	++k; // because k is the coordinate but not length
 	while (1) {
-		int a, l;
+		int a = -1, l;
 		l = rld_dec0(e, &a);
-		if (z + l >= k) return y + (a == c? k - z : 0);
+		if (z + l >= k) return y + (a == c? k - z: 0);
+		z += l;
 		if (a == c) y += l;
 	}
 }

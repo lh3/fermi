@@ -1,6 +1,6 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2
-DFLAGS=
+DFLAGS=		#-DNDEBUG
 OBJS=		sais.o saux.o rle6.o rld.o index.o
 PROG=		bwa2
 INCLUDES=	
