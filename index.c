@@ -126,8 +126,12 @@ int main_index(int argc, char *argv[])
 		}
 		if (1) {
 			uint64_t k, l;
+			kstring_t str;
+			str.l = str.m = 0; str.s = 0;
 			rldidx_t *r = rld_index(e);
 			printf("%lld\n", fm_backward_search(e, r, 3, (const uint8_t*)"\3\4\3", &k, &l));
+			fm_retrieve(e, r, 0, &str);
+			for (i = str.l - 1; i >= 0; --i) putchar("$ACGTN"[(int)str.s[i]]); putchar('\n');
 		}
 		free(e->cnt); free(e);
 		} else {

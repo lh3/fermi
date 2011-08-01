@@ -84,9 +84,9 @@ static inline int rld_dec(rld_t *e, int *_c)
 	} else return c;
 }
 
-static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c)
+static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k)
 {
-	uint64_t x = r->r[k>>r->ibits], y, *q, z;
+	uint64_t x = r->r[k>>r->ibits], *q;
 	e->lhead = e->z[x>>RLD_LBITS];
 	q = e->p = e->lhead + (x&RLD_LMASK);
 	while (1) { // seek to the small block
@@ -95,11 +95,18 @@ static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c
 		if (*q > k) break;
 		e->p = q;
 	}
-	y = e->p[c + 1]; z = *e->p;
 	e->shead = e->p;
-	e->p += e->asize + 1;
 	e->stail = e->shead + e->ssize - 1;
+	e->p += e->asize + 1;
 	e->r = 64;
+	return q;
+}
+
+static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c)
+{
+	uint64_t y, z;
+	rld_locate_blk(e, r, k);
+	y = e->shead[c + 1]; z = *e->shead;
 	++k; // because k is the coordinate but not length
 	while (1) {
 		int a = -1, l;
@@ -110,13 +117,35 @@ static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c
 	}
 }
 
-static inline void rld_rank12(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
+static inline void rld_rank1a(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t *ok)
 {
-	if (k == l) *ok = *ol = rld_rank11(e, r, k, c);
-	else {
-		*ok = rld_rank11(e, r, k, c);
-		*ol = rld_rank11(e, r, l, c);
+	int i;
+	uint64_t z;
+	rld_locate_blk(e, r, k);
+	z = *e->shead;
+	for (i = 0; i < e->asize; ++i) ok[i] = e->shead[i + 1];
+	++k; // because k is the coordinate but not length
+	while (1) {
+		int a = -1, l;
+		l = rld_dec0(e, &a);
+		if (z + l >= k) {
+			ok[a] += k - z;
+			break;
+		}
+		z += l; ok[a] += l;
 	}
+}
+
+static inline void rld_rank21(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
+{
+	*ok = rld_rank11(e, r, k, c);
+	*ol = rld_rank11(e, r, l, c);
+}
+
+static inline void rld_rank2a(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
+{
+	rld_rank1a(e, r, k, ok);
+	rld_rank1a(e, r, l, ol);
 }
 
 #endif
