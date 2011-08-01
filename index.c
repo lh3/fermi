@@ -5,6 +5,7 @@
 #include <zlib.h>
 #include "rle6.h"
 #include "rld.h"
+#include "exact.h"
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
@@ -126,7 +127,7 @@ int main_index(int argc, char *argv[])
 		if (1) {
 			uint64_t k, l;
 			rldidx_t *r = rld_index(e);
-			printf("%lld\n", rld_backward_search(e, r, 3, (const uint8_t*)"\3\4\3", &k, &l));
+			printf("%lld\n", fm_backward_search(e, r, 3, (const uint8_t*)"\3\4\3", &k, &l));
 		}
 		free(e->cnt); free(e);
 		} else {

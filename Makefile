@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2
 DFLAGS=		#-DNDEBUG
-OBJS=		utils.o sais.o saux.o rle6.o rld.o index.o
+OBJS=		utils.o sais.o saux.o rle6.o rld.o index.o exact.o
 PROG=		bwa2
 INCLUDES=	
 LIBS=		-lm -lz
@@ -19,6 +19,7 @@ bwa2:$(OBJS) main.o
 rld.o:rld.h
 rle6.o:rle6.h
 index.o:rle6.h rld.h
+exact.o:exact.h rld.h
 
 clean:
 		rm -fr gmon.out *.o a.out $(PROG) *~ *.a *.dSYM

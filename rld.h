@@ -36,7 +36,6 @@ extern "C" {
 	uint64_t rld_enc_finish(rld_t *e);
 	uint64_t rld_rawlen(const rld_t *e);
 	rldidx_t *rld_index(const rld_t *e);
-	uint64_t rld_backward_search(rld_t *e, const rldidx_t *r, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end);
 
 #ifdef __cplusplus
 }
