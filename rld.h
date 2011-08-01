@@ -36,6 +36,7 @@ extern "C" {
 	uint64_t rld_enc_finish(rld_t *e);
 	uint64_t rld_rawlen(const rld_t *e);
 	rldidx_t *rld_index(const rld_t *e);
+	uint64_t rld_backward_search(rld_t *e, const rldidx_t *r, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end);
 
 #ifdef __cplusplus
 }
@@ -107,6 +108,15 @@ static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c
 		if (z + l >= k) return y + (a == c? k - z: 0);
 		z += l;
 		if (a == c) y += l;
+	}
+}
+
+static inline void rld_rank12(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
+{
+	if (k == l) *ok = *ol = rld_rank11(e, r, k, c);
+	else {
+		*ok = rld_rank11(e, r, k, c);
+		*ol = rld_rank11(e, r, l, c);
 	}
 }
 

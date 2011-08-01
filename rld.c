@@ -81,8 +81,11 @@ int rld_enc(rld_t *e, int l, uint8_t c)
 
 uint64_t rld_enc_finish(rld_t *e)
 {
+	int i;
 	enc_next_block(e, 64);
 	e->n_bits = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64;
+	// recompute e->cnt as the accumulative count
+	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
 	return e->n_bits;
 }
 
@@ -107,9 +110,9 @@ rldidx_t *rld_index(const rld_t *e)
 	for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
 		uint64_t x = *rld_seek_blk(e, i);
 		while (x >= k<<idx->ibits) ++k;
-		idx->r[k] = i;
+		if (k < idx->rsize) idx->r[k] = i;
 	}
-	assert(k == idx->rsize - 1);
+	assert(k >= idx->rsize - 1);
 	for (k = 1, last = 0; k < idx->rsize; ++k) {
 		if (idx->r[k]) last = idx->r[k];
 		else idx->r[k] = last;
@@ -118,6 +121,24 @@ rldidx_t *rld_index(const rld_t *e)
 	//	if (*rld_seek_blk(e, idx->r[k]) > k<<idx->ibits)
 	//		printf("%lld > %lld\n", *rld_seek_blk(e, idx->r[k]), k<<idx->ibits);
 	return idx;
+}
+
+uint64_t rld_backward_search(rld_t *e, const rldidx_t *r, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
+{
+	uint64_t k, l, ok, ol;
+	int i, c;
+	c = str[len - 1];
+	k = e->cnt[c]; l = e->cnt[c + 1] - 1;
+	for (i = len - 2; i >= 0; --i) {
+		c = str[i];
+		rld_rank12(e, r, k - 1, l, c, &ok, &ol);
+		k = e->cnt[c] + ok;
+		l = e->cnt[c] + ol - 1;
+		if (k > l) break;
+	}
+	if (k > l) return 0;
+	*sa_beg = k; *sa_end = l;
+	return l - k + 1;
 }
 
 #ifdef RLD_MAIN
