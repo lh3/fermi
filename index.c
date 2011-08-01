@@ -104,7 +104,7 @@ int main_index(int argc, char *argv[])
 		rld_enc(e, k, c);
 		len = rld_enc_finish(e);
 		fprintf(stderr, "[M::%s] Encoded BWT in %lld bytes in %.3f seconds\n", __func__, len/8, cputime() - t);
-		{
+		if (1) {
 			int b = 3, k = 0, *SA;
 			rldidx_t *r;
 			r = rld_index(e);
@@ -113,12 +113,10 @@ int main_index(int argc, char *argv[])
 				if (s[i] == b) ++k;
 				SA[i] = k;
 			}
-			if (1) {
-				for (i = 0; i < l; ++i) {
-					int x = rld_rank11(e, r, i, b);
-					if (SA[i] != x)
-						printf("fail @ %d: %d != %d\n", i, SA[i], x);
-				}
+			for (i = 0; i < l; ++i) {
+				int x = rld_rank11(e, r, i, b);
+				if (SA[i] != x)
+					printf("fail @ %d: %d != %d\n", i, SA[i], x);
 			}
 			free(SA);
 		}
