@@ -33,10 +33,10 @@ rld_t *rld_enc_init(int asize, int bbits)
 	e->z[0] = calloc(RLD_LSIZE, 8);
 	e->n = 1;
 	e->shead = e->lhead = e->z[0];
-	e->p = e->lhead + asize;
+	e->p = e->lhead + asize + 1;
 	e->ssize = 1<<bbits;
 	e->stail = e->shead + e->ssize - 1;
-	e->cnt = calloc(asize, 8);
+	e->cnt = calloc(asize + 1, 8);
 	e->abits = ilog2(asize) + 1;
 	e->r = 64;
 	e->asize = asize;
@@ -52,9 +52,9 @@ static inline void enc_next_block(rld_t *e, int r)
 		e->z = realloc(e->z, e->n * sizeof(void*));
 		e->lhead = e->shead = e->z[e->n - 1] = calloc(RLD_LSIZE, 8);
 	} else e->shead += e->ssize;
-	for (i = 0; i < e->asize; ++i) e->shead[i] = e->cnt[i];
+	for (i = 0; i <= e->asize; ++i) e->shead[i] = e->cnt[i];
 	e->stail = e->shead + e->ssize - 1;
-	e->p = e->shead + e->asize;
+	e->p = e->shead + e->asize + 1;
 	e->r = r;
 }
 
@@ -74,7 +74,7 @@ int rld_enc(rld_t *e, int l, uint8_t c)
 		}
 	} else e->r -= w, *e->p |= x << e->r;
 	e->cnt[0] += l;
-	if (c) e->cnt[c] += l;
+	e->cnt[c + 1] += l;
 	return 0;
 }
 

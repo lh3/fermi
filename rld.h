@@ -48,7 +48,7 @@ static inline void rld_dec_init(rld_t *e, uint64_t k)
 	e->lhead = e->z[k>>RLD_LBITS];
 	e->shead = e->lhead + k%RLD_LSIZE;
 	e->stail = e->shead + e->ssize - 1;
-	e->p = e->shead + e->asize;
+	e->p = e->shead + e->asize + 1;
 	e->r = 64;
 }
 
@@ -76,7 +76,7 @@ static inline int rld_dec(rld_t *e, int *_c)
 	if (c == 0) {
 		if (e->p - e->lhead > RLD_LSIZE - e->ssize) e->shead = ++e->lhead;
 		else e->shead += e->ssize;
-		e->p = e->shead + e->asize;
+		e->p = e->shead + e->asize + 1;
 		e->stail = e->shead + e->ssize - 1;
 		e->r = 64;
 		return rld_dec0(e, _c);
@@ -94,23 +94,16 @@ static inline uint64_t rld_rank1(rld_t *e, const rldidx_t *r, uint64_t k, int c)
 		if (*q > k) break;
 		e->p = q;
 	}
-	if (c == 0) {
-		int i;
-		for (i = 1, y = *e->p; i < e->asize; ++i) y -= e->p[i];
-	} else y = e->p[c];
-	if (*e->p == k) return y;
-	z = *e->p;
+	if (*e->p == k) return e->p[c + 1];
+	y = e->p[c + 1]; z = *e->p;
 	e->shead = e->p;
-	e->p = e->shead + e->asize;
+	e->p += e->asize + 1;
 	e->stail = e->shead + e->ssize - 1;
 	e->r = 64;
 	while (1) {
 		int a, l;
 		l = rld_dec0(e, &a);
-		if (z + l >= k) {
-			y += k - z;
-			return y;
-		}
+		if (z + l >= k) return y + (a == c? k - z : 0);
 		if (a == c) y += l;
 	}
 }
