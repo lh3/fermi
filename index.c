@@ -21,6 +21,7 @@ unsigned char seq_nt5_table[256] = {
 
 int sais(const unsigned char *T, int *SA, int n, int k);
 int sa_check(const unsigned char *T, const int *SA, int n);
+double cputime();
 
 int main_index(int argc, char *argv[])
 {
@@ -45,6 +46,7 @@ int main_index(int argc, char *argv[])
 	
 	{ // read sequences
 		kseq_t *seq;
+		double t = cputime();
 		gzFile fp;
 		fp = gzopen(argv[optind], "r");
 		if (fp == 0) {
@@ -64,18 +66,23 @@ int main_index(int argc, char *argv[])
 		kseq_destroy(seq);
 		gzclose(fp);
 		for (i = 0; i < l; ++i) s[i] = s[i] > 127? 5 : seq_nt5_table[s[i]];
+		fprintf(stderr, "[M::%s] Read sequences in %.3f seconds.\n", __func__, cputime() - t);
 	}
 	
 	{ // construct BWT
 		int *SA = malloc(l * sizeof(int));
+		double t = cputime();
 		sais(s, SA, l, 6);
+		fprintf(stderr, "[M::%s] Constructed the suffix array in %.3f seconds.\n", __func__, cputime() - t);
 		if (check)
 			fprintf(stderr, "[M::%s] SA checking returned value: %d\n", __func__, sa_check(s, SA, l));
+		t = cputime();
 		for (i = 0; i < l; ++i) {
 			if (SA[i] == 0) SA[i] = 0;
 			else SA[i] = s[SA[i] - 1];
 		}
 		for (i = 0; i < l; ++i) s[i] = SA[i];
+		fprintf(stderr, "[M::%s] Generated BWT in %.3f seconds.\n", __func__, cputime() - t);
 		free(SA);
 	}
 
@@ -83,6 +90,7 @@ int main_index(int argc, char *argv[])
 		if (use_rld) {
 		uint64_t len;
 		int k, c;
+		double t = cputime();
 		rld_t *e;
 		e = rld_enc_init(6, bbits);
 		k = 1; c = s[0];
@@ -95,7 +103,7 @@ int main_index(int argc, char *argv[])
 		}
 		rld_enc(e, k, c);
 		len = rld_enc_finish(e);
-		fprintf(stderr, "[M::%s] length of encoded BWT: %lld\n", __func__, len/8);
+		fprintf(stderr, "[M::%s] Encoded BWT in %lld bytes in %.3f seconds\n", __func__, len/8, cputime() - t);
 		{
 			int b = 3, k = 0, *SA;
 			rldidx_t *r;
