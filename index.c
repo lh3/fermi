@@ -25,8 +25,8 @@ double cputime();
 
 int main_index(int argc, char *argv[])
 {
-	int i, max = 0, l = 0, bbits = 5, plain = 0, use_rld = 0, check = 0;
-	uint8_t *s = 0;
+	int i, max, l, bbits = 5, plain = 0, use_rld = 0, check = 0;
+	uint8_t *s;
 
 	{ // parse the command line
 		int c;
@@ -54,6 +54,9 @@ int main_index(int argc, char *argv[])
 			return 1;
 		}
 		seq = kseq_init(fp);
+		l = 0; max = 16;
+		s = malloc(max);
+		s[l++] = 0;
 		while (kseq_read(seq) >= 0) {
 			if (l + seq->seq.l + 1 >= max) {
 				max = l + seq->seq.l + 1;
