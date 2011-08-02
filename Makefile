@@ -2,7 +2,7 @@ CC=			gcc
 CFLAGS=		-g -Wall -O2
 DFLAGS=		#-DNDEBUG
 OBJS=		utils.o seq.o sais.o saux.o rle6.o rld.o index.o exact.o
-PROG=		bwa2
+PROG=		fmg
 INCLUDES=	
 LIBS=		-lm -lz
 
@@ -13,7 +13,7 @@ LIBS=		-lm -lz
 
 all:$(PROG)
 
-bwa2:$(OBJS) main.o
+fmg:$(OBJS) main.o
 		$(CC) $(CFLAGS) $(DFLAGS) $(OBJS) main.o -o $@ $(LIBS)
 
 rld.o:rld.h
