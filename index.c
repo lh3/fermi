@@ -33,7 +33,7 @@ int main_index(int argc, char *argv[])
 			}
 		}
 		if (argc == optind) {
-			fprintf(stderr, "Usage: bwa2 index <in.fa>\n");
+			fprintf(stderr, "Usage: fmg index <in.fa>\n");
 			return 1;
 		}
 	}

@@ -73,7 +73,7 @@ void fm6_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 		fm6_extend(e, r, ik, ok);
 		for (c = 0; c < 6; ++c)
 			if (ok[c<<2|2] == 1) break;
-		{
+		/*{
 			int i, j;
 			for (i = 0; i < 6; ++i) {
 				for (j = 0; j < 3; ++j)
@@ -81,7 +81,7 @@ void fm6_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 				printf("| ");
 			}
 			putchar('\n');
-		}
+		}*/
 		if (c) {
 			ik[0] = ok[c<<2], ik[1] = ok[c<<2|1], ik[2] = ok[c<<2|2];
 			kputc(c, s);

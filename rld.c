@@ -103,7 +103,7 @@ rldidx_t *rld_index(const rld_t *e)
 	n_blks = e->n_bits / 64 / e->ssize + 1;
 	last = rld_last_blk(e);
 	rawlen = rld_seek_blk(e, last)[0];
-	idx->ibits = ilog2(rawlen / n_blks) + 1;
+	idx->ibits = ilog2(rawlen / n_blks) + 3;
 	idx->rsize = ((rawlen + (1<<idx->ibits) - 1) >> idx->ibits) + 1;
 	idx->r = calloc(idx->rsize, 8);
 	idx->r[0] = 0;
