@@ -9,12 +9,12 @@
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
-extern unsigned char seq_nt6_table[128];
-
 int sais(const unsigned char *T, int *SA, int n, int k);
 int sa_check(const unsigned char *T, const int *SA, int n);
-void seq_reverse(int l, unsigned char *s);
-void seq_comp6(int l, unsigned char *s);
+
+void seq_char2nt6(int l, unsigned char *s);
+void seq_revcomp6(int l, unsigned char *s);
+
 double cputime();
 
 int main_index(int argc, char *argv[])
@@ -52,18 +52,21 @@ int main_index(int argc, char *argv[])
 		s = malloc(max);
 		s[l++] = 0;
 		while (kseq_read(seq) >= 0) {
-			if (l + seq->seq.l + 1 >= max) {
-				max = l + seq->seq.l + 1;
+			if (l + (seq->seq.l + 1) * 2 > max) {
+				max = l + (seq->seq.l + 1) * 2;
 				kroundup32(max);
 				s = realloc(s, max);
 			}
+			seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
+			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
+			l += seq->seq.l + 1;
+			seq_revcomp6(seq->seq.l, (uint8_t*)seq->seq.s);
 			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
 			l += seq->seq.l + 1;
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
-		for (i = 0; i < l; ++i) s[i] = s[i] > 127? 5 : seq_nt6_table[s[i]];
-		fprintf(stderr, "[M::%s] Read sequences in %.3f seconds.\n", __func__, cputime() - t);
+		fprintf(stderr, "[M::%s] Load sequences in %.3f seconds.\n", __func__, cputime() - t);
 	}
 	
 	{ // construct BWT

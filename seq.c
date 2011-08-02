@@ -9,6 +9,13 @@ unsigned char seq_nt6_table[128] = {
     5, 5, 5, 5,  4, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5
 };
 
+void seq_char2nt6(int l, unsigned char *s)
+{
+	int i;
+	for (i = 0; i < l; ++i)
+		s[i] = s[i] < 128? seq_nt6_table[s[i]] : 5;
+}
+
 void seq_reverse(int l, unsigned char *s)
 {
 	int i;
