@@ -9,19 +9,12 @@
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
-unsigned char seq_nt5_table[256] = {
-    0, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,
-    5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,
-    5, 1, 5, 2,  5, 5, 5, 3,  5, 5, 5, 5,  5, 5, 5, 5,
-    5, 5, 5, 5,  4, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,
-    5, 1, 5, 2,  5, 5, 5, 3,  5, 5, 5, 5,  5, 5, 5, 5,
-    5, 5, 5, 5,  4, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5
-};
+extern unsigned char seq_nt6_table[128];
 
 int sais(const unsigned char *T, int *SA, int n, int k);
 int sa_check(const unsigned char *T, const int *SA, int n);
+void seq_reverse(int l, unsigned char *s);
+void seq_comp6(int l, unsigned char *s);
 double cputime();
 
 int main_index(int argc, char *argv[])
@@ -69,7 +62,7 @@ int main_index(int argc, char *argv[])
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
-		for (i = 0; i < l; ++i) s[i] = s[i] > 127? 5 : seq_nt5_table[s[i]];
+		for (i = 0; i < l; ++i) s[i] = s[i] > 127? 5 : seq_nt6_table[s[i]];
 		fprintf(stderr, "[M::%s] Read sequences in %.3f seconds.\n", __func__, cputime() - t);
 	}
 	
