@@ -98,24 +98,32 @@ uint64_t rld_rawlen(const rld_t *e)
 rldidx_t *rld_index(const rld_t *e)
 {
 	rldidx_t *idx;
-	uint64_t i, last, k, rawlen, n_blks;
+	int c;
+	uint64_t last, n_blks;
+
 	idx = calloc(1, sizeof(rldidx_t));
+	idx->n = calloc(e->asize + 1, 8);
+	idx->b = calloc(e->asize + 1, sizeof(int));
+	idx->s = calloc(e->asize + 1, sizeof(void*));
 	n_blks = e->n_bits / 64 / e->ssize + 1;
 	last = rld_last_blk(e);
-	rawlen = rld_seek_blk(e, last)[0];
-	idx->ibits = ilog2(rawlen / n_blks) + 3;
-	idx->rsize = ((rawlen + (1<<idx->ibits) - 1) >> idx->ibits) + 1;
-	idx->r = calloc(idx->rsize, 8);
-	idx->r[0] = 0;
-	for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
-		uint64_t x = *rld_seek_blk(e, i);
-		while (x >= k<<idx->ibits) ++k;
-		if (k < idx->rsize) idx->r[k] = i;
-	}
-	assert(k >= idx->rsize - 1);
-	for (k = 1, last = 0; k < idx->rsize; ++k) {
-		if (idx->r[k]) last = idx->r[k];
-		else idx->r[k] = last;
+	for (c = 0; c <= e->asize; ++c) {
+		uint64_t i, k, rawlen, *s;
+		rawlen = rld_seek_blk(e, last)[c];
+		idx->b[c] = ilog2(rawlen / n_blks) + 3;
+		idx->n[c] = ((rawlen + (1<<idx->b[c]) - 1) >> idx->b[c]) + 1;
+		idx->s[c] = s = calloc(idx->n[c], 8);
+		s[0] = 0;
+		for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
+			uint64_t x = rld_seek_blk(e, i)[c];
+			while (x >= k<<idx->b[c]) ++k;
+			if (k < idx->n[c]) s[k] = i;
+		}
+		assert(k >= idx->n[c] - 1);
+		for (k = 1, last = 0; k < idx->n[c]; ++k) { // fill zero cells
+			if (s[k]) last = s[k];
+			else s[k] = last;
+		}
 	}
 	//for (k = 0; k < idx->rsize; ++k)
 	//	if (*rld_seek_blk(e, idx->r[k]) > k<<idx->ibits)

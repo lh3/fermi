@@ -23,8 +23,8 @@ typedef struct {
 } rld_t;
 
 typedef struct {
-	int rsize, ibits;
-	uint64_t *r;
+	int *b;
+	uint64_t *n, **s;
 } rldidx_t;
 
 #ifdef __cplusplus
@@ -84,15 +84,15 @@ static inline int rld_dec(rld_t *e, int *_c)
 	} else return c;
 }
 
-static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k)
+static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k, int c)
 {
-	uint64_t x = r->r[k>>r->ibits], *q;
+	uint64_t x = r->s[c][k>>r->b[c]], *q;
 	e->lhead = e->z[x>>RLD_LBITS];
 	q = e->p = e->lhead + (x&RLD_LMASK);
 	while (1) { // seek to the small block
 		if (q - e->lhead == RLD_LSIZE) q = ++e->lhead;
 		else q += e->ssize;
-		if (*q > k) break;
+		if (q[c] > k) break;
 		e->p = q;
 	}
 	e->shead = e->p;
@@ -105,7 +105,7 @@ static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k)
 static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c)
 {
 	uint64_t y, z;
-	rld_locate_blk(e, r, k);
+	rld_locate_blk(e, r, k, 0);
 	y = e->shead[c + 1]; z = *e->shead;
 	++k; // because k is the coordinate but not length
 	while (1) {
@@ -121,7 +121,7 @@ static inline void rld_rank1a(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t 
 {
 	int i;
 	uint64_t z;
-	rld_locate_blk(e, r, k);
+	rld_locate_blk(e, r, k, 0);
 	z = *e->shead;
 	for (i = 0; i < e->asize; ++i) ok[i] = e->shead[i + 1];
 	++k; // because k is the coordinate but not length

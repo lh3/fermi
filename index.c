@@ -104,7 +104,7 @@ int main_index(int argc, char *argv[])
 		rld_enc(e, k, c);
 		len = rld_enc_finish(e);
 		fprintf(stderr, "[M::%s] Encoded BWT in %lld bytes in %.3f seconds\n", __func__, len/8, cputime() - t);
-		if (0) {
+		if (1) {
 			int b = 3, k = 0, *SA;
 			rldidx_t *r;
 			r = rld_index(e);
