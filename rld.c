@@ -82,10 +82,13 @@ int rld_enc(rld_t *e, int l, uint8_t c)
 uint64_t rld_enc_finish(rld_t *e)
 {
 	int i;
+	uint64_t last;
 	enc_next_block(e, 64);
 	e->n_bits = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64;
 	// recompute e->cnt as the accumulative count
 	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
+	last = rld_last_blk(e);
+	e->lastblk = rld_seek_blk(e, last);
 	return e->n_bits;
 }
 

@@ -19,7 +19,7 @@ typedef struct {
 	uint64_t n_bits; // total number of bits (unchanged in decoding)
 	uint64_t **z; // the actual data (unchanged in decoding)
 	uint64_t *cnt;
-	uint64_t *p, *lhead, *shead, *stail;
+	uint64_t *p, *lhead, *shead, *stail, *lastblk;
 } rld_t;
 
 typedef struct {
@@ -134,6 +134,44 @@ static inline void rld_rank1a(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t 
 		}
 		z += l; ok[a] += l;
 	}
+}
+
+static inline uint64_t rld_select11(rld_t *e, const rldidx_t *r, uint64_t k, int c)
+{
+	uint64_t z, y;
+	rld_locate_blk(e, r, k, c);
+	z = *e->shead; y = e->shead[c + 1];
+	++k;
+	while (1) {
+		int a = -1, l;
+		l = rld_dec0(e, &a);
+		//printf("* %d: %lld\t%lld\t%lld\n", a, y, z, k);
+		if (a == c && y + l >= k) return z + (k - y);
+		z += l;
+		if (a == c) y += l;
+	}
+	return 0;
+}
+
+static inline uint64_t rld_select1a(rld_t *e, const rldidx_t *r, uint64_t k, int c, uint64_t *ok)
+{
+	int i;
+	uint64_t z, *okc = ok + c;
+	rld_locate_blk(e, r, k, c);
+	z = *e->shead;
+	for (i = 0; i < e->asize; ++i) ok[i] = e->shead[i + 1];
+	++k; // because k is the coordinate but not length
+	while (1) {
+		int a = -1, l;
+		l = rld_dec0(e, &a);
+		if (*okc + l >= k) {
+			z += k - *okc;
+			*okc = k;
+			return z;
+		}
+		z += l; ok[a] += l;
+	}
+	return 0;
 }
 
 static inline void rld_rank21(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
