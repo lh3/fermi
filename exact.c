@@ -40,7 +40,7 @@ void fm_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 	}
 }
 
-int fm6_extend(rld_t *e, const rldidx_t *r, uint64_t ik[3], uint64_t ok[24])
+int fm6_lefta(rld_t *e, const rldidx_t *r, uint64_t ik[3], uint64_t ok[24])
 {
 	uint64_t tk[6], tl[6];
 	int i;
@@ -58,8 +58,24 @@ int fm6_extend(rld_t *e, const rldidx_t *r, uint64_t ik[3], uint64_t ok[24])
 	return 0;
 }
 
-int fm6_chop()
+int fm6_left1(rld_t *e, const rldidx_t *r, uint64_t ik[3], int c, uint64_t ok[3])
 {
+	uint64_t o[24];
+	fm6_lefta(e, r, ik, o);
+	ok[0] = o[c<<2|0]; ok[1] = o[c<<2|1]; ok[2] = o[c<<2|2];
+	return 0;
+}
+
+int fm6_right1(rld_t *e, const rldidx_t *r, uint64_t ik[3], int _c, uint64_t ok[3])
+{
+	uint64_t tk[6], tl[6], tmp;
+	int i, c = (_c >= 1 && _c <= 4)? 5 - _c : _c;
+	ok[1] = rld_select1a(e, r, ik[1] - e->cnt[c], c, tk) + 1;
+	ok[2] = rld_select1a(e, r, ik[1] + ik[2] - e->cnt[c], c, tl) - ok[1] + 1;
+	for (i = 0; i < 6; ++i) tl[i] -= tk[i];
+	tmp = tl[1]; tl[1] = tl[4]; tl[4] = tmp;
+	tmp = tl[2]; tl[2] = tl[3]; tl[3] = tmp;
+	for (i = 0, ok[0] = ik[0]; i < _c; ++i) ok[0] -= tl[i];
 	return 0;
 }
 
@@ -68,9 +84,19 @@ void fm6_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 	uint64_t ok[24], ik[3];
 	s->l = 0;
 	ik[0] = ik[1] = x + 1; ik[2] = 1;
+	if (1) {
+		uint64_t ik[3], ok[3];
+		int i;
+		ik[0] = 9; ik[1] = 7; ik[2] = 2;
+		fm6_left1(e, r, ik, 1, ok);
+		printf("%lld, %lld, %lld\n", ok[0], ok[1], ok[2]);
+		for (i = 0; i < 3; ++i) ik[i] = ok[i];
+		fm6_right1(e, r, ik, 3, ok);
+		printf("%lld, %lld, %lld\n", ok[0], ok[1], ok[2]);
+	}
 	while (1) {
 		int c;
-		fm6_extend(e, r, ik, ok);
+		fm6_lefta(e, r, ik, ok);
 		for (c = 0; c < 6; ++c)
 			if (ok[c<<2|2] == 1) break;
 		/*{

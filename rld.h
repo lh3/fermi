@@ -136,44 +136,6 @@ static inline void rld_rank1a(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t 
 	}
 }
 
-static inline uint64_t rld_select11(rld_t *e, const rldidx_t *r, uint64_t k, int c)
-{
-	uint64_t z, y;
-	rld_locate_blk(e, r, k, c);
-	z = *e->shead; y = e->shead[c + 1];
-	++k;
-	while (1) {
-		int a = -1, l;
-		l = rld_dec0(e, &a);
-		//printf("* %d: %lld\t%lld\t%lld\n", a, y, z, k);
-		if (a == c && y + l >= k) return z + (k - y);
-		z += l;
-		if (a == c) y += l;
-	}
-	return 0;
-}
-
-static inline uint64_t rld_select1a(rld_t *e, const rldidx_t *r, uint64_t k, int c, uint64_t *ok)
-{
-	int i;
-	uint64_t z, *okc = ok + c;
-	rld_locate_blk(e, r, k, c);
-	z = *e->shead;
-	for (i = 0; i < e->asize; ++i) ok[i] = e->shead[i + 1];
-	++k; // because k is the coordinate but not length
-	while (1) {
-		int a = -1, l;
-		l = rld_dec0(e, &a);
-		if (*okc + l >= k) {
-			z += k - *okc;
-			*okc = k;
-			return z;
-		}
-		z += l; ok[a] += l;
-	}
-	return 0;
-}
-
 static inline void rld_rank21(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
 {
 	*ok = rld_rank11(e, r, k, c);
@@ -184,6 +146,48 @@ static inline void rld_rank2a(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t 
 {
 	rld_rank1a(e, r, k, ok);
 	rld_rank1a(e, r, l, ol);
+}
+
+static inline uint64_t rld_select11(rld_t *e, const rldidx_t *r, uint64_t k, int c)
+{
+	uint64_t z, y;
+	if (k >= e->lastblk[c + 1]) return e->lastblk[0] - 1;
+	rld_locate_blk(e, r, k, c);
+	z = *e->shead; y = e->shead[c + 1];
+	++k;
+	while (1) {
+		int a = -1, l;
+		l = rld_dec0(e, &a);
+		if (a == c && y + l >= k) return z + (k - y) - 2;
+		z += l;
+		if (a == c) y += l;
+	}
+	return 0;
+}
+
+static inline uint64_t rld_select1a(rld_t *e, const rldidx_t *r, uint64_t k, int c, uint64_t *ok)
+{
+	int i;
+	uint64_t z, *okc = ok + c;
+	if (k >= e->lastblk[c + 1]) {
+		for (i = 0; i < e->asize; ++i) ok[i] = e->lastblk[i + 1];
+		return e->lastblk[0] - 1;
+	}
+	rld_locate_blk(e, r, k, c);
+	z = *e->shead;
+	for (i = 0; i < e->asize; ++i) ok[i] = e->shead[i + 1];
+	++k;
+	while (1) {
+		int a = -1, l;
+		l = rld_dec0(e, &a);
+		if (a == c && *okc + l >= k) {
+			z += k - *okc;
+			*okc = k;
+			return z - 2;
+		}
+		z += l; ok[a] += l;
+	}
+	return 0;
 }
 
 #endif
