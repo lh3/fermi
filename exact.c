@@ -40,28 +40,29 @@ void fm_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 	}
 }
 
-int fm6_lefta(rld_t *e, const rldidx_t *r, uint64_t ik[3], uint64_t ok[24])
+int fm6_extend(rld_t *e, const rldidx_t *r, uint64_t ik[3], uint64_t ok[24], int is_back)
 {
 	uint64_t tk[6], tl[6];
 	int i;
-	rld_rank2a(e, r, ik[0] - 1, ik[0] - 1 + ik[2], tk, tl);
+	rld_rank2a(e, r, ik[!is_back] - 1, ik[!is_back] - 1 + ik[2], tk, tl);
 	for (i = 0; i < 6; ++i) {
-		ok[i<<2|0] = e->cnt[i] + tk[i];
-		ok[i<<2|2] = tl[i] - tk[i];
+		ok[i<<2|(!is_back)] = e->cnt[i] + tk[i];
+		ok[i<<2|2] = (tl[i] -= tk[i]);
 	}
-	ok[1]  = ik[1];
-	ok[5]  = ok[1]  + ok[0<<2|2];
-	ok[9]  = ok[5]  + ok[4<<2|2];
-	ok[13] = ok[9]  + ok[3<<2|2];
-	ok[17] = ok[13] + ok[2<<2|2];
-	ok[21] = ok[17] + ok[1<<2|2];
+	ok[is_back+0]  = ik[is_back+0];
+	ok[is_back+4]  = ok[is_back+0]  + tl[0];
+	ok[is_back+8]  = ok[is_back+4]  + tl[4];
+	ok[is_back+12] = ok[is_back+8]  + tl[3];
+	ok[is_back+16] = ok[is_back+12] + tl[2];
+	ok[is_back+20] = ok[is_back+16] + tl[1];
 	return 0;
 }
 
-int fm6_left1(rld_t *e, const rldidx_t *r, uint64_t ik[3], int c, uint64_t ok[3])
+int fm6_extend1(rld_t *e, const rldidx_t *r, uint64_t ik[3], int c, uint64_t ok[3], int is_back)
 {
 	uint64_t o[24];
-	fm6_lefta(e, r, ik, o);
+	if (!is_back) c = (c >= 1 && c <= 4)? 5 - c : c;
+	fm6_extend(e, r, ik, o, is_back);
 	ok[0] = o[c<<2|0]; ok[1] = o[c<<2|1]; ok[2] = o[c<<2|2];
 	return 0;
 }
@@ -73,7 +74,7 @@ void fm6_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 	ik[0] = ik[1] = x + 1; ik[2] = 1;
 	while (1) {
 		int c;
-		fm6_lefta(e, r, ik, ok);
+		fm6_extend(e, r, ik, ok, 0);
 		for (c = 0; c < 6; ++c)
 			if (ok[c<<2|2] == 1) break;
 		/*{
