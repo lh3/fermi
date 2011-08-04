@@ -113,11 +113,8 @@ int main_index(int argc, char *argv[])
 				if (s[i] == b) ++k;
 				SA[i] = k;
 			}
-			printf("length=%d\nselect -> %lld\n", l, rld_select11(e, r, 2, 2));
 			for (i = 0; i < l; ++i) {
 				int x = rld_rank11(e, r, i, b);
-				//int y = rld_select11(e, r, x, b);
-				//printf("%d\t%d\t%d\n", x, y, i);
 				if (SA[i] != x)
 					printf("fail @ %d: %d != %d\n", i, SA[i], x);
 			}
