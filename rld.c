@@ -34,18 +34,24 @@ rld_t *rld_enc_init(int asize, int bbits)
 	e->z[0] = calloc(RLD_LSIZE, 8);
 	e->n = 1;
 	e->shead = e->lhead = e->z[0];
-	e->p = e->lhead + asize + 1;
 	e->ssize = 1<<bbits;
 	e->stail = e->shead + e->ssize - 1;
 	e->cnt = calloc(asize + 1, 8);
+	e->mcnt = calloc(asize + 1, 8);
 	e->abits = ilog2(asize) + 1;
-	e->r = 64;
 	e->asize = asize;
 	e->sbits = bbits;
+	e->asize1 = asize + 1;
+	e->r0[0] = 64 - e->asize1*16%64;
+	e->r0[1] = 64 - e->asize1*32%64;
+	e->o0[0] = e->asize1*16/64;
+	e->o0[1] = e->asize1*32/64;
+	e->r = e->r0[0];
+	e->p = e->shead + e->o0[0];
 	return e;
 }
 
-static inline void enc_next_block(rld_t *e, int r)
+static inline void enc_next_block(rld_t *e)
 {
 	int i;
 	if (e->p + 1 - e->lhead == RLD_LSIZE) {
@@ -53,10 +59,20 @@ static inline void enc_next_block(rld_t *e, int r)
 		e->z = realloc(e->z, e->n * sizeof(void*));
 		e->lhead = e->shead = e->z[e->n - 1] = calloc(RLD_LSIZE, 8);
 	} else e->shead += e->ssize;
-	for (i = 0; i <= e->asize; ++i) e->shead[i] = e->cnt[i];
+	if (e->cnt[0] - e->mcnt[0] >= 0x8000) {
+		uint32_t *p = (uint32_t*)e->shead[0];
+		for (i = 0; i <= e->asize; ++i) p[i] = e->cnt[i] - e->mcnt[i];
+		*p |= 1u<<31;
+		e->p = e->shead + e->o0[1];
+		e->r = e->r0[1];
+	} else {
+		uint16_t *p = (uint16_t*)e->shead[0];
+		for (i = 0; i <= e->asize; ++i) p[i] = e->cnt[i] - e->mcnt[i];
+		e->p = e->shead + e->o0[0];
+		e->r = e->r0[0];
+	}
 	e->stail = e->shead + e->ssize - 1;
-	e->p = e->shead + e->asize + 1;
-	e->r = r;
+	for (i = 0; i <= e->asize; ++i) e->mcnt[i] = e->cnt[i];
 }
 
 int rld_enc(rld_t *e, int l, uint8_t c)
@@ -64,15 +80,11 @@ int rld_enc(rld_t *e, int l, uint8_t c)
 	int w;
 	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;
 	w += e->abits;
+	if (w > e->r && e->p == e->stail) enc_next_block(e);
 	if (w > e->r) {
-		if (e->p == e->stail) { // jump to the next block
-			enc_next_block(e, 64 - w);
-			*e->p |= x << e->r;
-		} else {
-			w -= e->r;
-			*e->p++ |= x >> w;
-			*e->p = x << (e->r = 64 - w);
-		}
+		w -= e->r;
+		*e->p++ |= x >> w;
+		*e->p = x << (e->r = 64 - w);
 	} else e->r -= w, *e->p |= x << e->r;
 	e->cnt[0] += l;
 	e->cnt[c + 1] += l;
@@ -83,9 +95,9 @@ uint64_t rld_enc_finish(rld_t *e)
 {
 	int i;
 	uint64_t last;
-	enc_next_block(e, 64);
+	enc_next_block(e);
 	e->n_bits = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64;
-	// recompute e->cnt as the accumulative count
+	// recompute e->cnt as the accumulative count; e->mcnt[] keeps the marginal counts
 	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
 	last = rld_last_blk(e);
 	return e->n_bits;
@@ -106,26 +118,40 @@ rldidx_t *rld_index(const rld_t *e)
 	n_blks = e->n_bits / 64 / e->ssize + 1;
 	last = rld_last_blk(e);
 	{
-		uint64_t i, k, rawlen;
-		rawlen = rld_seek_blk(e, last)[0];
-		idx->b = ilog2(rawlen / n_blks) + 3;
-		idx->n = ((rawlen + (1<<idx->b) - 1) >> idx->b) + 1;
-		idx->s = calloc(idx->n, 8);
+		uint64_t i, k, *cnt;
+		int j;
+		cnt = alloca((e->asize + 1) * 8);
+		idx->b = ilog2(e->mcnt[0] / n_blks) + 3;
+		idx->n = ((e->mcnt[0] + (1<<idx->b) - 1) >> idx->b) + 1;
+		idx->s = calloc(idx->n * e->asize1, 8);
 		idx->s[0] = 0;
+		for (j = 0; j < e->asize; ++j) cnt[j] = 0;
 		for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
-			uint64_t x = rld_seek_blk(e, i)[0];
-			while (x >= k<<idx->b) ++k;
-			if (k < idx->n) idx->s[k] = i;
+			uint64_t sum, *p = rld_seek_blk(e, i);
+			if (*p>>63) { // 32-bit count
+				uint32_t *q = (uint32_t*)p;
+				for (j = 1; j <= e->asize; ++j) cnt[j-1] += q[j];
+			} else { // 16-bit count
+				uint16_t *q = (uint16_t*)p;
+				for (j = 1; j <= e->asize; ++j) cnt[j-1] += q[j];
+			}
+			for (j = 0, sum = 0; j < e->asize; ++j) sum += cnt[j];
+			while (sum >= k<<idx->b) ++k;
+			if (k < idx->n) {
+				uint64_t x = k * e->asize1;
+				idx->s[x] = i;
+				for (j = 0; j < e->asize; ++j) idx->s[x + j - 1] = cnt[j];
+			}
 		}
 		assert(k >= idx->n - 1);
-		for (k = 1, last = 0; k < idx->n; ++k) { // fill zero cells
-			if (idx->s[k]) last = idx->s[k];
-			else idx->s[k] = last;
+		for (k = 1; k < idx->n; ++k) { // fill zero cells
+			uint64_t x = k * e->asize1;
+			if (idx->s[x] == 0) {
+				for (j = 0; j <= e->asize; ++j)
+					idx->s[x + j] = idx->s[x - e->asize1 + j];
+			}
 		}
 	}
-	//for (k = 0; k < idx->rsize; ++k)
-	//	if (*rld_seek_blk(e, idx->r[k]) > k<<idx->ibits)
-	//		printf("%lld > %lld\n", *rld_seek_blk(e, idx->r[k]), k<<idx->ibits);
 	return idx;
 }
 

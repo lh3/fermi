@@ -2,6 +2,7 @@
 #define RLDELTA_H
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #define RLD_LBITS 23
 #define RLD_LSIZE (1<<RLD_LBITS)
@@ -9,16 +10,17 @@
 
 typedef struct {
 	// static members (initialized in the constructor)
-	int asize; // alphabet size
+	int16_t asize, asize1; // alphabet size
 	int abits; // bits required to store a symbol
 	int sbits; // bits per small block
 	int ssize; // ssize = 1<<sbits
+	int8_t r0[2], o0[2];
 	// dynamic members
 	int n; // number of blocks (unchanged in decoding)
 	int r; // bits remaining in the last 64-bit integer
 	uint64_t n_bits; // total number of bits (unchanged in decoding)
 	uint64_t **z; // the actual data (unchanged in decoding)
-	uint64_t *cnt;
+	uint64_t *cnt, *mcnt; // after enc_finish, cnt keeps the accumulative count and mcnt keeps the marginal
 	uint64_t *p, *lhead, *shead, *stail;
 } rld_t;
 
@@ -84,29 +86,42 @@ static inline int rld_dec(rld_t *e, int *_c)
 	} else return c;
 }
 
-static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k)
+static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t *cnt, uint64_t *sum)
 {
-	uint64_t x = r->s[k>>r->b], *q;
-	e->lhead = e->z[x>>RLD_LBITS];
-	q = e->p = e->lhead + (x&RLD_LMASK);
+	int j;
+	uint64_t *q, *z = r->s + (k>>r->b) * e->asize1;
+	e->lhead = e->z[*z>>RLD_LBITS];
+	q = e->p = e->lhead + (*z&RLD_LMASK);
+	for (j = 1, *sum = 0; j < e->asize1; ++j) sum += (cnt[j-1] = z[j]);
 	while (1) { // seek to the small block
+		uint64_t c = 0;
 		if (q - e->lhead == RLD_LSIZE) q = ++e->lhead;
 		else q += e->ssize;
-		if (*q > k) break;
+		c = (*q>>63)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
+		if (*sum + c > k) break;
+		if (*q>>63) {
+			uint32_t *p = (uint32_t*)q;
+			for (j = 0; j < e->asize; ++j) cnt[j] += p[j+1];
+		} else {
+			uint16_t *p = (uint16_t*)q;
+			for (j = 0; j < e->asize; ++j) cnt[j] += p[j+1];
+		}
+		*sum += c;
 		e->p = q;
 	}
 	e->shead = e->p;
 	e->stail = e->shead + e->ssize - 1;
-	e->p += e->asize + 1;
-	e->r = 64;
+	e->p += e->o0[*e->shead>>63];
+	e->r = e->r0[*e->shead>>63];
 	return q;
 }
 
 static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c)
 {
-	uint64_t y, z;
-	rld_locate_blk(e, r, k);
-	y = e->shead[c + 1]; z = *e->shead;
+	uint64_t y, z, *cnt;
+	cnt = alloca(e->asize1 * 8);
+	rld_locate_blk(e, r, k, cnt, &z);
+	y = cnt[c + 1];
 	++k; // because k is the coordinate but not length
 	while (1) {
 		int a = -1, l;
@@ -119,11 +134,8 @@ static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c
 
 static inline void rld_rank1a(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t *ok)
 {
-	int i;
 	uint64_t z;
-	rld_locate_blk(e, r, k);
-	z = *e->shead;
-	for (i = 0; i < e->asize; ++i) ok[i] = e->shead[i + 1];
+	rld_locate_blk(e, r, k, ok, &z);
 	++k; // because k is the coordinate but not length
 	while (1) {
 		int a = -1, l;
