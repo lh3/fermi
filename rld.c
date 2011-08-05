@@ -49,6 +49,14 @@ rld_t *rld_enc_init(int asize, int bbits)
 	return e;
 }
 
+void rld_destroy(rld_t *e)
+{
+	int i = 0;
+	if (e == 0) return;
+	for (i = 0; i < e->n; ++i) free(e->z[i]);
+	free(e->z); free(e->cnt); free(e->mcnt); free(e);
+}
+
 static inline void enc_next_block(rld_t *e)
 {
 	int i;
@@ -93,11 +101,34 @@ uint64_t rld_enc_finish(rld_t *e)
 	int i;
 	uint64_t last;
 	enc_next_block(e);
-	e->n_bits = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 64;
+	e->n_bytes = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 8;
 	// recompute e->cnt as the accumulative count; e->mcnt[] keeps the marginal counts
 	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
 	last = rld_last_blk(e);
-	return e->n_bits;
+	return e->n_bytes;
+}
+
+int rld_dump(const rld_t *e, const char *fn)
+{
+	uint32_t a[2];
+	uint64_t k;
+	int i;
+	FILE *fp;
+	if ((fp = fopen(fn, "wb")) == 0) return -1;
+	a[0] = e->asize; a[1] = e->sbits;
+	fwrite("RLD\1", 1, 4, fp);
+	fwrite(a, 4, 2, fp);
+	fwrite(&e->n_bytes, 8, 1, fp);
+	for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE)
+		fwrite(e->z[i], 8, RLD_LSIZE, fp);
+	fwrite(e->z[i], 8, k, fp);
+	fclose(fp);
+	return 0;
+}
+
+rld_t *rld_restore(const char *fn)
+{
+	return 0;
 }
 
 uint64_t rld_rawlen(const rld_t *e)
@@ -112,7 +143,7 @@ rldidx_t *rld_index(const rld_t *e)
 	uint64_t last, n_blks;
 
 	idx = calloc(1, sizeof(rldidx_t));
-	n_blks = e->n_bits / 64 / e->ssize + 1;
+	n_blks = e->n_bytes * 8 / 64 / e->ssize + 1;
 	last = rld_last_blk(e);
 	{
 		uint64_t i, k, *cnt;

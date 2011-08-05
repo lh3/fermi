@@ -18,7 +18,7 @@ typedef struct {
 	// dynamic members
 	int n; // number of blocks (unchanged in decoding)
 	int r; // bits remaining in the last 64-bit integer
-	uint64_t n_bits; // total number of bits (unchanged in decoding)
+	uint64_t n_bytes; // total number of bits (unchanged in decoding)
 	uint64_t **z; // the actual data (unchanged in decoding)
 	uint64_t *cnt, *mcnt; // after enc_finish, cnt keeps the accumulative count and mcnt keeps the marginal
 	uint64_t *p, *lhead, *shead, *stail;
@@ -39,11 +39,15 @@ extern "C" {
 	uint64_t rld_rawlen(const rld_t *e);
 	rldidx_t *rld_index(const rld_t *e);
 
+	int rld_dump(const rld_t *e, const char *fn);
+	rld_t *rld_restore(const char *fn);
+	void rld_destroy(rld_t *e);
+
 #ifdef __cplusplus
 }
 #endif
 
-#define rld_last_blk(e) ((e)->n_bits>>6>>(e)->sbits<<(e)->sbits)
+#define rld_last_blk(e) ((e)->n_bytes>>3>>(e)->sbits<<(e)->sbits)
 #define rld_seek_blk(e, k) ((e)->z[(k)>>RLD_LBITS] + ((k)&RLD_LMASK))
 
 static inline void rld_dec_init(rld_t *e, uint64_t k)
