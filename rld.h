@@ -55,7 +55,7 @@ static inline void rld_dec_init(rld_t *e, uint64_t k)
 	e->lhead = e->z[k>>RLD_LBITS];
 	e->shead = e->lhead + k%RLD_LSIZE;
 	e->stail = e->shead + e->ssize - 1;
-	e->p = e->shead + e->asize + 1;
+	e->p = e->shead + e->o0[*e->shead>>63];
 	e->r = 64;
 }
 
@@ -79,15 +79,17 @@ static inline int rld_dec0(rld_t *e, int *c)
 
 static inline int rld_dec(rld_t *e, int *_c)
 {
-	int c = rld_dec0(e, _c);
-	if (c == 0) {
+	int l = rld_dec0(e, _c);
+	if (l == 0) {
+		uint64_t last = rld_last_blk(e);
 		if (e->p - e->lhead > RLD_LSIZE - e->ssize) e->shead = ++e->lhead;
 		else e->shead += e->ssize;
-		e->p = e->shead + e->asize + 1;
+		if (e->shead == rld_seek_blk(e, last)) return -1;
+		e->p = e->shead + e->o0[*e->shead>>63];
 		e->stail = e->shead + e->ssize - 1;
 		e->r = 64;
 		return rld_dec0(e, _c);
-	} else return c;
+	} else return l;
 }
 
 static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k, uint64_t *cnt, uint64_t *sum)

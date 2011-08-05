@@ -127,11 +127,16 @@ int main_index(int argc, char *argv[])
 int main_bwt2plain(int argc, char *argv[])
 {
 	rld_t *e;
+	int i, l, c = 0;
 	if (argc == 1) {
 		fprintf(stderr, "Usage: fmg bwt2plain <idxbase.bwt>\n");
 		return 1;
 	}
 	e = rld_restore(argv[1]);
+	rld_dec_init(e, 0);
+	while ((l = rld_dec(e, &c)) >= 0)
+		for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
+	putchar('\n');
 	rld_destroy(e);
 	return 0;
 }
