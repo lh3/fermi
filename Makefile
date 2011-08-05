@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2
 DFLAGS=		#-DNDEBUG
-OBJS=		utils.o seq.o sais.o saux.o rle6.o rld.o index.o exact.o
+OBJS=		utils.o seq.o sais.o saux.o rld.o index.o exact.o
 PROG=		fmg
 INCLUDES=	
 LIBS=		-lm -lz
@@ -17,8 +17,7 @@ fmg:$(OBJS) main.o
 		$(CC) $(CFLAGS) $(DFLAGS) $(OBJS) main.o -o $@ $(LIBS)
 
 rld.o:rld.h
-rle6.o:rle6.h
-index.o:rle6.h rld.h
+index.o:rld.h
 exact.o:exact.h rld.h kstring.h
 
 clean:

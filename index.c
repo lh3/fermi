@@ -3,7 +3,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <zlib.h>
-#include "rle6.h"
 #include "rld.h"
 #include "exact.h"
 #include "kseq.h"
@@ -19,17 +18,16 @@ double cputime();
 
 int main_index(int argc, char *argv[])
 {
-	int i, max, l, bbits = 3, plain = 0, use_rld = 0, check = 0;
+	int i, max, l, bbits = 3, plain = 0, check = 0;
 	uint8_t *s;
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "CPb:d")) >= 0) {
+		while ((c = getopt(argc, argv, "CPb:")) >= 0) {
 			switch (c) {
 				case 'C': check = 1; break;
 				case 'P': plain = 1; break;
 				case 'b': bbits = atoi(optarg); break;
-				case 'd': use_rld = 1; break;
 			}
 		}
 		if (argc == optind) {
@@ -87,7 +85,6 @@ int main_index(int argc, char *argv[])
 	}
 
 	if (!plain) {
-		if (use_rld) {
 		uint64_t len;
 		int k, c;
 		double t = cputime();
@@ -130,27 +127,7 @@ int main_index(int argc, char *argv[])
 			for (i = str.l - 1; i >= 0; --i) putchar("$ACGTN"[(int)str.s[i]]); putchar('\n');
 		}
 		free(e->cnt); free(e);
-		} else {
-		uint64_t len;
-		int k, c;
-		rle6_t *e;
-		e = rle6_enc_init();
-		k = 1; c = s[0];
-		for (i = 1; i < l; ++i) {
-			if (s[i] != c) {
-				rle6_enc(e, k, c);
-				c = s[i];
-				k = 1;
-			} else ++k;
-		}
-		rle6_enc(e, k, c);
-		len = rle6_enc_finish(e);
-		printf("%lf\n", len/8.);
-		free(e);
-		}
-	} else {
-		for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
-	}
+	} else for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
 
 	free(s);
 	return 0;
