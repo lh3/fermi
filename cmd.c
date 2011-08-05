@@ -18,21 +18,33 @@ double cputime();
 
 int main_index(int argc, char *argv[])
 {
-	int i, max, l, bbits = 3, plain = 0, check = 0;
+	int i, max, l, bbits = 3, plain = 0, check = 0, force = 0;
 	uint8_t *s;
+	char *idxfn = 0;
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "CPb:")) >= 0) {
+		while ((c = getopt(argc, argv, "CPfb:")) >= 0) {
 			switch (c) {
 				case 'C': check = 1; break;
 				case 'P': plain = 1; break;
+				case 'f': force = 1; break;
 				case 'b': bbits = atoi(optarg); break;
 			}
 		}
 		if (argc == optind) {
-			fprintf(stderr, "Usage: fmg index <in.fa>\n");
+			fprintf(stderr, "Usage: fmg index [-CfP] [-b sbits] <in.fa>\n");
 			return 1;
+		}
+		if (!plain) {
+			FILE *fp;
+			idxfn = malloc(strlen(argv[1]) + 5);
+			strcat(strcpy(idxfn, argv[optind]), ".bwt");
+			if (!force && (fp = fopen(idxfn, "rb")) != 0) {
+				fclose(fp);
+				fprintf(stderr, "[E::%s] File `%s' exists. Please use `-f' to overwrite.\n", __func__, idxfn);
+				return 1;
+			}
 		}
 	}
 	
@@ -101,6 +113,31 @@ int main_index(int argc, char *argv[])
 		rld_enc(e, k, c);
 		len = rld_enc_finish(e);
 		fprintf(stderr, "[M::%s] Encoded BWT in %lld bytes in %.3f seconds\n", __func__, len, cputime() - t);
+		rld_dump(e, idxfn);
+		rld_destroy(e);
+	} else for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
+
+	free(s); free(idxfn);
+	return 0;
+}
+
+int main_bwt2plain(int argc, char *argv[])
+{
+}
+
+int main_exact(int argc, char *argv[])
+{
+	int c;
+	rld_t *e;
+	while ((c = getopt(argc, argv, "")) >= 0) {
+	}
+	if (argc == optind) {
+		fprintf(stderr, "Usage: fmg exact <index.base> ...\n");
+		return 1;
+	}
+	e = rld_restore(argv[optind]);
+#if 0
+	{
 		if (1) {
 			int b = 3, k = 0, *SA;
 			rldidx_t *r;
@@ -126,9 +163,8 @@ int main_index(int argc, char *argv[])
 			fm6_retrieve(e, r, 0, &str);
 			for (i = str.l - 1; i >= 0; --i) putchar("$ACGTN"[(int)str.s[i]]); putchar('\n');
 		}
-		free(e->cnt); free(e);
-	} else for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
-
-	free(s);
+	}
+#endif
+	rld_destroy(e);
 	return 0;
 }
