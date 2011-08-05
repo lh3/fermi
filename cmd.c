@@ -115,7 +115,10 @@ int main_index(int argc, char *argv[])
 		fprintf(stderr, "[M::%s] Encoded BWT in %lld bytes in %.3f seconds\n", __func__, len, cputime() - t);
 		rld_dump(e, idxfn);
 		rld_destroy(e);
-	} else for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
+	} else {
+		for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
+		putchar('\n');
+	}
 
 	free(s); free(idxfn);
 	return 0;
@@ -123,6 +126,14 @@ int main_index(int argc, char *argv[])
 
 int main_bwt2plain(int argc, char *argv[])
 {
+	rld_t *e;
+	if (argc == 1) {
+		fprintf(stderr, "Usage: fmg bwt2plain <idxbase.bwt>\n");
+		return 1;
+	}
+	e = rld_restore(argv[1]);
+	rld_destroy(e);
+	return 0;
 }
 
 int main_exact(int argc, char *argv[])

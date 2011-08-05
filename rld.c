@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 #include "rld.h"
 
@@ -99,12 +100,10 @@ int rld_enc(rld_t *e, int l, uint8_t c)
 uint64_t rld_enc_finish(rld_t *e)
 {
 	int i;
-	uint64_t last;
 	enc_next_block(e);
 	e->n_bytes = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 8;
 	// recompute e->cnt as the accumulative count; e->mcnt[] keeps the marginal counts
 	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
-	last = rld_last_blk(e);
 	return e->n_bytes;
 }
 
@@ -116,8 +115,9 @@ int rld_dump(const rld_t *e, const char *fn)
 	FILE *fp;
 	if ((fp = fopen(fn, "wb")) == 0) return -1;
 	a[0] = e->asize; a[1] = e->sbits;
-	fwrite("RLD\1", 1, 4, fp);
-	fwrite(a, 4, 2, fp);
+	fwrite("RLD\1", 1, 4, fp); // write magic
+	fwrite(a, 4, 2, fp); // write asize and sbits
+	fwrite(e->mcnt, 8, e->asize + 1, fp); // write the marginal counts
 	fwrite(&e->n_bytes, 8, 1, fp);
 	for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE)
 		fwrite(e->z[i], 8, RLD_LSIZE, fp);
@@ -128,7 +128,33 @@ int rld_dump(const rld_t *e, const char *fn)
 
 rld_t *rld_restore(const char *fn)
 {
-	return 0;
+	FILE *fp;
+	rld_t *e;
+	uint32_t a[2];
+	char magic[5];
+	uint64_t k;
+	int i;
+
+	if ((fp = fopen(fn, "rb")) == 0) return 0;
+	fread(magic, 1, 4, fp); magic[4] = 0;
+	if (strcmp(magic, "RLD\1")) return 0; // read magic
+	if (fread(a, 4, 2, fp) != 2) return 0; // read asize and sbits
+	e = rld_enc_init(a[0], a[1]);
+	fread(e->mcnt, 8, e->asize + 1, fp);
+	for (i = 0; i <= e->asize; ++i) e->cnt[i] = e->mcnt[i];
+	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
+	fread(&e->n_bytes, 8, 1, fp);
+	if (e->n_bytes / 8 > RLD_LSIZE) { // allocate enough memory
+		e->n = (e->n_bytes / 8 + RLD_LSIZE - 1) / RLD_LSIZE;
+		e->z = realloc(e->z, e->n * sizeof(void*));
+		for (i = 1; i < e->n; ++i)
+			e->z[i] = calloc(RLD_LSIZE, 8);
+	}
+	for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE)
+		fread(e->z[i], 8, RLD_LSIZE, fp);
+	fread(e->z[i], 8, k, fp);
+	fclose(fp);
+	return e;
 }
 
 uint64_t rld_rawlen(const rld_t *e)
