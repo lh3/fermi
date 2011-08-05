@@ -19,7 +19,7 @@ double cputime();
 
 int main_index(int argc, char *argv[])
 {
-	int i, max, l, bbits = 5, plain = 0, use_rld = 0, check = 0;
+	int i, max, l, bbits = 3, plain = 0, use_rld = 0, check = 0;
 	uint8_t *s;
 
 	{ // parse the command line
@@ -118,9 +118,10 @@ int main_index(int argc, char *argv[])
 				if (SA[i] != x)
 					printf("fail @ %d: %d != %d\n", i, SA[i], x);
 			}
+			printf("checking finished here.\n");
 			free(SA);
 		}
-		if (1) {
+		if (0) {
 			uint64_t k, l;
 			kstring_t str;
 			str.l = str.m = 0; str.s = 0;

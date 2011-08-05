@@ -14,7 +14,7 @@ typedef struct {
 	int abits; // bits required to store a symbol
 	int sbits; // bits per small block
 	int ssize; // ssize = 1<<sbits
-	int8_t r0[2], o0[2];
+	int8_t o0[2];
 	// dynamic members
 	int n; // number of blocks (unchanged in decoding)
 	int r; // bits remaining in the last 64-bit integer
@@ -112,7 +112,7 @@ static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k, 
 	e->shead = e->p;
 	e->stail = e->shead + e->ssize - 1;
 	e->p += e->o0[*e->shead>>63];
-	e->r = e->r0[*e->shead>>63];
+	e->r = 64;
 	return q;
 }
 

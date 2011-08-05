@@ -42,11 +42,9 @@ rld_t *rld_enc_init(int asize, int bbits)
 	e->asize = asize;
 	e->sbits = bbits;
 	e->asize1 = asize + 1;
-	e->r0[0] = 64 - e->asize1*16%64;
-	e->r0[1] = 64 - e->asize1*32%64;
-	e->o0[0] = e->asize1*16/64;
-	e->o0[1] = e->asize1*32/64;
-	e->r = e->r0[0];
+	e->o0[0] = (e->asize1*16+63)/64;
+	e->o0[1] = (e->asize1*32+63)/64;
+	e->r = 64;
 	e->p = e->shead + e->o0[0];
 	return e;
 }
@@ -60,18 +58,17 @@ static inline void enc_next_block(rld_t *e)
 		e->lhead = e->shead = e->z[e->n - 1] = calloc(RLD_LSIZE, 8);
 	} else e->shead += e->ssize;
 	if (e->cnt[0] - e->mcnt[0] >= 0x8000) {
-		uint32_t *p = (uint32_t*)e->shead[0];
+		uint32_t *p = (uint32_t*)e->shead;
 		for (i = 0; i <= e->asize; ++i) p[i] = e->cnt[i] - e->mcnt[i];
 		*p |= 1u<<31;
 		e->p = e->shead + e->o0[1];
-		e->r = e->r0[1];
 	} else {
-		uint16_t *p = (uint16_t*)e->shead[0];
+		uint16_t *p = (uint16_t*)e->shead;
 		for (i = 0; i <= e->asize; ++i) p[i] = e->cnt[i] - e->mcnt[i];
 		e->p = e->shead + e->o0[0];
-		e->r = e->r0[0];
 	}
 	e->stail = e->shead + e->ssize - 1;
+	e->r = 64;
 	for (i = 0; i <= e->asize; ++i) e->mcnt[i] = e->cnt[i];
 }
 
@@ -120,7 +117,7 @@ rldidx_t *rld_index(const rld_t *e)
 	{
 		uint64_t i, k, *cnt;
 		int j;
-		cnt = alloca((e->asize + 1) * 8);
+		cnt = alloca(e->asize * 8);
 		idx->b = ilog2(e->mcnt[0] / n_blks) + 3;
 		idx->n = ((e->mcnt[0] + (1<<idx->b) - 1) >> idx->b) + 1;
 		idx->s = calloc(idx->n * e->asize1, 8);
@@ -143,6 +140,7 @@ rldidx_t *rld_index(const rld_t *e)
 				for (j = 0; j < e->asize; ++j) idx->s[x + j - 1] = cnt[j];
 			}
 		}
+		for (j = 0; j < e->asize; ++j) printf("[0] %d, %lld, %lld\n", j, cnt[j], e->mcnt[j+1]);
 		assert(k >= idx->n - 1);
 		for (k = 1; k < idx->n; ++k) { // fill zero cells
 			uint64_t x = k * e->asize1;
