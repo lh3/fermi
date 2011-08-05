@@ -121,7 +121,7 @@ static inline uint64_t rld_rank11(rld_t *e, const rldidx_t *r, uint64_t k, int c
 	uint64_t y, z, *cnt;
 	cnt = alloca(e->asize1 * 8);
 	rld_locate_blk(e, r, k, cnt, &z);
-	y = cnt[c + 1];
+	y = cnt[c];
 	++k; // because k is the coordinate but not length
 	while (1) {
 		int a = -1, l;

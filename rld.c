@@ -137,10 +137,9 @@ rldidx_t *rld_index(const rld_t *e)
 			if (k < idx->n) {
 				uint64_t x = k * e->asize1;
 				idx->s[x] = i;
-				for (j = 0; j < e->asize; ++j) idx->s[x + j - 1] = cnt[j];
+				for (j = 0; j < e->asize; ++j) idx->s[x + j + 1] = cnt[j];
 			}
 		}
-		for (j = 0; j < e->asize; ++j) printf("[0] %d, %lld, %lld\n", j, cnt[j], e->mcnt[j+1]);
 		assert(k >= idx->n - 1);
 		for (k = 1; k < idx->n; ++k) { // fill zero cells
 			uint64_t x = k * e->asize1;

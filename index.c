@@ -114,6 +114,7 @@ int main_index(int argc, char *argv[])
 				SA[i] = k;
 			}
 			for (i = 0; i < l; ++i) {
+				printf("%d\n", i);
 				int x = rld_rank11(e, r, i, b);
 				if (SA[i] != x)
 					printf("fail @ %d: %d != %d\n", i, SA[i], x);
