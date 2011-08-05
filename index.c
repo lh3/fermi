@@ -118,10 +118,9 @@ int main_index(int argc, char *argv[])
 				if (SA[i] != x)
 					printf("fail @ %d: %d != %d\n", i, SA[i], x);
 			}
-			printf("checking finished here.\n");
 			free(SA);
 		}
-		if (0) {
+		if (1) {
 			uint64_t k, l;
 			kstring_t str;
 			str.l = str.m = 0; str.s = 0;
