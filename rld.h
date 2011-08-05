@@ -92,7 +92,7 @@ static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k, 
 	uint64_t *q, *z = r->s + (k>>r->b) * e->asize1;
 	e->lhead = e->z[*z>>RLD_LBITS];
 	q = e->p = e->lhead + (*z&RLD_LMASK);
-	for (j = 1, *sum = 0; j < e->asize1; ++j) sum += (cnt[j-1] = z[j]);
+	for (j = 1, *sum = 0; j < e->asize1; ++j) *sum += (cnt[j-1] = z[j]);
 	while (1) { // seek to the small block
 		uint64_t c = 0;
 		if (q - e->lhead == RLD_LSIZE) q = ++e->lhead;
