@@ -1,6 +1,6 @@
 #include "exact.h"
 
-uint64_t fm_backward_search(rld_t *e, const rldidx_t *r, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
+uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
 {
 	uint64_t k, l, ok, ol;
 	int i, c;
@@ -8,7 +8,7 @@ uint64_t fm_backward_search(rld_t *e, const rldidx_t *r, int len, const uint8_t 
 	k = e->cnt[c]; l = e->cnt[c + 1] - 1;
 	for (i = len - 2; i >= 0; --i) {
 		c = str[i];
-		rld_rank21(e, r, k - 1, l, c, &ok, &ol);
+		rld_rank21(e, k - 1, l, c, &ok, &ol);
 		k = e->cnt[c] + ok;
 		l = e->cnt[c] + ol - 1;
 		if (k > l) break;
@@ -18,7 +18,7 @@ uint64_t fm_backward_search(rld_t *e, const rldidx_t *r, int len, const uint8_t 
 	return l - k + 1;
 }
 
-void fm_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
+void fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 {
 	uint64_t k, *ok, *ol;
 	ok = alloca(8 * e->asize);
@@ -27,7 +27,7 @@ void fm_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 	k = x;
 	while (1) {
 		int c;
-		rld_rank2a(e, r, k - 1, k, ok, ol);
+		rld_rank2a(e, k - 1, k, ok, ol);
 		for (c = 0; c < e->asize; ++c) { // FIXME: to simplify
 			ok[c] += e->cnt[c];
 			ol[c] += e->cnt[c] - 1;
@@ -40,11 +40,11 @@ void fm_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 	}
 }
 
-int fm6_extend(rld_t *e, const rldidx_t *r, uint64_t ik[3], uint64_t ok[24], int is_back)
+int fm6_extend(const rld_t *e, uint64_t ik[3], uint64_t ok[24], int is_back)
 {
 	uint64_t tk[6], tl[6];
 	int i;
-	rld_rank2a(e, r, ik[!is_back] - 1, ik[!is_back] - 1 + ik[2], tk, tl);
+	rld_rank2a(e, ik[!is_back] - 1, ik[!is_back] - 1 + ik[2], tk, tl);
 	for (i = 0; i < 6; ++i) {
 		ok[i<<2|(!is_back)] = e->cnt[i] + tk[i];
 		ok[i<<2|2] = (tl[i] -= tk[i]);
@@ -58,23 +58,23 @@ int fm6_extend(rld_t *e, const rldidx_t *r, uint64_t ik[3], uint64_t ok[24], int
 	return 0;
 }
 
-int fm6_extend1(rld_t *e, const rldidx_t *r, uint64_t ik[3], int c, uint64_t ok[3], int is_back)
+int fm6_extend1(const rld_t *e, uint64_t ik[3], int c, uint64_t ok[3], int is_back)
 {
 	uint64_t o[24];
 	if (!is_back) c = (c >= 1 && c <= 4)? 5 - c : c;
-	fm6_extend(e, r, ik, o, is_back);
+	fm6_extend(e, ik, o, is_back);
 	ok[0] = o[c<<2|0]; ok[1] = o[c<<2|1]; ok[2] = o[c<<2|2];
 	return 0;
 }
 
-void fm6_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
+void fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 {
 	uint64_t ok[24], ik[3];
 	s->l = 0;
 	ik[0] = ik[1] = x; ik[2] = 1;
 	while (1) {
 		int c;
-		fm6_extend(e, r, ik, ok, 0);
+		fm6_extend(e, ik, ok, 0);
 		for (c = 0; c < 6; ++c)
 			if (ok[c<<2|2] == 1) break;
 		/*{

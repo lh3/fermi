@@ -8,9 +8,9 @@
 extern "C" {
 #endif
 
-	uint64_t fm_backward_search(rld_t *e, const rldidx_t *r, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end);
-	void fm_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s);
-	void fm6_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s);
+	uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end);
+	void fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s);
+	void fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s);
 
 #ifdef __cplusplus
 }
