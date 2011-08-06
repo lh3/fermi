@@ -112,7 +112,7 @@ int main_index(int argc, char *argv[])
 		}
 		rld_enc(e, k, c);
 		len = rld_enc_finish(e);
-		fprintf(stderr, "[M::%s] Encoded BWT in %lld bytes in %.3f seconds\n", __func__, len, cputime() - t);
+		fprintf(stderr, "[M::%s] Encoded BWT in %lld bytes in %.3f seconds\n", __func__, (unsigned long long)len, cputime() - t);
 		rld_dump(e, idxfn);
 		rld_destroy(e);
 	} else {
