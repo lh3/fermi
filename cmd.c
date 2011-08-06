@@ -18,18 +18,19 @@ double cputime();
 
 int main_index(int argc, char *argv[])
 {
-	int i, bbits = 3, plain = 0, check = 0, force = 0;
+	int i, bbits = 3, plain = 0, check = 0, force = 0, no_reverse = 0;
 	uint32_t l, max;
 	uint8_t *s;
 	char *idxfn = 0;
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "CPfb:")) >= 0) {
+		while ((c = getopt(argc, argv, "CPRfb:")) >= 0) {
 			switch (c) {
 				case 'C': check = 1; break;
 				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
+				case 'R': no_reverse = 1; break;
 				case 'b': bbits = atoi(optarg); break;
 			}
 		}
@@ -72,9 +73,11 @@ int main_index(int argc, char *argv[])
 			seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
 			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
 			l += seq->seq.l + 1;
-			seq_revcomp6(seq->seq.l, (uint8_t*)seq->seq.s);
-			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
-			l += seq->seq.l + 1;
+			if (!no_reverse) {
+				seq_revcomp6(seq->seq.l, (uint8_t*)seq->seq.s);
+				memcpy(s + l, seq->seq.s, seq->seq.l + 1);
+				l += seq->seq.l + 1;
+			}
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
