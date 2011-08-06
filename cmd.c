@@ -38,8 +38,9 @@ int main_index(int argc, char *argv[])
 		}
 		if (!plain) {
 			FILE *fp;
-			idxfn = malloc(strlen(argv[1]) + 5);
-			strcat(strcpy(idxfn, argv[optind]), ".bwt");
+			idxfn = malloc(strlen(argv[optind]) + 6);
+			strcpy(idxfn, argv[optind]);
+			strcat(idxfn, ".bwt");
 			if (!force && (fp = fopen(idxfn, "rb")) != 0) {
 				fclose(fp);
 				fprintf(stderr, "[E::%s] File `%s' exists. Please use `-f' to overwrite.\n", __func__, idxfn);
@@ -63,7 +64,7 @@ int main_index(int argc, char *argv[])
 		s[l++] = 0;
 		while (kseq_read(seq) >= 0) {
 			if (l + (seq->seq.l + 1) * 2 > max) {
-				max = l + (seq->seq.l + 1) * 2;
+				max = l + (seq->seq.l + 1) * 2 + 1;
 				kroundup32(max);
 				s = realloc(s, max);
 			}
