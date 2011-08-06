@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #define RLD_LBITS 23
 #define RLD_LSIZE (1<<RLD_LBITS)
@@ -50,12 +51,14 @@ extern "C" {
 #define rld_last_blk(e) ((e)->n_bytes>>3>>(e)->sbits<<(e)->sbits)
 #define rld_seek_blk(e, k) ((e)->z[(k)>>RLD_LBITS] + ((k)&RLD_LMASK))
 
+#define rld_size_bit(x) ((x)>>31&1)
+
 static inline void rld_dec_init(rld_t *e, uint64_t k)
 {
 	e->lhead = e->z[k>>RLD_LBITS];
 	e->shead = e->lhead + k%RLD_LSIZE;
 	e->stail = e->shead + e->ssize - 1;
-	e->p = e->shead + e->o0[*e->shead>>63];
+	e->p = e->shead + e->o0[rld_size_bit(*e->shead)];
 	e->r = 64;
 }
 
@@ -63,6 +66,7 @@ static inline int rld_dec0(rld_t *e, int *c)
 {
 	int y = 0, w, l;
 	uint64_t x;
+	assert(e->p <= e->stail);
 	x = e->p[0] << (64 - e->r) | (e->p < e->stail && e->r < 64? e->p[1] >> e->r : 0);
 	if (x>>63 == 0) {
 		if ((w = 0x333333335555779bll>>(x>>59<<2)&0xf) == 0xb && x>>58 == 0) return 0;
@@ -85,7 +89,7 @@ static inline int rld_dec(rld_t *e, int *_c)
 		if (e->p - e->lhead > RLD_LSIZE - e->ssize) e->shead = ++e->lhead;
 		else e->shead += e->ssize;
 		if (e->shead == rld_seek_blk(e, last)) return -1;
-		e->p = e->shead + e->o0[*e->shead>>63];
+		e->p = e->shead + e->o0[rld_size_bit(*e->shead)];
 		e->stail = e->shead + e->ssize - 1;
 		e->r = 64;
 		return rld_dec0(e, _c);
@@ -103,9 +107,9 @@ static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k, 
 		uint64_t c = 0;
 		if (q - e->lhead == RLD_LSIZE) q = ++e->lhead;
 		else q += e->ssize;
-		c = (*q>>63)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
+		c = rld_size_bit(*q)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
 		if (*sum + c > k) break;
-		if (*q>>63) {
+		if (rld_size_bit(*q)) {
 			uint32_t *p = (uint32_t*)q;
 			for (j = 0; j < e->asize; ++j) cnt[j] += p[j+1];
 		} else {

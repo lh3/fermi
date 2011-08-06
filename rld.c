@@ -86,7 +86,7 @@ int rld_enc(rld_t *e, int l, uint8_t c)
 	int w;
 	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;
 	w += e->abits;
-	if (w > e->r && e->p == e->stail) enc_next_block(e);
+	if (w >= e->r && e->p == e->stail) enc_next_block(e);
 	if (w > e->r) {
 		w -= e->r;
 		*e->p++ |= x >> w;
@@ -182,7 +182,7 @@ rldidx_t *rld_index(const rld_t *e)
 		for (j = 0; j < e->asize; ++j) cnt[j] = 0;
 		for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
 			uint64_t sum, *p = rld_seek_blk(e, i);
-			if (*p>>63) { // 32-bit count
+			if (rld_size_bit(*p)) { // 32-bit count
 				uint32_t *q = (uint32_t*)p;
 				for (j = 1; j <= e->asize; ++j) cnt[j-1] += q[j];
 			} else { // 16-bit count
@@ -212,20 +212,17 @@ rldidx_t *rld_index(const rld_t *e)
 #ifdef RLD_MAIN
 int main(int argc, char *argv[])
 {
-	int k, i, n = 100000, N = 500, a = 10, b = 1;
-	rld_t *r = rld_enc_init(6, 5);
-	for (i = 1; i < n; ++i)
-		rld_enc(r, i%a+b, 0);
-	fprintf(stderr, "# bytes: %f\n", rld_enc_finish(r) / 8.);
-	for (k = 0; k < N; ++k) {
-		int j = 0;
-		rld_dec_init(r, j);
-		for (i = 1; i < n; ++i)
-			if (i%a+b != rld_dec(r) >> 3)
-				fprintf(stderr, "Bug!\n");
+	int i, l, c;
+	rld_t *r = rld_enc_init(6, 3);
+	for (i = 100000; i < 100100; ++i)
+		rld_enc(r, i, 2);
+	rld_enc_finish(r);
+	rld_dec_init(r, 0);
+	for (i = 100000; i < 100100; ++i) {
+		l = rld_dec(r, &c);
+		printf("%d, %d\n", l, c);
 	}
-	for (i = 1; i < r->n; ++i) free(r->z);
-	free(r->cnt); free(r->z); free(r);
+	rld_destroy(r);
 	return 0;
 }
 #endif
