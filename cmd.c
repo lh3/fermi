@@ -197,35 +197,6 @@ int main_exact(int argc, char *argv[])
 		return 1;
 	}
 	e = rld_restore(argv[optind]);
-#if 0
-	{
-		if (1) {
-			int b = 3, k = 0, *SA;
-			rldidx_t *r;
-			r = rld_index(e);
-			SA = malloc(l * sizeof(int));
-			for (i = 0; i < l; ++i) {
-				if (s[i] == b) ++k;
-				SA[i] = k;
-			}
-			for (i = 0; i < l; ++i) {
-				int x = rld_rank11(e, r, i, b);
-				if (SA[i] != x)
-					printf("fail @ %d: %d != %d\n", i, SA[i], x);
-			}
-			free(SA);
-		}
-		if (1) {
-			uint64_t k, l;
-			kstring_t str;
-			str.l = str.m = 0; str.s = 0;
-			rldidx_t *r = rld_index(e);
-			printf("%lld\n", fm_backward_search(e, r, 3, (const uint8_t*)"\3\4\3", &k, &l));
-			fm6_retrieve(e, r, 0, &str);
-			for (i = str.l - 1; i >= 0; --i) putchar("$ACGTN"[(int)str.s[i]]); putchar('\n');
-		}
-	}
-#endif
 	rld_destroy(e);
 	return 0;
 }
