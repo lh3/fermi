@@ -191,6 +191,54 @@ int main_chkbwt(int argc, char *argv[])
 	return 0;
 }
 
+static void print_i(rld_t *e, rldidx_t *r, uint64_t i, kstring_t *s)
+{
+	int j;
+	fm_retrieve(e, r, i, s);
+	for (j = s->l - 1; j >= 0; --j)
+		putchar("$ACGTN"[(int)s->s[j]]);
+	putchar('\n');
+}
+
+int main_unpack(int argc, char *argv[])
+{
+	rld_t *e;
+	rldidx_t *r;
+	int c, n, m;
+	uint64_t i, *list;
+	kstring_t s;
+	s.m = s.l = 0; s.s = 0;
+	n = m = 0; list = 0;
+	while ((c = getopt(argc, argv, "i:")) >= 0) {
+		switch (c) {
+			case 'i':
+				if (n == m) {
+					m = m? m<<1 : 16;
+					list = realloc(list, 8 * m);
+				}
+				list[n++] = atol(optarg); break;
+				break;
+		}
+	}
+	if (argc == optind) {
+		fprintf(stderr, "Usage: fmid unpack <idxbase.bwt>\n");
+		return 1;
+	}
+	e = rld_restore(argv[optind]);
+	r = rld_index(e);
+	if (n) {
+		for (i = 0; (int)i < n; ++i)
+			if (list[i] > 0 && list[i] < e->mcnt[1])
+				print_i(e, r, list[i], &s);
+	} else {
+		for (i = 1; i < e->mcnt[1]; ++i)
+			print_i(e, r, i, &s);
+	}
+	rld_destroy(e);
+	free(s.s);
+	return 0;
+}
+
 int main_exact(int argc, char *argv[])
 {
 	int c;

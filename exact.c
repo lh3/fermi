@@ -24,7 +24,7 @@ void fm_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 	ok = alloca(8 * e->asize);
 	ol = alloca(8 * e->asize);
 	s->l = 0;
-	k = x + 1;
+	k = x;
 	while (1) {
 		int c;
 		rld_rank2a(e, r, k - 1, k, ok, ol);
@@ -71,7 +71,7 @@ void fm6_retrieve(rld_t *e, const rldidx_t *r, uint64_t x, kstring_t *s)
 {
 	uint64_t ok[24], ik[3];
 	s->l = 0;
-	ik[0] = ik[1] = x + 1; ik[2] = 1;
+	ik[0] = ik[1] = x; ik[2] = 1;
 	while (1) {
 		int c;
 		fm6_extend(e, r, ik, ok, 0);
