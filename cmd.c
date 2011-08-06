@@ -18,7 +18,8 @@ double cputime();
 
 int main_index(int argc, char *argv[])
 {
-	int i, max, l, bbits = 3, plain = 0, check = 0, force = 0;
+	int i, bbits = 3, plain = 0, check = 0, force = 0;
+	uint32_t l, max;
 	uint8_t *s;
 	char *idxfn = 0;
 
