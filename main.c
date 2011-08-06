@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	if (strcmp(argv[1], "index") == 0) return main_index(argc-1, argv+1);
-	else if (strcmp(argv[1], "chkidx") == 0) return main_chkbwt(argc-1, argv+1);
+	else if (strcmp(argv[1], "chkbwt") == 0) return main_chkbwt(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;
