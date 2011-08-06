@@ -31,10 +31,10 @@ rld_t *rld_enc_init(int asize, int bbits)
 {
 	rld_t *e;
 	e = calloc(1, sizeof(rld_t));
-	e->z = malloc(sizeof(void*));
-	e->z[0] = calloc(RLD_LSIZE, 8);
 	e->n = 1;
-	e->shead = e->lhead = e->z[0];
+	e->i = e->z = malloc(sizeof(void*));
+	e->z[0] = calloc(RLD_LSIZE, 8);
+	e->shead = e->z[0];
 	e->ssize = 1<<bbits;
 	e->stail = e->shead + e->ssize - 1;
 	e->cnt = calloc(asize + 1, 8);
@@ -61,10 +61,11 @@ void rld_destroy(rld_t *e)
 static inline void enc_next_block(rld_t *e)
 {
 	int i;
-	if (e->p + 1 - e->lhead == RLD_LSIZE) {
+	if (e->p + 1 - *e->i == RLD_LSIZE) {
 		++e->n;
 		e->z = realloc(e->z, e->n * sizeof(void*));
-		e->lhead = e->shead = e->z[e->n - 1] = calloc(RLD_LSIZE, 8);
+		e->i = e->z + e->n - 1;
+		e->shead = *e->i = calloc(RLD_LSIZE, 8);
 	} else e->shead += e->ssize;
 	if (e->cnt[0] - e->mcnt[0] >= 0x8000) {
 		uint32_t *p = (uint32_t*)e->shead;
@@ -101,7 +102,7 @@ uint64_t rld_enc_finish(rld_t *e)
 {
 	int i;
 	enc_next_block(e);
-	e->n_bytes = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - e->lhead)) * 8;
+	e->n_bytes = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (e->p - *e->i)) * 8;
 	// recompute e->cnt as the accumulative count; e->mcnt[] keeps the marginal counts
 	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
 	return e->n_bytes;

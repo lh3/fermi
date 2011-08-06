@@ -15,14 +15,13 @@ typedef struct {
 	int abits; // bits required to store a symbol
 	int sbits; // bits per small block
 	int ssize; // ssize = 1<<sbits
-	int8_t o0[2];
+	int8_t o0[2], r; // r: bits remaining in the last 64-bit integer
 	// dynamic members
 	int n; // number of blocks (unchanged in decoding)
-	int r; // bits remaining in the last 64-bit integer
 	uint64_t n_bytes; // total number of bits (unchanged in decoding)
-	uint64_t **z; // the actual data (unchanged in decoding)
+	uint64_t **i, **z; // the actual data (unchanged in decoding)
 	uint64_t *cnt, *mcnt; // after enc_finish, cnt keeps the accumulative count and mcnt keeps the marginal
-	uint64_t *p, *lhead, *shead, *stail;
+	uint64_t *p, *shead, *stail;
 } rld_t;
 
 typedef struct {
@@ -55,8 +54,8 @@ extern "C" {
 
 static inline void rld_dec_init(rld_t *e, uint64_t k)
 {
-	e->lhead = e->z[k>>RLD_LBITS];
-	e->shead = e->lhead + k%RLD_LSIZE;
+	e->i = e->z + (k >> RLD_LBITS);
+	e->shead = *e->i + k%RLD_LSIZE;
 	e->stail = e->shead + e->ssize - 1;
 	e->p = e->shead + e->o0[rld_size_bit(*e->shead)];
 	e->r = 64;
@@ -86,7 +85,7 @@ static inline int rld_dec(rld_t *e, int *_c)
 	int l = rld_dec0(e, _c);
 	if (l == 0) {
 		uint64_t last = rld_last_blk(e);
-		if (e->p - e->lhead > RLD_LSIZE - e->ssize) e->shead = ++e->lhead;
+		if (e->p - *e->i > RLD_LSIZE - e->ssize) e->shead = *++e->i;
 		else e->shead += e->ssize;
 		if (e->shead == rld_seek_blk(e, last)) return -1;
 		e->p = e->shead + e->o0[rld_size_bit(*e->shead)];
@@ -100,12 +99,12 @@ static inline uint64_t *rld_locate_blk(rld_t *e, const rldidx_t *r, uint64_t k, 
 {
 	int j;
 	uint64_t *q, *z = r->s + (k>>r->b) * e->asize1;
-	e->lhead = e->z[*z>>RLD_LBITS];
-	q = e->p = e->lhead + (*z&RLD_LMASK);
+	e->i = e->z + (*z>>RLD_LBITS);
+	q = e->p = *e->i + (*z&RLD_LMASK);
 	for (j = 1, *sum = 0; j < e->asize1; ++j) *sum += (cnt[j-1] = z[j]);
 	while (1) { // seek to the small block
 		uint64_t c = 0;
-		if (q - e->lhead == RLD_LSIZE) q = ++e->lhead;
+		if (q - *e->i == RLD_LSIZE) q = *++e->i;
 		else q += e->ssize;
 		c = rld_size_bit(*q)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
 		if (*sum + c > k) break;
