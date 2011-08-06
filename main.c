@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 int main_index(int argc, char *argv[]);
-int main_bwt2plain(int argc, char *argv[]);
+int main_chkbwt(int argc, char *argv[]);
 
 int main(int argc, char *argv[])
 {
@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	if (strcmp(argv[1], "index") == 0) return main_index(argc-1, argv+1);
-	else if (strcmp(argv[1], "bwt2plain") == 0) return main_bwt2plain(argc-1, argv+1);
+	else if (strcmp(argv[1], "chkidx") == 0) return main_chkbwt(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;

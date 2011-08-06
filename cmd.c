@@ -124,19 +124,64 @@ int main_index(int argc, char *argv[])
 	return 0;
 }
 
-int main_bwt2plain(int argc, char *argv[])
+int main_chkbwt(int argc, char *argv[])
 {
-	rld_t *e;
-	int i, l, c = 0;
-	if (argc == 1) {
-		fprintf(stderr, "Usage: fmg bwt2plain <idxbase.bwt>\n");
+	rld_t *e, swap;
+	rldidx_t *r;
+	int i, j, l, c = 0, plain = 0;
+	uint64_t *cnt, *rank, sum = 0;
+	double t;
+	while ((c = getopt(argc, argv, "P")) >= 0) {
+		switch (c) {
+			case 'P': plain = 1; break;
+		}
+	}
+	if (argc == optind) {
+		fprintf(stderr, "Usage: fmg chkbwt [-P] <idxbase.bwt>\n");
 		return 1;
 	}
-	e = rld_restore(argv[1]);
+	e = rld_restore(argv[optind]);
+	if (e == 0) {
+		fprintf(stderr, "[E::%s] Fail to read the index file.\n", __func__);
+		return 1;
+	}
+	t = cputime();
+	r = rld_index(e);
+	fprintf(stderr, "[M::%s] Generated the index in %.3lf seconds.\n", __func__, cputime() - t);
+	cnt = alloca(e->asize * 8);
+	rank = alloca(e->asize * 8);
 	rld_dec_init(e, 0);
-	while ((l = rld_dec(e, &c)) >= 0)
-		for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
-	putchar('\n');
+	for (i = 0; i < e->asize; ++i) cnt[i] = 0;
+	t = cputime();
+	while ((l = rld_dec(e, &c)) >= 0) {
+		if (c >= e->asize) {
+			fprintf(stderr, "[E::%s] Symbol `%d' is not in the alphabet.\n", __func__, c);
+			exit(1); // memory leak
+		}
+		swap = *e;
+		for (i = 0; i < l; ++i) {
+			++cnt[c];
+			rld_rank1a(&swap, r, sum, rank);
+			for (j = 0; j < e->asize; ++j) {
+				if (cnt[j] != rank[j]) {
+					fprintf(stderr, "[E::%s] rank(%d,%lld)=%lld != %lld\n", __func__,
+							j, (unsigned long long)sum, (unsigned long long)rank[j], (unsigned long long)cnt[j]);
+					exit(1); // memory leak
+				}
+			}
+			++sum;
+		}
+		if (plain) for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
+	}
+	fprintf(stderr, "[M::%s] Checked the rank function in %.3lf seconds.\n", __func__, cputime() - t);
+	for (j = 0; j < e->asize; ++j) {
+		if (cnt[j] != e->mcnt[j+1]) {
+			fprintf(stderr, "[E::%s] Different counts: %lld != %lld\n", __func__,
+					(unsigned long long)cnt[j], (unsigned long long)e->mcnt[j+1]);
+			exit(1);
+		}
+	}
+	if (plain) putchar('\n');
 	rld_destroy(e);
 	return 0;
 }
