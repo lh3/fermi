@@ -8,7 +8,14 @@ int main_unpack(int argc, char *argv[]);
 int main(int argc, char *argv[])
 {
 	if (argc == 1) {
-		fprintf(stderr, "!!!\n");
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Program: fmid (FM-Index for DNA sequences)\n");
+		fprintf(stderr, "Contact: Heng Li <lh3@live.co.uk>\n\n");
+		fprintf(stderr, "Usage:   fmid <command> [arguments]\n\n");
+		fprintf(stderr, "Command: index     Generated FM-Index for sequences shorter than 1G\n");
+		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
+		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	if (strcmp(argv[1], "index") == 0) return main_index(argc-1, argv+1);
