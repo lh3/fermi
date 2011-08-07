@@ -35,7 +35,7 @@ int main_index(int argc, char *argv[])
 			}
 		}
 		if (argc == optind) {
-			fprintf(stderr, "Usage: fmid index [-CfP] [-b sbits] <in.fa>\n");
+			fprintf(stderr, "Usage: fermi index [-CfP] [-b sbits] <in.fa>\n");
 			return 1;
 		}
 		if (!plain) {
@@ -144,7 +144,7 @@ int main_chkbwt(int argc, char *argv[])
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fmid chkbwt [-P] <idxbase.bwt>\n");
+		fprintf(stderr, "Usage: fermi chkbwt [-P] <idxbase.bwt>\n");
 		return 1;
 	}
 	e = rld_restore(argv[optind]);
@@ -218,7 +218,7 @@ int main_unpack(int argc, char *argv[])
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fmid unpack <idxbase.bwt>\n");
+		fprintf(stderr, "Usage: fermi unpack <idxbase.bwt>\n");
 		return 1;
 	}
 	e = rld_restore(argv[optind]);
@@ -242,7 +242,7 @@ int main_exact(int argc, char *argv[])
 	while ((c = getopt(argc, argv, "")) >= 0) {
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fmid exact <idxbase> ...\n");
+		fprintf(stderr, "Usage: fermi exact <idxbase> ...\n");
 		return 1;
 	}
 	e = rld_restore(argv[optind]);

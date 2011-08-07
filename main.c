@@ -9,9 +9,9 @@ int main(int argc, char *argv[])
 {
 	if (argc == 1) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Program: fmid (FM-Index for DNA sequences)\n");
+		fprintf(stderr, "Program: fermi (FERragina-Manzini Index for DNA sequences)\n");
 		fprintf(stderr, "Contact: Heng Li <lh3@live.co.uk>\n\n");
-		fprintf(stderr, "Usage:   fmid <command> [arguments]\n\n");
+		fprintf(stderr, "Usage:   fermi <command> [arguments]\n\n");
 		fprintf(stderr, "Command: index     Generated FM-Index for sequences shorter than 1G\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
