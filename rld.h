@@ -105,8 +105,8 @@ static inline uint64_t *rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k
 	for (j = 1, *sum = 0; j < e->asize1; ++j) *sum += (cnt[j-1] = z[j]);
 	while (1) { // seek to the small block
 		uint64_t c = 0;
+		q += e->ssize;
 		if (q - *itr->i == RLD_LSIZE) q = *++itr->i;
-		else q += e->ssize;
 		c = rld_size_bit(*q)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
 		if (*sum + c > k) break;
 		if (rld_size_bit(*q)) {

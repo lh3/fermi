@@ -152,8 +152,6 @@ int main_chkbwt(int argc, char *argv[])
 		fprintf(stderr, "[E::%s] Fail to read the index file.\n", __func__);
 		return 1;
 	}
-	t = cputime();
-	fprintf(stderr, "[M::%s] Generated the index in %.3lf seconds.\n", __func__, cputime() - t);
 	cnt = alloca(e->asize * 8);
 	rank = alloca(e->asize * 8);
 	rld_itr_init(e, &itr, 0);
