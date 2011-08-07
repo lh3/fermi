@@ -164,7 +164,7 @@ int rld_dump(const rld_t *e, const char *fn)
 		fwrite(e->z[i], 8, RLD_LSIZE, fp);
 	fwrite(e->z[i], 8, k, fp);
 	fwrite(&e->n_frames, 8, 1, fp);
-	fwrite(e->frame, 8, e->n_frames, fp); // FIXME: we cannot have >2GB frames with fwrite()
+	fwrite(e->frame, 8 * e->asize1, e->n_frames, fp); // FIXME: we cannot have >2GB frames with fwrite()
 	fclose(fp);
 	return 0;
 }
@@ -175,7 +175,7 @@ rld_t *rld_restore(const char *fn)
 	rld_t *e;
 	uint32_t a[2];
 	char magic[5];
-	uint64_t k;
+	uint64_t k, n_blks;
 	int i;
 
 	if ((fp = fopen(fn, "rb")) == 0) return 0;
@@ -197,8 +197,11 @@ rld_t *rld_restore(const char *fn)
 		fread(e->z[i], 8, RLD_LSIZE, fp);
 	fread(e->z[i], 8, k, fp);
 	fread(&e->n_frames, 8, 1, fp);
-	fread(e->frame, 8, e->n_frames, fp);
+	e->frame = malloc(e->n_frames * e->asize1 * 8);
+	fread(e->frame, 8 * e->asize1, e->n_frames, fp);
 	fclose(fp);
+	n_blks = e->n_bytes * 8 / 64 / e->ssize + 1;
+	e->ibits = ilog2(e->mcnt[0] / n_blks) + 3;
 	return e;
 }
 

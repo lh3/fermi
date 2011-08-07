@@ -121,7 +121,7 @@ static inline uint64_t *rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k
 	}
 	itr->shead = itr->p;
 	itr->stail = itr->shead + e->ssize - 1;
-	itr->p += e->offset0[*itr->shead>>63];
+	itr->p += e->offset0[rld_size_bit(*itr->shead)];
 	itr->r = 64;
 	return q;
 }

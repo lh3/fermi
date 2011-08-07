@@ -133,7 +133,7 @@ int main_index(int argc, char *argv[])
 
 int main_chkbwt(int argc, char *argv[])
 {
-	rld_t *e, swap;
+	rld_t *e;
 	rlditr_t itr;
 	int i, j, l, c = 0, plain = 0;
 	uint64_t *cnt, *rank, sum = 0;
@@ -164,10 +164,9 @@ int main_chkbwt(int argc, char *argv[])
 			fprintf(stderr, "[E::%s] Symbol `%d' is not in the alphabet.\n", __func__, c);
 			exit(1); // memory leak
 		}
-		swap = *e;
 		for (i = 0; i < l; ++i) {
 			++cnt[c];
-			rld_rank1a(&swap, sum, rank);
+			rld_rank1a(e, sum, rank);
 			for (j = 0; j < e->asize; ++j) {
 				if (cnt[j] != rank[j]) {
 					fprintf(stderr, "[E::%s] rank(%d,%lld)=%lld != %lld\n", __func__,
