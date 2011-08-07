@@ -173,6 +173,8 @@ int main_chkbwt(int argc, char *argv[])
 				}
 			}
 			++sum;
+			if (sum%10000000 == 0)
+				fprintf(stderr, "[M::%s] Checked %lld symbols.\n", __func__, (unsigned long long)sum);
 		}
 		if (plain) for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
 	}
