@@ -5,6 +5,8 @@
 #include <assert.h>
 #include "rld.h"
 
+#define RLD_IBITS_PLUS 4
+
 static const char LogTable256[256] = {
 #define LT(n) n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n
     -1, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
@@ -104,7 +106,7 @@ void rld_rank_index(rld_t *e)
 		uint64_t i, k, *cnt;
 		int j;
 		cnt = alloca(e->asize * 8);
-		e->ibits = ilog2(e->mcnt[0] / n_blks) + 3;
+		e->ibits = ilog2(e->mcnt[0] / n_blks) + RLD_IBITS_PLUS;
 		e->n_frames = ((e->mcnt[0] + (1<<e->ibits) - 1) >> e->ibits) + 1;
 		e->frame = calloc(e->n_frames * e->asize1, 8);
 		e->frame[0] = 0;
@@ -201,7 +203,7 @@ rld_t *rld_restore(const char *fn)
 	fread(e->frame, 8 * e->asize1, e->n_frames, fp);
 	fclose(fp);
 	n_blks = e->n_bytes * 8 / 64 / e->ssize + 1;
-	e->ibits = ilog2(e->mcnt[0] / n_blks) + 3;
+	e->ibits = ilog2(e->mcnt[0] / n_blks) + RLD_IBITS_PLUS;
 	return e;
 }
 
