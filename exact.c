@@ -46,17 +46,17 @@ int fm6_extend(const rld_t *e, fmintv_t ik, fmintv_t ok[6], int is_back)
 {
 	uint64_t tk[6], tl[6];
 	int i;
-	rld_rank2a(e, ik[!is_back] - 1, ik[!is_back] - 1 + ik[2], tk, tl);
+	rld_rank2a(e, ik.x[!is_back] - 1, ik.x[!is_back] - 1 + ik.x[2], tk, tl);
 	for (i = 0; i < 6; ++i) {
-		ok[i][!is_back] = e->cnt[i] + tk[i];
-		ok[i][2] = (tl[i] -= tk[i]);
+		ok[i].x[!is_back] = e->cnt[i] + tk[i];
+		ok[i].x[2] = (tl[i] -= tk[i]);
 	}
-	ok[0][is_back] = ik[is_back];
-	ok[1][is_back] = ok[0][is_back] + tl[0];
-	ok[2][is_back] = ok[1][is_back] + tl[4];
-	ok[3][is_back] = ok[2][is_back] + tl[3];
-	ok[4][is_back] = ok[3][is_back] + tl[2];
-	ok[5][is_back] = ok[4][is_back] + tl[1];
+	ok[0].x[is_back] = ik.x[is_back];
+	ok[1].x[is_back] = ok[0].x[is_back] + tl[0];
+	ok[2].x[is_back] = ok[1].x[is_back] + tl[4];
+	ok[3].x[is_back] = ok[2].x[is_back] + tl[3];
+	ok[4].x[is_back] = ok[3].x[is_back] + tl[2];
+	ok[5].x[is_back] = ok[4].x[is_back] + tl[1];
 	return 0;
 }
 
@@ -64,12 +64,12 @@ void fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 {
 	fmintv_t ok[6], ik;
 	s->l = 0;
-	ik[0] = ik[1] = x; ik[2] = 1;
+	ik.x[0] = ik.x[1] = x; ik.x[2] = 1;
 	while (1) {
 		int c;
 		fm6_extend(e, ik, ok, 0);
 		for (c = 0; c < 6; ++c)
-			if (ok[c][2] == 1) break;
+			if (ok[c].x[2] == 1) break;
 		/*{
 			int i, j;
 			for (i = 0; i < 6; ++i) {
@@ -80,7 +80,7 @@ void fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 			putchar('\n');
 		}*/
 		if (c) {
-			ik[0] = ok[c][0], ik[1] = ok[c][1], ik[2] = ok[c][2];
+			ik.x[0] = ok[c].x[0], ik.x[1] = ok[c].x[1], ik.x[2] = ok[c].x[2];
 			kputc(c, s);
 		} else break;
 	}

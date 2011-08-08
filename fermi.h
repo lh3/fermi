@@ -3,7 +3,9 @@
 
 #include <stdint.h>
 
-typedef uint64_t fmintv_t[3];
+typedef struct {
+	uint64_t x[3];
+} fmintv_t;
 
 struct __rld_t;
 
