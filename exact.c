@@ -1,4 +1,4 @@
-#include "exact.h"
+#include "fermi.h"
 
 uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
 {

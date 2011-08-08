@@ -17,8 +17,8 @@ fermi:$(OBJS) main.o
 		$(CC) $(CFLAGS) $(DFLAGS) $(OBJS) main.o -o $@ $(LIBS)
 
 rld.o:rld.h
-cmd.o:rld.h
-exact.o:exact.h rld.h kstring.h
+cmd.o:fermi.h rld.h
+exact.o:fermi.h rld.h kstring.h
 
 clean:
 		rm -fr gmon.out *.o a.out $(PROG) *~ *.a *.dSYM

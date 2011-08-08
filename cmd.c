@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <zlib.h>
 #include "rld.h"
-#include "exact.h"
+#include "fermi.h"
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
