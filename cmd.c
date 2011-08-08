@@ -239,15 +239,21 @@ int main_unpack(int argc, char *argv[])
 
 int main_exact(int argc, char *argv[])
 {
-	int c;
+	int c, len;
 	rld_t *e;
+	uint8_t *seq;
 	while ((c = getopt(argc, argv, "")) >= 0) {
 	}
-	if (argc == optind) {
-		fprintf(stderr, "Usage: fermi exact <idxbase> ...\n");
+	if (optind + 2 > argc) {
+		fprintf(stderr, "Usage: fermi exact <idxbase.bwt> ...\n");
 		return 1;
 	}
+	seq = (uint8_t*)strdup(argv[optind + 1]);
+	len = strlen((char*)seq);
+	seq_char2nt6(len, seq);
 	e = rld_restore(argv[optind]);
+	fm6_search_forward_overlap(e, 1, len, seq);
 	rld_destroy(e);
+	free(seq);
 	return 0;
 }

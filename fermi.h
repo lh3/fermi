@@ -17,6 +17,9 @@ typedef struct __kstring_t {
 } kstring_t;
 #endif
 
+/* complement of a nucleotide */
+#define fm6_comp(a) ((a) >= 1 && (a) <= 4? 5 - (a) : (a))
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -25,7 +28,9 @@ extern "C" {
 	void fm_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
 	void fm6_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
 
-	int fm6_extend(const struct __rld_t *e, fmintv_t ik, fmintv_t ok[6], int is_back);
+	int fm6_extend(const struct __rld_t *e, const fmintv_t *ik, fmintv_t ok[6], int is_back);
+
+	int fm6_search_forward_overlap(const struct __rld_t *e, int min, int len, const uint8_t *seq);
 
 #ifdef __cplusplus
 }
