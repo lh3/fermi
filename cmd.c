@@ -239,21 +239,30 @@ int main_unpack(int argc, char *argv[])
 
 int main_exact(int argc, char *argv[])
 {
-	int c, len;
+	int c, min_match = 30;
 	rld_t *e;
-	uint8_t *seq;
-	while ((c = getopt(argc, argv, "")) >= 0) {
+	kseq_t *seq;
+	gzFile fp;
+	while ((c = getopt(argc, argv, "m:")) >= 0) {
+		switch (c) {
+			case 'm': min_match = atoi(optarg); break;
+		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi exact <idxbase.bwt> ...\n");
+		fprintf(stderr, "Usage: fermi exact [-m minMatch] <idxbase.bwt> <src.fa>\n");
 		return 1;
 	}
-	seq = (uint8_t*)strdup(argv[optind + 1]);
-	len = strlen((char*)seq);
-	seq_char2nt6(len, seq);
+	fp = strcmp(argv[optind+1], "-")? gzopen(argv[optind+1], "r") : gzdopen(fileno(stdin), "r");
+	seq = kseq_init(fp);
 	e = rld_restore(argv[optind]);
-	fm6_search_forward_overlap(e, 1, len, seq);
+	while (kseq_read(seq) >= 0) {
+		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
+		printf(">%s\n", seq->name.s);
+		printf("%d\n", fm6_search_forward_overlap(e, min_match, seq->seq.l, (uint8_t*)seq->seq.s));
+		puts("//");
+	}
 	rld_destroy(e);
-	free(seq);
+	kseq_destroy(seq);
+	gzclose(fp);
 	return 0;
 }
