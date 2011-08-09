@@ -97,7 +97,7 @@ KSORT_INIT(fm, fmintv_t, intvcmp)
 
 int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *seq)
 {
-	int i, j, k, c, last_sentinel = -1;
+	int i, j, k, c, last_sentinel = 0, last_beg = 0;
 	fmintv_t ik, ok[6];
 	kvec_t(fmintv_t) a[2], *curr, *prev, *tmp;
 
@@ -130,7 +130,7 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 		}
 		if (curr->n == 0) {
 			int depth;
-			if (last_sentinel < 0) break;
+			if (last_sentinel < last_beg) break;
 			printf("i=%d, %d\n", i, last_sentinel);
 			c = seq[last_sentinel];
 			fm6_set_intv(e, c, ik);
@@ -143,8 +143,8 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 				ik = ok[c];
 			}
 			if (curr->n == 0) break;
-			i = last_sentinel;
-			last_sentinel = -1;
+			i = last_sentinel; // i will be increased by 1 in the next round of the loop
+			last_beg = i + 1;
 		}
 		if (curr->n > 1) { // then de-redundancy
 			ks_introsort(fm, curr->n, curr->a); // FIXME: reconsider if sorting is necessary; maybe not
