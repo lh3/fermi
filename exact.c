@@ -52,11 +52,11 @@ int fm6_extend(const rld_t *e, const fmintv_t *ik, fmintv_t ok[6], int is_back)
 		ok[i].x[2] = (tl[i] -= tk[i]);
 	}
 	ok[0].x[is_back] = ik->x[is_back];
-	ok[1].x[is_back] = ok[0].x[is_back] + tl[0];
-	ok[2].x[is_back] = ok[1].x[is_back] + tl[4];
-	ok[3].x[is_back] = ok[2].x[is_back] + tl[3];
-	ok[4].x[is_back] = ok[3].x[is_back] + tl[2];
-	ok[5].x[is_back] = ok[4].x[is_back] + tl[1];
+	ok[4].x[is_back] = ok[0].x[is_back] + tl[0];
+	ok[3].x[is_back] = ok[4].x[is_back] + tl[4];
+	ok[2].x[is_back] = ok[3].x[is_back] + tl[3];
+	ok[1].x[is_back] = ok[2].x[is_back] + tl[2];
+	ok[5].x[is_back] = ok[1].x[is_back] + tl[1];
 	return 0;
 }
 
@@ -97,7 +97,7 @@ KSORT_INIT(fm, fmintv_t, intvcmp)
 
 int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *seq)
 {
-	int i, j, k, c, last_sentinel = 0;
+	int i, j, k, c, last_sentinel = -1;
 	fmintv_t ik, ok[6];
 	kvec_t(fmintv_t) a[2], *curr, *prev, *tmp;
 
@@ -111,22 +111,26 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 	for (i = 1; i < len; ++i) {
 		c = fm6_comp(seq[i]);
 		curr->n = 0; // clear the curr list
+		printf("%2ld - ", prev->n);
 		for (j = 0; j < prev->n; ++j) { // traverse the prev list
+			for (k = 0; k < 3; ++k) printf("%7lld, ", prev->a[j].x[k]); printf("' ");
 			fm6_extend(e, &prev->a[j], ok, 0);
 			if (ok[c].x[2]) kv_push(fmintv_t, *curr, ok[c]);
 			if (ok[0].x[2]) last_sentinel = i - 1;
 		}
+		printf("\n%2d : ", i);
 		if (1) {
 			int i, j;
 			for (i = 0; i < 6; ++i) {
 				for (j = 0; j < 3; ++j)
-					printf("%2lld, ", ok[i].x[j]);
+					printf("%7lld, ", ok[i].x[j]);
 				printf("| ");
 			}
 			putchar('\n');
 		}
 		if (curr->n == 0) {
 			int depth;
+			if (last_sentinel < 0) break;
 			printf("i=%d, %d\n", i, last_sentinel);
 			c = seq[last_sentinel];
 			fm6_set_intv(e, c, ik);
@@ -140,7 +144,9 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 			}
 			if (curr->n == 0) break;
 			i = last_sentinel;
-		} if (curr->n > 1) { // then de-redundancy
+			last_sentinel = -1;
+		}
+		if (curr->n > 1) { // then de-redundancy
 			ks_introsort(fm, curr->n, curr->a); // FIXME: reconsider if sorting is necessary; maybe not
 			for (j = k = 1; j < curr->n; ++j) {
 				if (curr->a[k].x[2] != curr->a[j].x[2]) {
