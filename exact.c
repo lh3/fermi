@@ -1,6 +1,9 @@
 #include "rld.h"
 #include "kstring.h"
 #include "fermi.h"
+#include "kvec.h"
+
+#define fm6_set_intv(e, c, ik) ((ik).x[0] = (e)->cnt[(c)], (ik).x[2] = (e)->cnt[c+1] - (e)->cnt[c], (ik).x[1] = (e)->cnt[fm6_comp(c)])
 
 uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
 {
@@ -77,27 +80,9 @@ void fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 	}
 }
 
-/*
-#include "khash.h"
-
-#define fmintv_eq(a, b) ((a).x[0] == (b).x[0] && (a).x[2] == (b).x[2])
-#define fmintv_hash(a) ((a).x[0] ^ (a).x[2]<<11)
-KHASH_INIT2(fm,, fmintv_t, char, 0, fmintv_hash, fmintv_eq)
-*/
-
-#include "kvec.h"
-#include "ksort.h"
-//#define intvcmp(a, b) ((a).x[2] < (b).x[2] || ((a).x[2] == (b).x[2] && (a).x[1] < (b).x[1]))
-#define intvcmp(a, b) ((a).x[2] < (b).x[2])
-KSORT_INIT(fm, fmintv_t, intvcmp)
-
-#define fm6_set_intv(e, c, ik) ((ik).x[0] = (e)->cnt[(c)], (ik).x[2] = (e)->cnt[c+1] - (e)->cnt[c], (ik).x[1] = (e)->cnt[fm6_comp(c)])
-
-#include <stdio.h>
-
 int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *seq)
 {
-	int i, j, k, c, last_sentinel = 0, last_beg = 0;
+	int i, j, c, last_sentinel = 0, last_beg = 0;
 	fmintv_t ik, ok[6];
 	kvec_t(fmintv_t) a[2], *curr, *prev, *tmp;
 
@@ -113,7 +98,8 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 		curr->n = 0; // clear the curr list
 		for (j = 0; j < prev->n; ++j) { // traverse the prev list
 			fm6_extend(e, &prev->a[j], ok, 0);
-			if (ok[c].x[2]) kv_push(fmintv_t, *curr, ok[c]);
+			if (ok[c].x[2] && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2]))
+				kv_push(fmintv_t, *curr, ok[c]);
 			if (ok[0].x[2]) last_sentinel = i - 1;
 		}
 		if (curr->n == 0) {
@@ -125,22 +111,20 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 				c = seq[j];
 				fm6_extend(e, &ik, ok, 1);
 				if (!ok[c].x[2]) break;
-				if (depth >= min && ok[0].x[2]) kv_push(fmintv_t, *curr, ik);
+				if (depth >= min && ok[0].x[2] && (curr->n == 0 || ik.x[2] != curr->a[curr->n-1].x[2]))
+					kv_push(fmintv_t, *curr, ik);
 				ik = ok[c];
 			}
 			if (curr->n == 0) break;
-			i = last_sentinel; // i will be increased by 1 in the next round of the loop
-			last_beg = i + 1;
-		}
-		if (curr->n > 1) { // then de-redundancy
-			ks_introsort(fm, curr->n, curr->a); // FIXME: reconsider if sorting is necessary; maybe not
-			for (j = k = 1; j < curr->n; ++j) {
-				if (curr->a[k].x[2] != curr->a[j].x[2]) {
-					if (k != j) curr->a[k++] = curr->a[j];
-					else ++k;
+			if (curr->n > 1) {
+				for (j = 0; j < curr->n>>1; ++j) {
+					fmintv_t tmp = curr->a[curr->n - 1 - j];
+					curr->a[curr->n - 1 - j] = curr->a[j];
+					curr->a[j] = tmp;
 				}
 			}
-			curr->n = k;
+			i = last_sentinel; // i will be increased by 1 in the next round of the loop
+			last_beg = i + 1;
 		}
 		tmp = curr; curr = prev; prev = tmp;
 	}

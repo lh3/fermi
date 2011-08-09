@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define FERMI_VERSION "0.0-dev (r102)"
+
 typedef struct {
 	uint64_t x[3];
 } fmintv_t;
