@@ -111,32 +111,18 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 	for (i = 1; i < len; ++i) {
 		c = fm6_comp(seq[i]);
 		curr->n = 0; // clear the curr list
-		printf("%2ld - ", prev->n);
 		for (j = 0; j < prev->n; ++j) { // traverse the prev list
-			for (k = 0; k < 3; ++k) printf("%7lld, ", prev->a[j].x[k]); printf("' ");
 			fm6_extend(e, &prev->a[j], ok, 0);
 			if (ok[c].x[2]) kv_push(fmintv_t, *curr, ok[c]);
 			if (ok[0].x[2]) last_sentinel = i - 1;
 		}
-		printf("\n%2d : ", i);
-		if (1) {
-			int i, j;
-			for (i = 0; i < 6; ++i) {
-				for (j = 0; j < 3; ++j)
-					printf("%7lld, ", ok[i].x[j]);
-				printf("| ");
-			}
-			putchar('\n');
-		}
 		if (curr->n == 0) {
 			int depth;
 			if (last_sentinel < last_beg) break;
-			printf("i=%d, %d\n", i, last_sentinel);
 			c = seq[last_sentinel];
 			fm6_set_intv(e, c, ik);
 			for (j = last_sentinel - 1, depth = 1; j > 0; --j, ++depth) {
 				c = seq[j];
-				printf("[%lld,%lld,%lld]\n", ik.x[0], ik.x[1], ik.x[2]);
 				fm6_extend(e, &ik, ok, 1);
 				if (!ok[c].x[2]) break;
 				if (depth >= min && ok[0].x[2]) kv_push(fmintv_t, *curr, ik);
@@ -159,6 +145,5 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 		tmp = curr; curr = prev; prev = tmp;
 	}
 	kv_destroy(a[0]); kv_destroy(a[1]);
-	printf("*** %d\n", i);
 	return i;
 }
