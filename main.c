@@ -6,6 +6,7 @@ int main_index(int argc, char *argv[]);
 int main_chkbwt(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_exact(int argc, char *argv[]);
+int main_merge(int argc, char *argv[]);
 
 int main(int argc, char *argv[])
 {
@@ -26,6 +27,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "chkbwt") == 0) return main_chkbwt(argc-1, argv+1);
 	else if (strcmp(argv[1], "unpack") == 0) return main_unpack(argc-1, argv+1);
 	else if (strcmp(argv[1], "exact") == 0) return main_exact(argc-1, argv+1);
+	else if (strcmp(argv[1], "merge") == 0) return main_merge(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;

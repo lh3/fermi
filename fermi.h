@@ -34,6 +34,8 @@ extern "C" {
 
 	int fm6_search_forward_overlap(const struct __rld_t *e, int min, int len, const uint8_t *seq);
 
+	struct __rld_t *fm_merge0(const struct __rld_t *e0, const struct __rld_t *e1);
+
 #ifdef __cplusplus
 }
 #endif

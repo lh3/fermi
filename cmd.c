@@ -266,3 +266,21 @@ int main_exact(int argc, char *argv[])
 	gzclose(fp);
 	return 0;
 }
+
+int main_merge(int argc, char *argv[])
+{
+	int c;
+	rld_t *e0, *e1;
+	while ((c = getopt(argc, argv, "")) >= 0) {
+	}
+	if (optind + 2 > argc) {
+		fprintf(stderr, "Usage: fermi merge <in0.bwt> <in1.bwt>\n");
+		return 1;
+	}
+	e0 = rld_restore(argv[optind+0]);
+	e1 = rld_restore(argv[optind+1]);
+	fm_merge0(e0, e1);
+	rld_destroy(e0);
+	rld_destroy(e1);
+	return 0;
+}

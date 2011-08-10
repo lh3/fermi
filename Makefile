@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2
 DFLAGS=		#-DNDEBUG
-OBJS=		utils.o seq.o sais.o saux.o rld.o exact.o cmd.o
+OBJS=		utils.o seq.o sais.o saux.o rld.o exact.o merge.o cmd.o
 PROG=		fermi
 INCLUDES=	
 LIBS=		-lm -lz
@@ -18,6 +18,7 @@ fermi:$(OBJS) main.o
 
 rld.o:rld.h
 exact.o:fermi.h rld.h kstring.h kvec.h
+merge.o:fermi.h rld.h
 cmd.o:fermi.h rld.h kseq.h
 main.o:fermi.h
 
