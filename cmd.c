@@ -106,7 +106,7 @@ int main_index(int argc, char *argv[])
 		double t = cputime();
 		rlditr_t itr;
 		rld_t *e;
-		e = rld_init(6, bbits);
+		e = rld_init(6, bbits, 0);
 		rld_itr_init(e, &itr, 0);
 		k = 1; c = s[0];
 		for (i = 1; i < l; ++i) {
@@ -281,10 +281,10 @@ int main_merge(int argc, char *argv[])
 		fprintf(stderr, "Usage: fermi merge [-a] [-o outFile] <in0.bwt> <in1.bwt>\n");
 		return 1;
 	}
+	if (fn == 0) fn = strdup("-");
 	e0 = rld_restore(argv[optind+0]);
 	e1 = rld_restore(argv[optind+1]);
-	e = use_array? fm_merge_array(e0, e1) : fm_merge_tree(e0, e1);
-	rld_dump(e, fn? fn : "-");
+	e = use_array? fm_merge_array(e0, e1, fn) : fm_merge_tree(e0, e1, fn);
 	rld_destroy(e0);
 	rld_destroy(e1);
 	free(fn);

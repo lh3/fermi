@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
 
 #define RLD_LBITS 23
 #define RLD_LSIZE (1<<RLD_LBITS)
@@ -30,13 +31,15 @@ typedef struct __rld_t {
 	// modified during indexing
 	uint64_t n_frames;
 	uint64_t *frame;
+	// on-disk generation
+	FILE *fp;
 } rld_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-	rld_t *rld_init(int asize, int bbits);
+	rld_t *rld_init(int asize, int bbits, const char *fn);
 	int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c);
 	uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr);
 

@@ -81,7 +81,7 @@ static inline void dec_enc(rld_t *e, rlditr2_t *itr, const rld_t *e0, rlditr_t *
 	}
 }
 
-rld_t *fm_merge_array(const rld_t *e0, const rld_t *e1)
+rld_t *fm_merge_array(rld_t *e0, rld_t *e1, const char *fn)
 {
 	gaparr_t *gap;
 	uint64_t i, k;
@@ -92,7 +92,7 @@ rld_t *fm_merge_array(const rld_t *e0, const rld_t *e1)
 	int64_t l0, l1;
 
 	gap = compute_gap_array(e0, e1);
-	e = rld_init(e0->asize, e0->sbits);
+	e = rld_init(e0->asize, e0->sbits, fn);
 	rld_itr_init(e, &itr.itr, 0);
 	itr.l = l0 = l1 = 0; itr.c = c0 = c1 = -1;
 	rld_itr_init(e0, &itr0, 0);
@@ -182,7 +182,7 @@ static inline void process_gap(uint128_t *p, mergeaux_t *d)
 	d->last = p->x;
 }
 
-rld_t *fm_merge_tree(const rld_t *e0, const rld_t *e1)
+rld_t *fm_merge_tree(rld_t *e0, rld_t *e1, const char *fn)
 {
 	kbtree_t(ind) *tree;
 	mergeaux_t d;
@@ -190,7 +190,7 @@ rld_t *fm_merge_tree(const rld_t *e0, const rld_t *e1)
 	memset(&d, 0, sizeof(mergeaux_t));
 	d.last = -1;
 	d.e0 = e0; d.e1 = e1;
-	d.e = rld_init(e0->asize, e0->sbits);
+	d.e = rld_init(e0->asize, e0->sbits, fn);
 	rld_itr_init(d.e, &d.itr.itr, 0);
 	d.itr.l = d.l0 = d.l1 = 0;
 	d.itr.c = d.c0 = d.c1 = -1;
