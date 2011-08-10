@@ -138,7 +138,7 @@ static void insert_tree(kbtree_t(ind) *g, uint64_t j)
 	uint128_t z, *p;
 	z.x = j;
 	p = kb_getp(ind, g, &z);
-	if (!p || p->x != j) {
+	if (!p) {
 		z.x = j; z.y = 1;
 		kb_putp(ind, g, &z);
 	} else ++p->y;
