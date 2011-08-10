@@ -37,7 +37,7 @@ extern "C" {
 #endif
 
 	rld_t *rld_init(int asize, int bbits);
-	int rld_enc(rld_t *e, rlditr_t *itr, int l, uint8_t c);
+	int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c);
 	uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr);
 
 	int rld_dump(const rld_t *e, const char *fn);
@@ -62,10 +62,11 @@ static inline void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
 	itr->r = 64;
 }
 
-static inline int rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
+static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 {
-	int y = 0, w, l;
+	int w;
 	uint64_t x;
+	int64_t l, y = 0;
 	assert(itr->p <= itr->stail);
 	x = itr->p[0] << (64 - itr->r) | (itr->p < itr->stail && itr->r < 64? itr->p[1] >> itr->r : 0);
 	if (x>>63 == 0) {
@@ -81,9 +82,9 @@ static inline int rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 	return y;
 }
 
-static inline int rld_dec(const rld_t *e, rlditr_t *itr, int *_c)
+static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c)
 {
-	int l = rld_dec0(e, itr, _c);
+	int64_t l = rld_dec0(e, itr, _c);
 	if (l == 0) {
 		uint64_t last = rld_last_blk(e);
 		if (itr->p - *itr->i > RLD_LSIZE - e->ssize) itr->shead = *++itr->i;

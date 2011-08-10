@@ -80,7 +80,7 @@ static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 	for (i = 0; i <= e->asize; ++i) e->mcnt[i] = e->cnt[i];
 }
 
-int rld_enc(rld_t *e, rlditr_t *itr, int l, uint8_t c)
+int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
 {
 	int w;
 	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;

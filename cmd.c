@@ -269,17 +269,23 @@ int main_exact(int argc, char *argv[])
 int main_merge(int argc, char *argv[])
 {
 	int c;
-	rld_t *e0, *e1;
-	while ((c = getopt(argc, argv, "")) >= 0) {
+	rld_t *e0, *e1, *e;
+	char *fn = 0;
+	while ((c = getopt(argc, argv, "o:")) >= 0) {
+		switch (c) {
+			case 'o': fn = strdup(optarg); break;
+		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi merge <in0.bwt> <in1.bwt>\n");
+		fprintf(stderr, "Usage: fermi merge [-o outFile] <in0.bwt> <in1.bwt>\n");
 		return 1;
 	}
 	e0 = rld_restore(argv[optind+0]);
 	e1 = rld_restore(argv[optind+1]);
-	fm_merge0(e0, e1);
+	e = fm_merge0(e0, e1);
+	rld_dump(e, fn? fn : "-");
 	rld_destroy(e0);
 	rld_destroy(e1);
+	free(fn);
 	return 0;
 }
