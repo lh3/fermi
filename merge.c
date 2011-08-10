@@ -13,16 +13,16 @@ typedef struct {
 typedef struct {
 	int32_t *gap;
 	kvec_t(int64_t) a;
-} gap0_t;
+} gaparr_t;
 
 #define GAP_MAX INT32_MAX
 
-gap0_t *fm_compute_gap0(const rld_t *e0, const rld_t *e1)
+static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 {
-	gap0_t *g;
+	gaparr_t *g;
 	uint64_t k, l, *ok, *ol, i, j, x;
 	int c = 0;
-	g = calloc(1, sizeof(gap0_t));
+	g = calloc(1, sizeof(gaparr_t));
 	ok = alloca(8 * e0->asize);
 	ol = alloca(8 * e0->asize);
 	g->gap = calloc(e0->mcnt[0], 4);
@@ -83,7 +83,7 @@ static inline void dec_enc(rld_t *e, rlditr2_t *itr, const rld_t *e0, rlditr_t *
 
 rld_t *fm_merge0(const rld_t *e0, const rld_t *e1)
 {
-	gap0_t *gap;
+	gaparr_t *gap;
 	uint64_t i, k;
 	rlditr_t itr0, itr1;
 	rlditr2_t itr;
@@ -91,7 +91,7 @@ rld_t *fm_merge0(const rld_t *e0, const rld_t *e1)
 	int c0, c1;
 	int64_t l0, l1;
 
-	gap = fm_compute_gap0(e0, e1);
+	gap = compute_gap_array(e0, e1);
 	e = rld_init(e0->asize, e0->sbits);
 	rld_itr_init(e, &itr.itr, 0);
 	itr.l = l0 = l1 = 0; itr.c = c0 = c1 = -1;
@@ -114,3 +114,55 @@ rld_t *fm_merge0(const rld_t *e0, const rld_t *e1)
 	free(gap->gap); free(gap->a.a); free(gap);
 	return e;
 }
+
+// Using khash+ksort may be faster (identical time complexity), but unfortunately khash is 32-bit, which is not adequate
+#include "kbtree.h"
+
+typedef struct {
+	uint64_t x, y; // gap[x]=y
+} uint128_t;
+
+#define uint128_cmp(a, b) ((a).x < (b).x)
+KBTREE_INIT(ind, uint128_t, uint128_cmp)
+
+static void insert_tree(kbtree_t(ind) *g, uint64_t j)
+{
+	uint128_t z, *l, *u;
+	z.x = j;
+	kb_intervalp(ind, g, &z, &l, &u);
+	if (l != u || (l == 0 && u == 0)) { // add a new node
+		z.x = j; z.y = 1;
+		kb_putp(ind, g, &z);
+	} else ++l->y;
+}
+
+static kbtree_t(ind) *compute_gap_tree(const rld_t *e0, const rld_t *e1)
+{
+	kbtree_t(ind) *g;
+	uint64_t k, l, *ok, *ol, i, j, x;
+	int c = 0;
+	g = kb_init(ind, KB_DEFAULT_SIZE);
+	ok = alloca(8 * e0->asize);
+	ol = alloca(8 * e0->asize);
+	x = e1->mcnt[1];
+	k = l = --x; // get the last sentinel of e1
+	j = i = e0->mcnt[1] - 1; // to modify gap[j]
+	insert_tree(g, j);
+	for (;;) {
+		rld_rank2a(e1, k - 1, l, ok, ol);
+		for (c = 0; c < e1->asize; ++c)
+			if (ok[c] < ol[c]) break;
+		if (c == 0) {
+			j = e0->mcnt[1] - 1;
+			k = l = --x;
+			if (x == (uint64_t)-1) break;
+		} else {
+			j = e0->cnt[c] + rld_rank11(e0, i, c) - 1;
+			k = l = e1->cnt[c] + ok[c];
+		}
+		insert_tree(g, j);
+		i = j;
+	}
+	return g;
+}
+
