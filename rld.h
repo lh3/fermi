@@ -21,7 +21,7 @@ typedef struct __rld_t {
 	int8_t abits; // bits required to store a symbol
 	int8_t sbits; // bits per small block
 	int8_t ibits; // modified during indexing; here for a better alignment
-	int8_t offset0[2];
+	int8_t offset0[2]; // 0 for 16-bit blocks; 1 for 32-bit blocks
 	int ssize; // ssize = 1<<sbits
 	// modified during encoding
 	int n; // number of blocks (unchanged in decoding)

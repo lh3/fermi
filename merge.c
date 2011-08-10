@@ -42,18 +42,18 @@ static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 			j = e0->cnt[c] + rld_rank11(e0, i, c) - 1;
 			k = l = e1->cnt[c] + ok[c];
 		}
-		if (g->gap[j] < 0) {
+		if (g->gap[j] < 0) { // the actualy value is stored in g->a
 			++g->a.a[-g->gap[j] - 1];
-		} else if (g->gap[j] == GAP_MAX) {
+		} else if (g->gap[j] == GAP_MAX) { // put the value in g->a
 			kv_push(int64_t, g->a, 1ll + GAP_MAX);
 			g->gap[j] = -(int64_t)g->a.n;
-		} else ++g->gap[j];
+		} else ++g->gap[j]; // simply increase by 1
 		i = j;
 	}
 	return g;
 }
-
-inline void rld_enc2(rld_t *e, rlditr2_t *itr2, int l, int c)
+// This is a clever version of rld_enc(): adjacent runs are guaranteed to be different.
+inline void rld_enc2(rld_t *e, rlditr2_t *itr2, int64_t l, int c)
 {
 	if (l == 0) return;
 	if (itr2->c != c) {
@@ -101,19 +101,20 @@ rld_t *fm_merge_array(rld_t *e0, rld_t *e1, const char *fn)
 		int64_t g = gap->gap[i] < 0? gap->a.a[-gap->gap[i] - 1] : gap->gap[i];
 		if (g) {
 			//printf("gap[%lld]=%lld\n", i, g);
-			dec_enc(e, &itr, e0, &itr0, &l0, &c0, k + 1);
-			dec_enc(e, &itr, e1, &itr1, &l1, &c1, g);
+			dec_enc(e, &itr, e0, &itr0, &l0, &c0, k + 1); // first write symbols from the first index
+			dec_enc(e, &itr, e1, &itr1, &l1, &c1, g); // then from the second
 			k = 0;
 		} else ++k;
 	}
-	if (k) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
+	if (k) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k); // write the remaining symbols from the first index
 	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
-	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols
+	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
 	free(gap->gap); free(gap->a.a); free(gap);
-	if (fn) {
-		rld_destroy(e0); rld_destroy(e1);
+	if (fn) { // if data are written to a file, deallocate e0 and e1 to save memory
+		rld_destroy(e0);
+		if (e1 != e0) rld_destroy(e1);
 	}
-	rld_enc_finish(e, &itr.itr);
+	rld_enc_finish(e, &itr.itr); // this will load the full index in memory
 	return e;
 }
 
@@ -206,7 +207,8 @@ rld_t *fm_merge_tree(rld_t *e0, rld_t *e1, const char *fn)
 	rld_enc(d.e, &d.itr.itr, d.itr.l, d.itr.c); // write the remaining symbols
 	__kb_destroy(tree);
 	if (fn) {
-		rld_destroy(e0); rld_destroy(e1);
+		rld_destroy(e0);
+		if (e1 != e0) rld_destroy(e1);
 	}
 	rld_enc_finish(d.e, &d.itr.itr);
 	return d.e;

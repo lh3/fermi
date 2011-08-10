@@ -102,7 +102,7 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 				kv_push(fmintv_t, *curr, ok[c]);
 			if (ok[0].x[2]) last_sentinel = i - 1;
 		}
-		if (curr->n == 0) {
+		if (curr->n == 0) { // backward search
 			int depth;
 			if (last_sentinel < last_beg) break;
 			c = seq[last_sentinel];
@@ -116,7 +116,7 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 				ik = ok[c];
 			}
 			if (curr->n == 0) break;
-			if (curr->n > 1) {
+			if (curr->n > 1) { // reverse the array such that smaller intervals come first
 				for (j = 0; j < curr->n>>1; ++j) {
 					fmintv_t tmp = curr->a[curr->n - 1 - j];
 					curr->a[curr->n - 1 - j] = curr->a[j];
