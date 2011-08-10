@@ -130,6 +130,7 @@ static inline uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
 {
 	uint64_t y, z, *cnt;
 	rlditr_t itr;
+	if (k == (uint64_t)-1) return 0;
 	cnt = alloca(e->asize1 * 8);
 	rld_locate_blk(e, &itr, k, cnt, &z);
 	y = cnt[c];
@@ -147,6 +148,11 @@ static inline void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 {
 	uint64_t z;
 	rlditr_t itr;
+	if (k == (uint64_t)-1) {
+		int a;
+		for (a = 0; a < e->asize; ++a) ok[a] = 0;
+		return;
+	}
 	rld_locate_blk(e, &itr, k, ok, &z);
 	++k; // because k is the coordinate but not length
 	while (1) {

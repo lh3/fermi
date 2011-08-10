@@ -63,7 +63,6 @@ int main_index(int argc, char *argv[])
 		seq = kseq_init(fp);
 		l = 0; max = 16;
 		s = malloc(max);
-		s[l++] = 0;
 		while (kseq_read(seq) >= 0) {
 			if (l + (seq->seq.l + 1) * 2 > max) {
 				max = l + (seq->seq.l + 1) * 2 + 1;
@@ -226,10 +225,10 @@ int main_unpack(int argc, char *argv[])
 	e = rld_restore(argv[optind]);
 	if (n) {
 		for (i = 0; (int)i < n; ++i)
-			if (list[i] > 0 && list[i] < e->mcnt[1])
+			if (list[i] >= 0 && list[i] < e->mcnt[1])
 				print_i(e, list[i], &s);
 	} else {
-		for (i = 1; i < e->mcnt[1]; ++i)
+		for (i = 0; i < e->mcnt[1]; ++i)
 			print_i(e, i, &s);
 	}
 	rld_destroy(e);
