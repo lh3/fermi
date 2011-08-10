@@ -81,7 +81,7 @@ static inline void dec_enc(rld_t *e, rlditr2_t *itr, const rld_t *e0, rlditr_t *
 	}
 }
 
-rld_t *fm_merge0(const rld_t *e0, const rld_t *e1)
+rld_t *fm_merge_array(const rld_t *e0, const rld_t *e1)
 {
 	gaparr_t *gap;
 	uint64_t i, k;
@@ -99,9 +99,8 @@ rld_t *fm_merge0(const rld_t *e0, const rld_t *e1)
 	rld_itr_init(e1, &itr1, 0);
 	for (i = k = 0; i < e0->mcnt[0]; ++i) {
 		int64_t g = gap->gap[i] < 0? gap->a.a[-gap->gap[i] - 1] : gap->gap[i];
-		//printf("gap[%d]=%lld\n", i, g);
 		if (g) {
-			//printf("%lld, %lld\n", g, k + 1);
+			//printf("gap[%lld]=%lld\n", i, g);
 			dec_enc(e, &itr, e0, &itr0, &l0, &c0, k + 1);
 			dec_enc(e, &itr, e1, &itr1, &l1, &c1, g);
 			k = 0;
@@ -119,21 +118,30 @@ rld_t *fm_merge0(const rld_t *e0, const rld_t *e1)
 #include "kbtree.h"
 
 typedef struct {
-	uint64_t x, y; // gap[x]=y
+	int64_t x, y; // gap[x]=y
 } uint128_t;
 
-#define uint128_cmp(a, b) ((a).x < (b).x)
+#define uint128_cmp(a, b) ((a).x - (b).x)
 KBTREE_INIT(ind, uint128_t, uint128_cmp)
+
+typedef struct {
+	int64_t l0, l1, last;
+	int c0, c1;
+	const rld_t *e0, *e1;
+	rld_t *e;
+	rlditr2_t itr;
+	rlditr_t itr0, itr1;
+} mergeaux_t;
 
 static void insert_tree(kbtree_t(ind) *g, uint64_t j)
 {
-	uint128_t z, *l, *u;
+	uint128_t z, *p;
 	z.x = j;
-	kb_intervalp(ind, g, &z, &l, &u);
-	if (l != u || (l == 0 && u == 0)) { // add a new node
+	p = kb_getp(ind, g, &z);
+	if (!p || p->x != j) {
 		z.x = j; z.y = 1;
 		kb_putp(ind, g, &z);
-	} else ++l->y;
+	} else ++p->y;
 }
 
 static kbtree_t(ind) *compute_gap_tree(const rld_t *e0, const rld_t *e1)
@@ -166,3 +174,34 @@ static kbtree_t(ind) *compute_gap_tree(const rld_t *e0, const rld_t *e1)
 	return g;
 }
 
+static inline void process_gap(uint128_t *p, mergeaux_t *d)
+{
+	//printf("gap[%lld]=%lld\n", p->x, p->y);
+	dec_enc(d->e, &d->itr, d->e0, &d->itr0, &d->l0, &d->c0, p->x - d->last);
+	dec_enc(d->e, &d->itr, d->e1, &d->itr1, &d->l1, &d->c1, p->y);
+	d->last = p->x;
+}
+
+rld_t *fm_merge_tree(const rld_t *e0, const rld_t *e1)
+{
+	kbtree_t(ind) *tree;
+	mergeaux_t d;
+	tree = compute_gap_tree(e0, e1);
+	memset(&d, 0, sizeof(mergeaux_t));
+	d.last = -1;
+	d.e0 = e0; d.e1 = e1;
+	d.e = rld_init(e0->asize, e0->sbits);
+	rld_itr_init(d.e, &d.itr.itr, 0);
+	d.itr.l = d.l0 = d.l1 = 0;
+	d.itr.c = d.c0 = d.c1 = -1;
+	rld_itr_init(e0, &d.itr0, 0);
+	rld_itr_init(e1, &d.itr1, 0);
+	__kb_traverse(uint128_t, tree, process_gap, &d);
+	if (d.last != e0->mcnt[0] - 1)
+		dec_enc(d.e, &d.itr, e0, &d.itr0, &d.l0, &d.c0, e0->mcnt[0] - 1 - d.last);
+	assert(d.l0 == 0 && d.l1 == 0); // both e0 and e1 stream should be finished
+	rld_enc(d.e, &d.itr.itr, d.itr.l, d.itr.c); // write the remaining symbols
+	rld_enc_finish(d.e, &d.itr.itr);
+	__kb_destroy(tree);
+	return d.e;
+}

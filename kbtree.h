@@ -329,7 +329,7 @@ typedef struct {
 	int i;
 } __kbstack_t;
 
-#define __kb_traverse(key_t, b, __func) do {							\
+#define __kb_traverse(key_t, b, __func, __data) do {					\
 		int __kmax = 8;													\
 		__kbstack_t *__kstack, *__kp;									\
 		__kp = __kstack = (__kbstack_t*)calloc(__kmax, sizeof(__kbstack_t)); \
@@ -346,7 +346,7 @@ typedef struct {
 			}															\
 			--__kp;														\
 			if (__kp >= __kstack) {										\
-				if (__kp->x && __kp->i < __kp->x->n) __func(&__KB_KEY(key_t, __kp->x)[__kp->i]); \
+				if (__kp->x && __kp->i < __kp->x->n) __func(&__KB_KEY(key_t, __kp->x)[__kp->i], __data); \
 				++__kp->i;												\
 			} else break;												\
 		}																\
