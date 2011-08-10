@@ -156,7 +156,8 @@ int rld_dump(const rld_t *e, const char *fn)
 	uint64_t k;
 	int i;
 	FILE *fp;
-	if ((fp = fopen(fn, "wb")) == 0) return -1;
+	fp = strcmp(fn, "-")? fopen(fn, "wb") : fdopen(fileno(stdout), "wb");
+	if (fp == 0) return -1;
 	a[0] = e->asize; a[1] = e->sbits;
 	fwrite("RLD\1", 1, 4, fp); // write magic
 	fwrite(a, 4, 2, fp); // write asize and sbits
