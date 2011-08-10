@@ -109,8 +109,11 @@ rld_t *fm_merge_array(rld_t *e0, rld_t *e1, const char *fn)
 	if (k) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
 	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
 	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols
-	rld_enc_finish(e, &itr.itr);
 	free(gap->gap); free(gap->a.a); free(gap);
+	if (fn) {
+		rld_destroy(e0); rld_destroy(e1);
+	}
+	rld_enc_finish(e, &itr.itr);
 	return e;
 }
 
@@ -201,7 +204,10 @@ rld_t *fm_merge_tree(rld_t *e0, rld_t *e1, const char *fn)
 		dec_enc(d.e, &d.itr, e0, &d.itr0, &d.l0, &d.c0, e0->mcnt[0] - 1 - d.last);
 	assert(d.l0 == 0 && d.l1 == 0); // both e0 and e1 stream should be finished
 	rld_enc(d.e, &d.itr.itr, d.itr.l, d.itr.c); // write the remaining symbols
-	rld_enc_finish(d.e, &d.itr.itr);
 	__kb_destroy(tree);
+	if (fn) {
+		rld_destroy(e0); rld_destroy(e1);
+	}
+	rld_enc_finish(d.e, &d.itr.itr);
 	return d.e;
 }

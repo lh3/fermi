@@ -285,8 +285,7 @@ int main_merge(int argc, char *argv[])
 	e0 = rld_restore(argv[optind+0]);
 	e1 = rld_restore(argv[optind+1]);
 	e = use_array? fm_merge_array(e0, e1, fn) : fm_merge_tree(e0, e1, fn);
-	rld_destroy(e0);
-	rld_destroy(e1);
+	rld_destroy(e);
 	free(fn);
 	return 0;
 }
