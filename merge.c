@@ -15,7 +15,7 @@ uint32_t *fm_compute_gap0(const rld_t *e0, const rld_t *e1)
 	k = l = --x; // get the last sentinel of e1
 	j = i = e0->mcnt[1] - 1; // to modify gap[j]
 	++gap[j];
-	while (c || x) {
+	while (x != (uint64_t)-1 || c) {
 		printf("[%lld,%lld]@%d, %lld\n", k, l, c, x);
 		rld_rank2a(e1, k - 1, l, ok, ol);
 		for (c = 0; c < e1->asize; ++c)
