@@ -3,12 +3,14 @@
 #include <string.h>
 #include <stdio.h>
 #include <zlib.h>
+#include <limits.h>
 #include "rld.h"
 #include "fermi.h"
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
 int sais(const unsigned char *T, int *SA, int n, int k);
+int sais64(const unsigned char *T, int64_t *SA, int64_t n, int64_t k);
 int sa_check(const unsigned char *T, const int *SA, int n);
 
 void seq_char2nt6(int l, unsigned char *s);
@@ -18,8 +20,8 @@ double cputime();
 
 int main_index(int argc, char *argv[])
 {
-	int i, bbits = 3, plain = 0, check = 0, force = 0, no_reverse = 0;
-	uint32_t l, max;
+	int bbits = 3, plain = 0, check = 0, force = 0, no_reverse = 0;
+	int64_t i, l, max;
 	uint8_t *s;
 	char *idxfn = 0;
 
@@ -83,13 +85,27 @@ int main_index(int argc, char *argv[])
 		fprintf(stderr, "[M::%s] Load sequences in %.3f seconds.\n", __func__, cputime() - t);
 	}
 	
-	{ // construct BWT
+	if (l <= INT_MAX) { // construct BWT for <2GB data
 		int *SA = malloc(l * sizeof(int));
 		double t = cputime();
 		sais(s, SA, l, 6);
 		fprintf(stderr, "[M::%s] Constructed the suffix array in %.3f seconds.\n", __func__, cputime() - t);
 		if (check)
 			fprintf(stderr, "[M::%s] SA checking returned value: %d\n", __func__, sa_check(s, SA, l));
+		t = cputime();
+		for (i = 0; i < l; ++i) {
+			if (SA[i] == 0) SA[i] = 0;
+			else SA[i] = s[SA[i] - 1];
+		}
+		for (i = 0; i < l; ++i) s[i] = SA[i];
+		fprintf(stderr, "[M::%s] Generated BWT in %.3f seconds.\n", __func__, cputime() - t);
+		free(SA);
+	} else { // construct BWT for >=2GB data
+		int64_t *SA = malloc(l * 8);
+		double t = cputime();
+		fprintf(stderr, "[W::%s] Length of concatenated sequence is over 2GB. Use the 64-bit SAIS algorithm.\n", __func__);
+		sais64(s, SA, l, 6);
+		fprintf(stderr, "[M::%s] Constructed the suffix array in %.3f seconds.\n", __func__, cputime() - t);
 		t = cputime();
 		for (i = 0; i < l; ++i) {
 			if (SA[i] == 0) SA[i] = 0;

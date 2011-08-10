@@ -27,10 +27,20 @@
 /** Compute the suffix array for a string containing multiple sentinels, represented by NULL. */
 
 #include <stdlib.h>
-#include <limits.h>
 
+#ifdef _SAIS64
+#include <stdint.h>
+typedef int64_t saint_t;
+#define SAINT_MAX INT64_MAX
+#define SAIS_CORE sais_core64
+#define SAIS_MAIN sais64
+#else
+#include <limits.h>
 typedef int saint_t;
 #define SAINT_MAX INT_MAX
+#define SAIS_CORE sais_core
+#define SAIS_MAIN sais
+#endif
 
 /* T is of type "const unsigned char*". If T[i] is a sentinel, chr(i) takes a negative value */
 #define chr(i) (cs == sizeof(saint_t) ? ((const saint_t *)T)[i] : (T[i]? (saint_t)T[i] : i - SAINT_MAX))
@@ -110,7 +120,7 @@ static void induceSA(const unsigned char *T, saint_t *SA, saint_t *C, saint_t *B
  *
  * @return    0 upon success
  */
-saint_t sais_core(const unsigned char *T, saint_t *SA, saint_t fs, saint_t n, saint_t k, int cs)
+saint_t SAIS_CORE(const unsigned char *T, saint_t *SA, saint_t fs, saint_t n, saint_t k, int cs)
 {
 	saint_t *C, *B;
 	saint_t  i, j, c, m, q, qlen, name;
@@ -165,7 +175,7 @@ saint_t sais_core(const unsigned char *T, saint_t *SA, saint_t fs, saint_t n, sa
 		for (i = n - 1, j = m - 1; m <= i; --i)
 			if (SA[i] != 0) RA[j--] = SA[i];
 		RA[m] = 0; // add a sentinel; in the resulting SA, SA[0]==m always stands
-		if (sais_core((unsigned char *)RA, SA, fs + n - m * 2 - 2, m + 1, name + 1, sizeof(saint_t)) != 0) return -2;
+		if (SAIS_CORE((unsigned char *)RA, SA, fs + n - m * 2 - 2, m + 1, name + 1, sizeof(saint_t)) != 0) return -2;
 		for (i = n - 2, j = m - 1, c = 1, c1 = chr(n - 1); 0 <= i; --i, c1 = c0) {
 			if ((c0 = chr(i)) < c1 + c) c = 1;
 			else if (c) RA[j--] = i + 1, c = 0; /* get p1 */
@@ -203,9 +213,9 @@ saint_t sais_core(const unsigned char *T, saint_t *SA, saint_t fs, saint_t n, sa
  * @param k          size of the alphabet including the sentinel; no more than 256
  * @return           0 upon success
  */
-saint_t sais(const unsigned char *T, saint_t *SA, saint_t n, saint_t k)
+saint_t SAIS_MAIN(const unsigned char *T, saint_t *SA, saint_t n, saint_t k)
 {
 	if (T == NULL || SA == NULL || T[n - 1] != '\0' || n <= 0) return -1;
 	if (k < 0 || k > 256) k = 256;
-	return sais_core(T, SA, 0, n, k, 1);
+	return SAIS_CORE(T, SA, 0, n, k, 1);
 }
