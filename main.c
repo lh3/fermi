@@ -7,6 +7,7 @@ int main_chkbwt(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_exact(int argc, char *argv[]);
 int main_merge(int argc, char *argv[]);
+int main_strlen(int argc, char *argv[]);
 
 int main(int argc, char *argv[])
 {
@@ -16,8 +17,10 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Version: %s\n", FERMI_VERSION);
 		fprintf(stderr, "Contact: Heng Li <lh3@live.co.uk>\n\n");
 		fprintf(stderr, "Usage:   fermi <command> [arguments]\n\n");
-		fprintf(stderr, "Command: index     Generated FM-Index for sequences shorter than 1G\n");
+		fprintf(stderr, "Command: strlen    Total number of symbols to index\n");
+		fprintf(stderr, "         index     Generated FM-Index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
+		fprintf(stderr, "         merge     Merge two FM-Indexes\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
 		fprintf(stderr, "         exact     Find exact matches\n");
 		fprintf(stderr, "\n");
@@ -28,6 +31,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "unpack") == 0) return main_unpack(argc-1, argv+1);
 	else if (strcmp(argv[1], "exact") == 0) return main_exact(argc-1, argv+1);
 	else if (strcmp(argv[1], "merge") == 0) return main_merge(argc-1, argv+1);
+	else if (strcmp(argv[1], "strlen") == 0) return main_strlen(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;

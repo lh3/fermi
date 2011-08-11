@@ -18,33 +18,62 @@ void seq_revcomp6(int l, unsigned char *s);
 
 double cputime();
 
+int main_strlen(int argc, char *argv[])
+{
+	int64_t l = 0;
+	gzFile fp;
+	kseq_t *seq;
+	if (argc == 1) {
+		fprintf(stderr, "Usage: fermi strlen <in.fq>\n");
+		return 1;
+	}
+	fp = gzopen(argv[1], "r");
+	seq = kseq_init(fp);
+	while (kseq_read(seq) >= 0) l += 2 * (seq->seq.l + 1);
+	printf("%lld\n", (long long)l);
+	kseq_destroy(seq);
+	gzclose(fp);
+	return 0;
+}
+
 int main_index(int argc, char *argv[])
 {
 	int bbits = 3, plain = 0, check = 0, force = 0, no_reverse = 0;
-	int64_t i, l, max;
+	int64_t i, l, max, size = 0x7fffffef, sub_l, n_blocks, start = 0;
 	uint8_t *s;
 	char *idxfn = 0;
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "CPRfb:")) >= 0) {
+		while ((c = getopt(argc, argv, "CPRfb:s:i:o:")) >= 0) {
 			switch (c) {
 				case 'C': check = 1; break;
 				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
 				case 'R': no_reverse = 1; break;
 				case 'b': bbits = atoi(optarg); break;
+				case 'o': idxfn = strdup(optarg); break;
+				case 's': {
+					char *p;
+					double x = strtod(optarg, &p);
+					size = (int64_t)(x * 1024. * 1024. + .499) - 16;
+					if (size < 1<<16) size = 0x7fffffef;
+					break;
+				}
+				case 'i': start = atoi(optarg); break;
 			}
 		}
 		if (argc == optind) {
-			fprintf(stderr, "Usage: fermi index [-CfP] [-b sbits] <in.fa>\n");
+			fprintf(stderr, "Usage: fermi index [-CfP] [-b sbits] [-s blockSize] [-i start] <in.fa>\n");
 			return 1;
 		}
 		if (!plain) {
 			FILE *fp;
-			idxfn = malloc(strlen(argv[optind]) + 6);
-			strcpy(idxfn, argv[optind]);
-			strcat(idxfn, ".bwt");
+			if (idxfn == 0) {
+				idxfn = malloc(strlen(argv[optind]) + 6);
+				strcpy(idxfn, argv[optind]);
+				strcat(idxfn, ".bwt");
+			}
 			if (!force && (fp = fopen(idxfn, "rb")) != 0) {
 				fclose(fp);
 				fprintf(stderr, "[E::%s] File `%s' exists. Please use `-f' to overwrite.\n", __func__, idxfn);
@@ -59,13 +88,28 @@ int main_index(int argc, char *argv[])
 		gzFile fp;
 		fp = gzopen(argv[optind], "r");
 		if (fp == 0) {
-			fprintf(stderr, "[E::%s] fail to open the input file.\n", __func__);
+			fprintf(stderr, "[E::%s] Fail to open the input file.\n", __func__);
 			return 1;
 		}
 		seq = kseq_init(fp);
 		l = 0; max = 16;
+		sub_l = n_blocks = 0;
 		s = malloc(max);
 		while (kseq_read(seq) >= 0) {
+			if (n_blocks < start) {
+				int x = (seq->seq.l + 1) * 2;
+				if (sub_l + x > size) {
+					sub_l = x;
+					if (++n_blocks < start) continue;
+				} else {
+					sub_l += x;
+					continue;
+				}
+			}
+			if (l + seq->seq.l > size) {
+				fprintf(stderr, "[W::%s] To construct SA for %lld symbols. Trailing data discarded.\n", __func__, (long long)l);
+				break;
+			}
 			if (l + (seq->seq.l + 1) * 2 > max) {
 				max = l + (seq->seq.l + 1) * 2 + 1;
 				kroundup32(max);
