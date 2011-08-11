@@ -26,14 +26,14 @@ uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_
 void fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 {
 	uint64_t k, *ok, *ol;
-	ok = alloca(8 * e->asize);
-	ol = alloca(8 * e->asize);
+	ok = alloca(8 * RLD_ASIZE);
+	ol = alloca(8 * RLD_ASIZE);
 	s->l = 0;
 	k = x;
 	while (1) {
 		int c;
 		rld_rank2a(e, k - 1, k, ok, ol);
-		for (c = 0; c < e->asize; ++c) { // FIXME: to simplify
+		for (c = 0; c < RLD_ASIZE; ++c) { // FIXME: to simplify
 			ok[c] += e->cnt[c];
 			ol[c] += e->cnt[c] - 1;
 			if (ol[c] == ok[c]) break;

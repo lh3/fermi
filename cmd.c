@@ -38,7 +38,7 @@ int main_strlen(int argc, char *argv[])
 
 int main_index(int argc, char *argv[])
 {
-	int bbits = 3, plain = 0, check = 0, force = 0, no_reverse = 0;
+	int bbits = 6, plain = 0, check = 0, force = 0, no_reverse = 0;
 	int64_t i, l, max, size = 0x7fffffef, sub_l, n_blocks, start = 0;
 	uint8_t *s;
 	char *idxfn = 0;
@@ -211,38 +211,41 @@ int main_chkbwt(int argc, char *argv[])
 		fprintf(stderr, "[E::%s] Fail to read the index file.\n", __func__);
 		return 1;
 	}
-	cnt = alloca(e->asize * 8);
-	rank = alloca(e->asize * 8);
+	cnt = alloca(RLD_ASIZE * 8);
+	rank = alloca(RLD_ASIZE * 8);
 	rld_itr_init(e, &itr, 0);
-	for (i = 0; i < e->asize; ++i) cnt[i] = 0;
+	for (i = 0; i < RLD_ASIZE; ++i) cnt[i] = 0;
 	t = cputime();
-	while ((l = rld_dec(e, &itr, &c)) >= 0) {
-		if (c >= e->asize) {
+	while ((l = rld_dec(e, &itr, &c)) > 0) {
+		if (c >= RLD_ASIZE) {
 			fprintf(stderr, "[E::%s] Symbol `%d' is not in the alphabet.\n", __func__, c);
 			exit(1); // memory leak
 		}
-		for (i = 0; i < l; ++i) {
-			++cnt[c];
-			rld_rank1a(e, sum, rank);
-			for (j = 0; j < e->asize; ++j) {
-				if (cnt[j] != rank[j]) {
-					fprintf(stderr, "[E::%s] rank(%d,%lld)=%lld != %lld\n", __func__,
-							j, (unsigned long long)sum, (unsigned long long)rank[j], (unsigned long long)cnt[j]);
-					exit(1); // memory leak
+		if (!plain) {
+			for (i = 0; i < l; ++i) {
+				++cnt[c];
+				rld_rank1a(e, sum, rank);
+				for (j = 0; j < RLD_ASIZE; ++j) {
+					if (cnt[j] != rank[j]) {
+						fprintf(stderr, "[E::%s] rank(%d,%lld)=%lld != %lld\n", __func__,
+								j, (unsigned long long)sum, (unsigned long long)rank[j], (unsigned long long)cnt[j]);
+						exit(1); // memory leak
+					}
 				}
+				++sum;
+				if (sum%10000000 == 0)
+					fprintf(stderr, "[M::%s] Checked %lld symbols.\n", __func__, (unsigned long long)sum);
 			}
-			++sum;
-			if (sum%10000000 == 0)
-				fprintf(stderr, "[M::%s] Checked %lld symbols.\n", __func__, (unsigned long long)sum);
-		}
-		if (plain) for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
+		} else for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
 	}
 	fprintf(stderr, "[M::%s] Checked the rank function in %.3lf seconds.\n", __func__, cputime() - t);
-	for (j = 0; j < e->asize; ++j) {
-		if (cnt[j] != e->mcnt[j+1]) {
-			fprintf(stderr, "[E::%s] Different counts: %lld != %lld\n", __func__,
-					(unsigned long long)cnt[j], (unsigned long long)e->mcnt[j+1]);
-			exit(1);
+	if (!plain) {
+		for (j = 0; j < RLD_ASIZE; ++j) {
+			if (cnt[j] != e->mcnt[j+1]) {
+				fprintf(stderr, "[E::%s] Different counts: %lld != %lld\n", __func__,
+						(unsigned long long)cnt[j], (unsigned long long)e->mcnt[j+1]);
+				exit(1);
+			}
 		}
 	}
 	if (plain) putchar('\n');

@@ -23,8 +23,8 @@ static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 	uint64_t k, l, *ok, *ol, i, j, x;
 	int c = 0;
 	g = calloc(1, sizeof(gaparr_t));
-	ok = alloca(8 * e0->asize);
-	ol = alloca(8 * e0->asize);
+	ok = alloca(8 * RLD_ASIZE);
+	ol = alloca(8 * RLD_ASIZE);
 	g->gap = calloc(e0->mcnt[0], 4);
 	x = e1->mcnt[1];
 	k = l = --x; // get the last sentinel of e1
@@ -32,7 +32,7 @@ static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 	++g->gap[j];
 	for (;;) {
 		rld_rank2a(e1, k - 1, l, ok, ol);
-		for (c = 0; c < e1->asize; ++c)
+		for (c = 0; c < RLD_ASIZE; ++c)
 			if (ok[c] < ol[c]) break;
 		if (c == 0) {
 			j = e0->mcnt[1] - 1;
@@ -92,7 +92,7 @@ rld_t *fm_merge_array(rld_t *e0, rld_t *e1, const char *fn)
 	int64_t l0, l1;
 
 	gap = compute_gap_array(e0, e1);
-	e = rld_init(e0->asize, e0->sbits, fn);
+	e = rld_init(RLD_ASIZE, e0->sbits, fn);
 	rld_itr_init(e, &itr.itr, 0);
 	itr.l = l0 = l1 = 0; itr.c = c0 = c1 = -1;
 	rld_itr_init(e0, &itr0, 0);
@@ -154,15 +154,15 @@ static kbtree_t(ind) *compute_gap_tree(const rld_t *e0, const rld_t *e1)
 	uint64_t k, l, *ok, *ol, i, j, x;
 	int c = 0;
 	g = kb_init(ind, KB_DEFAULT_SIZE);
-	ok = alloca(8 * e0->asize);
-	ol = alloca(8 * e0->asize);
+	ok = alloca(8 * RLD_ASIZE);
+	ol = alloca(8 * RLD_ASIZE);
 	x = e1->mcnt[1];
 	k = l = --x; // get the last sentinel of e1
 	j = i = e0->mcnt[1] - 1; // to modify gap[j]
 	insert_tree(g, j);
 	for (;;) {
 		rld_rank2a(e1, k - 1, l, ok, ol);
-		for (c = 0; c < e1->asize; ++c)
+		for (c = 0; c < RLD_ASIZE; ++c)
 			if (ok[c] < ol[c]) break;
 		if (c == 0) {
 			j = e0->mcnt[1] - 1;
@@ -194,7 +194,7 @@ rld_t *fm_merge_tree(rld_t *e0, rld_t *e1, const char *fn)
 	memset(&d, 0, sizeof(mergeaux_t));
 	d.last = -1;
 	d.e0 = e0; d.e1 = e1;
-	d.e = rld_init(e0->asize, e0->sbits, fn);
+	d.e = rld_init(RLD_ASIZE, e0->sbits, fn);
 	rld_itr_init(d.e, &d.itr.itr, 0);
 	d.itr.l = d.l0 = d.l1 = 0;
 	d.itr.c = d.c0 = d.c1 = -1;
