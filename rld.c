@@ -244,6 +244,35 @@ uint64_t rld_rawlen(const rld_t *e)
 	return rld_seek_blk(e, x)[0];
 }
 
+static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k, uint64_t *cnt, uint64_t *sum)
+{
+	int j;
+	uint64_t c = 0, *q, *z = e->frame + (k>>e->ibits) * e->asize1;
+	itr->i = e->z + (*z>>RLD_LBITS);
+	q = itr->p = *itr->i + (*z&RLD_LMASK);
+	for (j = 1, *sum = 0; j < e->asize1; ++j) *sum += (cnt[j-1] = z[j]);
+	while (1) { // seek to the small block
+		q += e->ssize;
+		if (q - *itr->i == RLD_LSIZE) q = *++itr->i;
+		c = rld_size_bit(*q)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
+		if (*sum + c > k) break;
+		if (rld_size_bit(*q)) {
+			uint32_t *p = (uint32_t*)q;
+			for (j = 0; j < e->asize; ++j) cnt[j] += p[j+1];
+		} else {
+			uint16_t *p = (uint16_t*)q;
+			for (j = 0; j < e->asize; ++j) cnt[j] += p[j+1];
+		}
+		*sum += c;
+		itr->p = q;
+	}
+	itr->shead = itr->p;
+	itr->stail = itr->shead + e->ssize - 1;
+	itr->p += e->offset0[rld_size_bit(*itr->shead)];
+	itr->r = 64;
+	return c + *sum;
+}
+
 uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
 {
 	uint64_t y, z, *cnt;
