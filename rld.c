@@ -5,7 +5,11 @@
 #include <assert.h>
 #include "rld.h"
 
+#ifdef _USE_RLE6
+#define RLD_IBITS_PLUS 3
+#else
 #define RLD_IBITS_PLUS 4
+#endif
 
 static const char LogTable256[256] = {
 #define LT(n) n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n
@@ -130,7 +134,7 @@ inline int rld_enc0(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 
 int rld_enc(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 {
-	const int max_l = (1<<RLD_LBITS) - 1;
+	const int max_l = (1<<23) - 1;
 	for (; l > max_l; l -= max_l)
 		rld_enc0(r, itr, max_l, c);
 	rld_enc0(r, itr, l, c);
