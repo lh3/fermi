@@ -37,7 +37,7 @@ rld_t *rld_init(int asize, int bbits, const char *fn)
 	e = calloc(1, sizeof(rld_t));
 	e->n = 1;
 	e->z = malloc(sizeof(void*));
-	e->z[0] = calloc(RLD_LSIZE, 8);
+	e->z[0] = calloc(RLD_LSIZE, 1);
 	e->ssize = 1<<bbits;
 	e->cnt = calloc(RLD_ASIZE + 1, 8);
 	e->mcnt = calloc(RLD_ASIZE + 1, 8);
