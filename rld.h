@@ -47,6 +47,11 @@ extern "C" {
 	rld_t *rld_restore(const char *fn);
 	void rld_destroy(rld_t *e);
 
+	uint64_t rld_rank11(const rld_t *e, uint64_t k, int c);
+	void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok);
+	void rld_rank21(const rld_t *e, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol);
+	void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *ol);
+
 #ifdef __cplusplus
 }
 #endif
@@ -127,87 +132,6 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 	itr->p += e->offset0[rld_size_bit(*itr->shead)];
 	itr->r = 64;
 	return c + *sum;
-}
-
-static inline uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
-{
-	uint64_t y, z, *cnt;
-	rlditr_t itr;
-	if (k == (uint64_t)-1) return 0;
-	cnt = alloca(e->asize1 * 8);
-	rld_locate_blk(e, &itr, k, cnt, &z);
-	y = cnt[c];
-	++k; // because k is the coordinate but not length
-	while (1) {
-		int a = -1, l;
-		l = rld_dec0(e, &itr, &a);
-		if (z + l >= k) return y + (a == c? k - z: 0);
-		z += l;
-		if (a == c) y += l;
-	}
-}
-
-static inline void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
-{
-	uint64_t z, l;
-	int a = -1;
-	rlditr_t itr;
-	if (k == (uint64_t)-1) {
-		int a;
-		for (a = 0; a < e->asize; ++a) ok[a] = 0;
-		return;
-	}
-	rld_locate_blk(e, &itr, k, ok, &z);
-	++k; // because k is the coordinate but not length
-	while (1) {
-		l = rld_dec0(e, &itr, &a);
-		if (z + l >= k) break;
-		z += l; ok[a] += l;
-	}
-	ok[a] += k - z;
-}
-
-static inline void rld_rank21(const rld_t *e, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
-{
-	*ok = rld_rank11(e, k, c);
-	*ol = rld_rank11(e, l, c);
-}
-
-static inline void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *ol)
-{
-	uint64_t z, y, len;
-	rlditr_t itr;
-	int a = -1;
-	if (k == (uint64_t)-1) { // special treatment for k==-1
-		for (a = 0; a < e->asize; ++a) ok[a] = 0;
-		rld_rank1a(e, l, ol);
-		return;
-	}
-	y = rld_locate_blk(e, &itr, k, ok, &z); // locate the block bracketing k
-	++k; // because k is the coordinate but not length
-	while (1) { // compute ok[]
-		len = rld_dec0(e, &itr, &a);
-		if (z + len >= k) break;
-		z += len; ok[a] += len;
-	}
-	if (y > l) { // we do not need to decode other blocks
-		int b;
-		++l; // for a similar reason to ++l
-		for (b = 0; b < e->asize; ++b) ol[b] = ok[b]; // copy ok[] to ol[]
-		ok[a] += k - z; // finalize ok[a]
-		if (z + len < l) { // we need to decode the next run
-			z += len; ol[a] += len;
-			while (1) {
-				len = rld_dec0(e, &itr, &a);
-				if (z + len >= l) break;
-				z += len; ol[a] += len;
-			}
-		}
-		ol[a] += l - z;
-	} else { // we have to decode other blocks
-		ok[a] += k - z;
-		rld_rank1a(e, l, ol);
-	}
 }
 
 #endif
