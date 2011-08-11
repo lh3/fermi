@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define FERMI_VERSION "0.0-dev (r112)"
+#define FERMI_VERSION "0.0-dev (r121)"
 
 typedef struct {
 	uint64_t x[3]; // 0: start of the interval, backward; 1: forward; 2: size of the interval
