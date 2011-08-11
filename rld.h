@@ -13,6 +13,7 @@
 typedef struct {
 	int r; // bits remained in the last 64-bit integer
 	uint64_t *p, *shead, *stail, **i;
+	uint8_t *q;
 } rlditr_t;
 
 typedef struct __rld_t {
@@ -67,9 +68,32 @@ static inline void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
 	itr->shead = *itr->i + k%RLD_LSIZE;
 	itr->stail = itr->shead + e->ssize - 1;
 	itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
+	itr->q = (uint8_t*)itr->p;
 	itr->r = 64;
 }
 
+#ifdef _USE_RLE6
+static inline int64_t rld_dec0(const rld_t *r, rlditr_t *itr, int *c)
+{
+	int64_t l;
+	*c = *itr->q >> 5;
+	if (*c < 6) {
+		l = *itr->q&0x1f;
+		++itr->q;
+	} else if (*c == 6) {
+		*c = *itr->q>>2 & 0x7;
+		if (*c != 6) {
+			l = ((int64_t)itr->q[0]&0x3) | (int64_t)itr->q[1]<<2;
+			itr->q += 2;
+		} else {
+			*c = (itr->q[0]&0x3) | itr->q[1]>>7<<2;
+			l = ((uint32_t)itr->q[1]&0x7f) | (uint32_t)itr->q[2] << 7 | (uint32_t)itr->q[3] << 15;
+			itr->q += 4;
+		}
+	} else return 0;
+	return l;
+}
+#else
 static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 {
 	int w;
@@ -89,6 +113,7 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 	else ++itr->p, itr->r = 64 + itr->r - w;
 	return y;
 }
+#endif
 
 static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c)
 {
@@ -99,6 +124,7 @@ static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c)
 		else itr->shead += e->ssize;
 		if (itr->shead == rld_seek_blk(e, last)) return -1;
 		itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
+		itr->q = (uint8_t*)itr->p;
 		itr->stail = itr->shead + e->ssize - 1;
 		itr->r = 64;
 		return rld_dec0(e, itr, _c);

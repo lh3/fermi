@@ -42,6 +42,9 @@ static void dump_header(const rld_t *e, FILE *fp)
 rld_t *rld_init(int asize, int bbits, const char *fn)
 {
 	rld_t *e;
+#ifdef _USE_RLE6
+	asize = 6;
+#endif
 	e = calloc(1, sizeof(rld_t));
 	e->n = 1;
 	e->z = malloc(sizeof(void*));
@@ -96,10 +99,44 @@ static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 		itr->p = itr->shead + e->offset0[0];
 	}
 	itr->stail = itr->shead + e->ssize - 1;
+	itr->q = (uint8_t*)itr->p;
 	itr->r = 64;
 	for (i = 0; i <= e->asize; ++i) e->mcnt[i] = e->cnt[i];
 }
 
+#ifdef _USE_RLE6
+inline int rld_enc0(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
+{
+	int w;
+	w = l < 32? 1 : l < 1024? 2 : 4;
+	if (itr->q + w > (uint8_t*)itr->stail) {
+		*itr->q = 0xff;
+		enc_next_block(r, itr);
+	}
+	if (w == 1) *itr->q++ = c<<5 | l;
+	else if (w == 2) {
+		*itr->q++ = 6<<5 | c<<2 | (l&0x3);
+		*itr->q++ = l>>2&0xff;
+	} else {
+		*itr->q++ = 6<<5 | 6<<2 | (c&0x3);
+		*itr->q++ = (c>>2)<<7 | (l&0x7f);
+		*itr->q++ = l>>7&0xff;
+		*itr->q++ = l>>15;
+	}
+	r->cnt[0] += l;
+	r->cnt[c + 1] += l;
+	return 0;
+}
+
+int rld_enc(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
+{
+	const int max_l = (1<<RLD_LBITS) - 1;
+	for (; l > max_l; l -= max_l)
+		rld_enc0(r, itr, max_l, c);
+	rld_enc0(r, itr, l, c);
+	return 0;
+}
+#else
 int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
 {
 	int w;
@@ -115,6 +152,7 @@ int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
 	e->cnt[c + 1] += l;
 	return 0;
 }
+#endif
 
 void rld_rank_index(rld_t *e)
 {
@@ -269,6 +307,7 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 	itr->shead = itr->p;
 	itr->stail = itr->shead + e->ssize - 1;
 	itr->p += e->offset0[rld_size_bit(*itr->shead)];
+	itr->q = (uint8_t*)itr->p;
 	itr->r = 64;
 	return c + *sum;
 }
