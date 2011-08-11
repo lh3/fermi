@@ -106,7 +106,7 @@ int main_index(int argc, char *argv[])
 					continue;
 				}
 			}
-			if (l + seq->seq.l > size) {
+			if (l + 2 * (seq->seq.l + 1) > size) {
 				fprintf(stderr, "[W::%s] To construct SA for %lld symbols. Trailing data discarded.\n", __func__, (long long)l);
 				break;
 			}
