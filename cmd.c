@@ -328,17 +328,17 @@ int main_exact(int argc, char *argv[])
 
 int main_merge(int argc, char *argv[])
 {
-	int c, use_array = 0;
+	int c, use_array = 1;
 	rld_t *e0, *e1, *e;
 	char *fn = 0;
-	while ((c = getopt(argc, argv, "ao:")) >= 0) {
+	while ((c = getopt(argc, argv, "to:")) >= 0) {
 		switch (c) {
-			case 'a': use_array = 1; break;
+			case 't': use_array = 0; break;
 			case 'o': fn = strdup(optarg); break;
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi merge [-a] [-o outFile] <in0.bwt> <in1.bwt>\n");
+		fprintf(stderr, "Usage: fermi merge [-t] [-o outFile] <in0.bwt> <in1.bwt>\n");
 		return 1;
 	}
 	if (fn == 0) fn = strdup("-");

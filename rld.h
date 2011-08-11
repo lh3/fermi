@@ -70,7 +70,7 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 	int w;
 	uint64_t x;
 	int64_t l, y = 0;
-	assert(itr->p <= itr->stail);
+//	assert(itr->p <= itr->stail);
 	x = itr->p[0] << (64 - itr->r) | (itr->p < itr->stail && itr->r < 64? itr->p[1] >> itr->r : 0);
 	if (x>>63 == 0) {
 		if ((w = 0x333333335555779bll>>(x>>59<<2)&0xf) == 0xb && x>>58 == 0) return 0;
@@ -100,15 +100,14 @@ static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c)
 	} else return l;
 }
 
-static inline uint64_t *rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k, uint64_t *cnt, uint64_t *sum)
+static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k, uint64_t *cnt, uint64_t *sum)
 {
 	int j;
-	uint64_t *q, *z = e->frame + (k>>e->ibits) * e->asize1;
+	uint64_t c = 0, *q, *z = e->frame + (k>>e->ibits) * e->asize1;
 	itr->i = e->z + (*z>>RLD_LBITS);
 	q = itr->p = *itr->i + (*z&RLD_LMASK);
 	for (j = 1, *sum = 0; j < e->asize1; ++j) *sum += (cnt[j-1] = z[j]);
 	while (1) { // seek to the small block
-		uint64_t c = 0;
 		q += e->ssize;
 		if (q - *itr->i == RLD_LSIZE) q = *++itr->i;
 		c = rld_size_bit(*q)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
@@ -127,7 +126,7 @@ static inline uint64_t *rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k
 	itr->stail = itr->shead + e->ssize - 1;
 	itr->p += e->offset0[rld_size_bit(*itr->shead)];
 	itr->r = 64;
-	return q;
+	return c + *sum;
 }
 
 static inline uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
@@ -150,7 +149,8 @@ static inline uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
 
 static inline void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 {
-	uint64_t z;
+	uint64_t z, l;
+	int a = -1;
 	rlditr_t itr;
 	if (k == (uint64_t)-1) {
 		int a;
@@ -160,14 +160,11 @@ static inline void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 	rld_locate_blk(e, &itr, k, ok, &z);
 	++k; // because k is the coordinate but not length
 	while (1) {
-		int a = -1, l;
 		l = rld_dec0(e, &itr, &a);
-		if (z + l >= k) {
-			ok[a] += k - z;
-			break;
-		}
+		if (z + l >= k) break;
 		z += l; ok[a] += l;
 	}
+	ok[a] += k - z;
 }
 
 static inline void rld_rank21(const rld_t *e, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
@@ -176,10 +173,41 @@ static inline void rld_rank21(const rld_t *e, uint64_t k, uint64_t l, int c, uin
 	*ol = rld_rank11(e, l, c);
 }
 
-static inline void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
+static inline void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *ol)
 {
-	rld_rank1a(e, k, ok);
-	rld_rank1a(e, l, ol);
+	uint64_t z, y, len;
+	rlditr_t itr;
+	int a = -1;
+	if (k == (uint64_t)-1) { // special treatment for k==-1
+		for (a = 0; a < e->asize; ++a) ok[a] = 0;
+		rld_rank1a(e, l, ol);
+		return;
+	}
+	y = rld_locate_blk(e, &itr, k, ok, &z); // locate the block bracketing k
+	++k; // because k is the coordinate but not length
+	while (1) { // compute ok[]
+		len = rld_dec0(e, &itr, &a);
+		if (z + len >= k) break;
+		z += len; ok[a] += len;
+	}
+	if (y > l) { // we do not need to decode other blocks
+		int b;
+		++l; // for a similar reason to ++l
+		for (b = 0; b < e->asize; ++b) ol[b] = ok[b]; // copy ok[] to ol[]
+		ok[a] += k - z; // finalize ok[a]
+		if (z + len < l) { // we need to decode the next run
+			z += len; ol[a] += len;
+			while (1) {
+				len = rld_dec0(e, &itr, &a);
+				if (z + len >= l) break;
+				z += len; ol[a] += len;
+			}
+		}
+		ol[a] += l - z;
+	} else { // we have to decode other blocks
+		ok[a] += k - z;
+		rld_rank1a(e, l, ol);
+	}
 }
 
 #endif
