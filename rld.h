@@ -13,7 +13,7 @@
 #define RLD_ABITS  3
 #define RLD_ASIZE  6
 #define RLD_ASIZE1 7
-#define RLD_OFFSET 8
+#define RLD_OFFSET 14
 
 typedef struct {
 	uint8_t *q, *shead, *stail, **i;
