@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-#define RLD_LBITS  26
+#define RLD_LBITS  26 // still buggy across large blocks
 #define RLD_LSIZE  (1<<RLD_LBITS)
 #define RLD_LMASK  (RLD_LSIZE - 1)
 

@@ -147,7 +147,7 @@ uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr)
 	for (e->cnt[0] = 0, i = 1; i <= RLD_ASIZE; ++i) e->cnt[i] += e->cnt[i - 1];
 	if (e->fp) {
 		uint64_t k;
-		fseek(e->fp, 28 + RLD_ASIZE, SEEK_SET);
+		fseek(e->fp, 28 + 8 * RLD_ASIZE, SEEK_SET);
 		for (i = 0, k = e->n_bytes; i < e->n - 1; ++i, k -= RLD_LSIZE) {
 			e->z[i] = malloc(RLD_LSIZE);
 			fread(e->z[i], 1, RLD_LSIZE, e->fp);
