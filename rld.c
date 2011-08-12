@@ -236,6 +236,9 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 		q += e->ssize;
 		if (q - *itr->i == RLD_LSIZE) q = *++itr->i;
 		c = *(uint16_t*)q;
+#ifdef __GNUC__
+		__builtin_prefetch(q);
+#endif
 		if (*sum + c > k) break;
 		for (p = (uint16_t*)q, j = 0; j < RLD_ASIZE; ++j) cnt[j] += p[j+1];
 		*sum += c;
