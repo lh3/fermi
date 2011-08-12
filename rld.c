@@ -249,10 +249,9 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 
 uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
 {
-	uint64_t y, z, *cnt;
+	uint64_t y, z, cnt[RLD_ASIZE1];
 	rlditr_t itr;
 	if (k == (uint64_t)-1) return 0;
-	cnt = alloca(RLD_ASIZE1 * 8);
 	rld_locate_blk(e, &itr, k, cnt, &z);
 	y = cnt[c];
 	++k; // because k is the coordinate but not length
