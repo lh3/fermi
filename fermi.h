@@ -5,6 +5,8 @@
 
 #define FERMI_VERSION "0.0-dev (r121)"
 
+extern int fm_verbose;
+
 typedef struct {
 	uint64_t x[3]; // 0: start of the interval, backward; 1: forward; 2: size of the interval
 } fmintv_t;

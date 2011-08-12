@@ -1,5 +1,8 @@
 #include <sys/resource.h>
 
+// 1: error; 2: warning; 3: message
+int fm_verbose = 3;
+
 double cputime()
 {
 	struct rusage r;

@@ -1,8 +1,11 @@
 #include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "fermi.h"
 #include "rld.h"
 #include "kvec.h"
+
+double cputime();
 
 typedef struct {
 	rlditr_t itr;
@@ -16,12 +19,15 @@ typedef struct {
 } gaparr_t;
 
 #define GAP_MAX INT32_MAX
+#define MSG_SIZE 10000000
 
 static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 {
 	gaparr_t *g;
 	uint64_t k, l, *ok, *ol, i, j, x;
+	uint64_t n_processed = 1;
 	int c = 0;
+	double t = cputime();
 	g = calloc(1, sizeof(gaparr_t));
 	ok = alloca(8 * e0->asize);
 	ol = alloca(8 * e0->asize);
@@ -49,6 +55,8 @@ static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 			g->gap[j] = -(int64_t)g->a.n;
 		} else ++g->gap[j]; // simply increase by 1
 		i = j;
+		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds.\n", __func__, (long long)n_processed / 1000000, cputime() - t);
 	}
 	return g;
 }
