@@ -133,7 +133,7 @@ KSORT_INIT_GENERIC(uint64_t)
 #define h64_hash(a) ((a)>>32)
 KHASH_INIT(h64, uint64_t, char, 0, h64_hash, h64_eq)
 
-#define BLOCK_BITS 20
+#define BLOCK_BITS 26
 #define BLOCK_MASK ((1u<<BLOCK_BITS) - 1)
 #define BLOCK_SHIFT (64 - BLOCK_BITS)
 #define BLOCK_CMASK ((1ll<<BLOCK_SHIFT) - 1)
