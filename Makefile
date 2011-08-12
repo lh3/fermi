@@ -26,4 +26,4 @@ cmd.o:fermi.h rld.h kseq.h
 main.o:fermi.h
 
 clean:
-		rm -fr gmon.out *.o a.out $(PROG) *~ *.a *.dSYM
+		rm -fr gmon.out *.o a.out $(PROG) *~ *.a *.dSYM session*
