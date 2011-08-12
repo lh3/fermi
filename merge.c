@@ -6,6 +6,7 @@
 #include "kvec.h"
 
 double cputime();
+double rssmem();
 
 typedef struct {
 	rlditr_t itr;
@@ -56,7 +57,8 @@ static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 		} else ++g->gap[j]; // simply increase by 1
 		i = j;
 		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
-			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds.\n", __func__, (long long)n_processed / 1000000, cputime() - t);
+			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
+					(long long)n_processed / 1000000, cputime() - t, rssmem());
 	}
 	return g;
 }
@@ -133,7 +135,7 @@ KSORT_INIT_GENERIC(uint64_t)
 #define h64_hash(a) ((a)>>32)
 KHASH_INIT(h64, uint64_t, char, 0, h64_hash, h64_eq)
 
-#define BLOCK_BITS 26
+#define BLOCK_BITS 16
 #define BLOCK_MASK ((1u<<BLOCK_BITS) - 1)
 #define BLOCK_SHIFT (64 - BLOCK_BITS)
 #define BLOCK_CMASK ((1ll<<BLOCK_SHIFT) - 1)
@@ -157,6 +159,8 @@ static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
 	gaphash_t *h;
 	uint64_t k, l, *ok, *ol, i, j, x;
 	int c = 0;
+	uint64_t n_processed = 1;
+	double t = cputime();
 	h = calloc(1, sizeof(gaphash_t));
 	h->n = (e0->mcnt[0] + BLOCK_MASK) >> BLOCK_BITS;
 	h->h = malloc(h->n * sizeof(void*));
@@ -182,6 +186,9 @@ static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
 		}
 		insert_to_hash(h, j);
 		i = j;
+		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
+					(long long)n_processed / 1000000, cputime() - t, rssmem());
 	}
 	return h;
 }

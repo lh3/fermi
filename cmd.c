@@ -332,7 +332,7 @@ int main_merge(int argc, char *argv[])
 	rld_t *e0, *e1, *e;
 	while ((c = getopt(argc, argv, "fa")) >= 0) {
 		switch (c) {
-			case 'a': use_array = 0; break;
+			case 'a': use_array = 1; break;
 			case 'f': force = 1; break;
 		}
 	}
