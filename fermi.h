@@ -95,16 +95,7 @@ extern "C" {
 	 */
 	struct __rld_t *fm_merge_array(struct __rld_t *e0, struct __rld_t *e1, const char *fn);
 
-	/**
-	 * Merge two generic FM-Indexes with intermediate data stored in a B-tree
-	 * 
-	 * This routine gives identical output to {@link @fm_merge_array()}. The difference is it
-	 * uses a B-tree to store the gap array. This routine is slower, but may have a smaller
-	 * memory footprint if the gap array can be well run-length compressed. Nonetheless, it
-	 * may use more memory when the gap array cannot be compressed, for example, when {e0}
-	 * and {e1} are identical.
-	 */
-	struct __rld_t *fm_merge_tree(struct __rld_t *e0, struct __rld_t *e1, const char *fn);
+	struct __rld_t *fm_merge_hash(struct __rld_t *e0, struct __rld_t *e1, const char *fn);
 
 #ifdef __cplusplus
 }

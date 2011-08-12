@@ -21,7 +21,7 @@ sais64.o:sais.c
 
 rld.o:rld.h
 exact.o:fermi.h rld.h kstring.h kvec.h
-merge.o:fermi.h rld.h
+merge.o:fermi.h rld.h khash.h ksort.h
 cmd.o:fermi.h rld.h kseq.h
 main.o:fermi.h
 

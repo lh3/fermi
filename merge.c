@@ -126,48 +126,48 @@ rld_t *fm_merge_array(rld_t *e0, rld_t *e1, const char *fn)
 	return e;
 }
 
-// Using khash+ksort may be faster (identical time complexity), but unfortunately khash is 32-bit, which is not adequate
-#include "kbtree.h"
+#include "khash.h"
+#include "ksort.h"
+KSORT_INIT_GENERIC(uint64_t)
+#define h64_eq(a, b) ((a)>>32 == (b)>>32)
+#define h64_hash(a) ((a)>>32)
+KHASH_INIT(h64, uint64_t, char, 0, h64_hash, h64_eq)
+
+#define BLOCK_BITS 20
+#define BLOCK_MASK ((1u<<BLOCK_BITS) - 1)
+#define BLOCK_SHIFT (64 - BLOCK_BITS)
+#define BLOCK_CMASK ((1ll<<BLOCK_SHIFT) - 1)
 
 typedef struct {
-	int64_t x, y; // gap[x]=y
-} uint128_t;
+	int n;
+	khash_t(h64) **h;
+} gaphash_t;
 
-#define uint128_cmp(a, b) ((a).x - (b).x)
-KBTREE_INIT(ind, uint128_t, uint128_cmp)
-
-typedef struct {
-	int64_t l0, l1, last;
-	int c0, c1;
-	const rld_t *e0, *e1;
-	rld_t *e;
-	rlditr2_t itr;
-	rlditr_t itr0, itr1;
-} mergeaux_t;
-
-static void insert_tree(kbtree_t(ind) *g, uint64_t j)
+static inline void insert_to_hash(gaphash_t *h, uint64_t j)
 {
-	uint128_t z, *p;
-	z.x = j;
-	p = kb_getp(ind, g, &z);
-	if (!p) {
-		z.x = j; z.y = 1;
-		kb_putp(ind, g, &z);
-	} else ++p->y;
+	khint_t k;
+	int ret;
+	khash_t(h64) *g = h->h[j>>BLOCK_BITS];
+	k = kh_put(h64, g, (j&BLOCK_MASK)<<BLOCK_SHIFT|1, &ret);
+	if (ret == 0) ++kh_key(g, k); // when the key is present, the key in the hash table will not be overwritten by put()
 }
 
-static kbtree_t(ind) *compute_gap_tree(const rld_t *e0, const rld_t *e1)
+static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
 {
-	kbtree_t(ind) *g;
+	gaphash_t *h;
 	uint64_t k, l, *ok, *ol, i, j, x;
 	int c = 0;
-	g = kb_init(ind, KB_DEFAULT_SIZE);
+	h = calloc(1, sizeof(gaphash_t));
+	h->n = (e0->mcnt[0] + BLOCK_MASK) >> BLOCK_BITS;
+	h->h = malloc(h->n * sizeof(void*));
+	for (i = 0; (int)i < h->n; ++i)
+		h->h[i] = kh_init(h64);
 	ok = alloca(8 * e0->asize);
 	ol = alloca(8 * e0->asize);
 	x = e1->mcnt[1];
 	k = l = --x; // get the last sentinel of e1
 	j = i = e0->mcnt[1] - 1; // to modify gap[j]
-	insert_tree(g, j);
+	insert_to_hash(h, j);
 	for (;;) {
 		rld_rank2a(e1, k - 1, l, ok, ol);
 		for (c = 0; c < e1->asize; ++c)
@@ -180,44 +180,55 @@ static kbtree_t(ind) *compute_gap_tree(const rld_t *e0, const rld_t *e1)
 			j = e0->cnt[c] + rld_rank11(e0, i, c) - 1;
 			k = l = e1->cnt[c] + ok[c];
 		}
-		insert_tree(g, j);
+		insert_to_hash(h, j);
 		i = j;
 	}
-	return g;
+	return h;
 }
 
-static inline void process_gap(uint128_t *p, mergeaux_t *d)
+rld_t *fm_merge_hash(rld_t *e0, rld_t *e1, const char *fn)
 {
-	//printf("gap[%lld]=%lld\n", p->x, p->y);
-	dec_enc(d->e, &d->itr, d->e0, &d->itr0, &d->l0, &d->c0, p->x - d->last);
-	dec_enc(d->e, &d->itr, d->e1, &d->itr1, &d->l1, &d->c1, p->y);
-	d->last = p->x;
-}
+	gaphash_t *gap;
+	rlditr_t itr0, itr1;
+	rlditr2_t itr;
+	rld_t *e;
+	khint_t k, l;
+	int i, c0, c1;
+	int64_t l0, l1, last = -1;
 
-rld_t *fm_merge_tree(rld_t *e0, rld_t *e1, const char *fn)
-{
-	kbtree_t(ind) *tree;
-	mergeaux_t d;
-	tree = compute_gap_tree(e0, e1);
-	memset(&d, 0, sizeof(mergeaux_t));
-	d.last = -1;
-	d.e0 = e0; d.e1 = e1;
-	d.e = rld_init(e0->asize, e0->sbits, fn);
-	rld_itr_init(d.e, &d.itr.itr, 0);
-	d.itr.l = d.l0 = d.l1 = 0;
-	d.itr.c = d.c0 = d.c1 = -1;
-	rld_itr_init(e0, &d.itr0, 0);
-	rld_itr_init(e1, &d.itr1, 0);
-	__kb_traverse(uint128_t, tree, process_gap, &d);
-	if (d.last != e0->mcnt[0] - 1)
-		dec_enc(d.e, &d.itr, e0, &d.itr0, &d.l0, &d.c0, e0->mcnt[0] - 1 - d.last);
-	assert(d.l0 == 0 && d.l1 == 0); // both e0 and e1 stream should be finished
-	rld_enc(d.e, &d.itr.itr, d.itr.l, d.itr.c); // write the remaining symbols
-	__kb_destroy(tree);
-	if (fn) {
+	gap = compute_gap_hash(e0, e1);
+	e = rld_init(e0->asize, e0->sbits, fn);
+	rld_itr_init(e, &itr.itr, 0);
+	itr.l = l0 = l1 = 0; itr.c = c0 = c1 = -1;
+	rld_itr_init(e0, &itr0, 0);
+	rld_itr_init(e1, &itr1, 0);
+	for (i = 0; i < gap->n; ++i) {
+		khash_t(h64) *h = gap->h[i];
+		for (l = 0, k = kh_begin(h); k < kh_end(h); ++k)
+			if (kh_exist(h, k))
+				h->keys[l++] = kh_key(h, k);
+		assert(l == kh_size(h));
+		free(h->flags);
+		h->flags = 0;
+		ks_introsort(uint64_t, kh_size(h), h->keys);
+		for (k = 0; k < kh_size(h); ++k) {
+			uint64_t x = (uint64_t)i<<BLOCK_BITS | h->keys[k]>>BLOCK_SHIFT;
+			//printf("gap[%lld]=%lld\n", x, h->keys[k]&BLOCK_CMASK);
+			dec_enc(e, &itr, e0, &itr0, &l0, &c0, x - last);
+			dec_enc(e, &itr, e1, &itr1, &l1, &c1, h->keys[k]&BLOCK_CMASK);
+			last = x;
+		}
+		kh_destroy(h64, h);
+	}
+	if (last != e0->mcnt[0] - 1)
+		dec_enc(e, &itr, e0, &itr0, &l0, &c0, e0->mcnt[0] - 1 - last);
+	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
+	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
+	free(gap->h); free(gap);
+	if (fn) { // if data are written to a file, deallocate e0 and e1 to save memory
 		rld_destroy(e0);
 		if (e1 != e0) rld_destroy(e1);
 	}
-	rld_enc_finish(d.e, &d.itr.itr);
-	return d.e;
+	rld_enc_finish(e, &itr.itr); // this will load the full index in memory
+	return e;
 }

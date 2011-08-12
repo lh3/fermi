@@ -344,7 +344,7 @@ int main_merge(int argc, char *argv[])
 	if (fn == 0) fn = strdup("-");
 	e0 = rld_restore(argv[optind+0]);
 	e1 = rld_restore(argv[optind+1]);
-	e = use_array? fm_merge_array(e0, e1, fn) : fm_merge_tree(e0, e1, fn);
+	e = use_array? fm_merge_array(e0, e1, fn) : fm_merge_hash(e0, e1, fn);
 	rld_destroy(e);
 	free(fn);
 	return 0;
