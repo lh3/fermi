@@ -257,8 +257,9 @@ uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
 	y = cnt[c];
 	++k; // because k is the coordinate but not length
 	while (1) {
-		int a = -1, l;
-		l = rld_dec0(e, &itr, &a);
+		int a, l;
+		a = *itr.q>>5;
+		l = *itr.q++ & 0x1f;
 		if (z + l >= k) return y + (a == c? k - z: 0);
 		z += l;
 		if (a == c) y += l;
@@ -284,7 +285,8 @@ void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 	rld_locate_blk(e, &itr, k, ok, &z);
 	++k; // because k is the coordinate but not length
 	while (1) {
-		l = rld_dec0(e, &itr, &a);
+		a = *itr.q >> 5;
+		l = *itr.q++ & 0x1f;
 		if (z + l >= k) break;
 		z += l; ok[a] += l;
 	}
@@ -293,9 +295,9 @@ void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 
 void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *ol)
 {
-	uint64_t z, y, len;
+	uint64_t z, y;
 	rlditr_t itr;
-	int a = -1;
+	int a = -1, len;
 	if (k == (uint64_t)-1) { // special treatment for k==-1
 		for (a = 0; a < RLD_ASIZE; ++a) ok[a] = 0;
 		rld_rank1a(e, l, ol);
@@ -304,7 +306,8 @@ void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *
 	y = rld_locate_blk(e, &itr, k, ok, &z); // locate the block bracketing k
 	++k; // because k is the coordinate but not length
 	while (1) { // compute ok[]
-		len = rld_dec0(e, &itr, &a);
+		a = *itr.q >> 5;
+		len = *itr.q++ & 0x1f;
 		if (z + len >= k) break;
 		z += len; ok[a] += len;
 	}
@@ -316,7 +319,8 @@ void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *
 		if (z + len < l) { // we need to decode the next run
 			z += len; ol[a] += len;
 			while (1) {
-				len = rld_dec0(e, &itr, &a);
+				a = *itr.q >> 5;
+				len = *itr.q++ & 0x1f;
 				if (z + len >= l) break;
 				z += len; ol[a] += len;
 			}
