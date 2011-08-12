@@ -3,7 +3,44 @@
 #include <stdio.h>
 #include "fermi.h"
 #include "rld.h"
-#include "kvec.h"
+
+#include "khash.h"
+#include "ksort.h"
+KSORT_INIT_GENERIC(uint64_t)
+#define h64_eq(a, b) ((a)>>32 == (b)>>32)
+#define h64_hash(a) ((a)>>32)
+KHASH_INIT(h64, uint64_t, char, 0, h64_hash, h64_eq)
+
+#define BLOCK_BITS 16
+#define BLOCK_MASK ((1u<<BLOCK_BITS) - 1)
+#define BLOCK_SHIFT (64 - BLOCK_BITS)
+#define BLOCK_CMASK ((1ll<<BLOCK_SHIFT) - 1)
+
+typedef struct {
+	int n;
+	khash_t(h64) **h;
+} gaphash_t;
+
+static inline gaphash_t *init_gaphash(uint64_t n)
+{
+	int i;
+	gaphash_t *h;
+	h = calloc(1, sizeof(gaphash_t));
+	h->n = (n + BLOCK_MASK) >> BLOCK_BITS;
+	h->h = malloc(h->n * sizeof(void*));
+	for (i = 0; i < h->n; ++i)
+		h->h[i] = kh_init(h64);
+	return h;
+}
+
+static inline void insert_to_hash(gaphash_t *h, uint64_t j)
+{
+	khint_t k;
+	int ret;
+	khash_t(h64) *g = h->h[j>>BLOCK_BITS];
+	k = kh_put(h64, g, (j&BLOCK_MASK)<<BLOCK_SHIFT|1, &ret);
+	if (ret == 0) ++kh_key(g, k); // when the key is present, the key in the hash table will not be overwritten by put()
+}
 
 double cputime();
 double rssmem();
@@ -15,8 +52,8 @@ typedef struct {
 } rlditr2_t;
 
 typedef struct {
-	int32_t *gap;
-	kvec_t(int64_t) a;
+	uint8_t *gap;
+	gaphash_t *h;
 } gaparr_t;
 
 #define GAP_MAX INT32_MAX
@@ -33,6 +70,7 @@ static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 	ok = alloca(8 * e0->asize);
 	ol = alloca(8 * e0->asize);
 	g->gap = calloc(e0->mcnt[0], 4);
+	g->h = init_gaphash(e0->mcnt[0]);
 	x = e1->mcnt[1];
 	k = l = --x; // get the last sentinel of e1
 	j = i = e0->mcnt[1] - 1; // to modify gap[j]
@@ -49,12 +87,8 @@ static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 			j = e0->cnt[c] + rld_rank11(e0, i, c) - 1;
 			k = l = e1->cnt[c] + ok[c];
 		}
-		if (g->gap[j] < 0) { // the actualy value is stored in g->a
-			++g->a.a[-g->gap[j] - 1];
-		} else if (g->gap[j] == GAP_MAX) { // put the value in g->a
-			kv_push(int64_t, g->a, 1ll + GAP_MAX);
-			g->gap[j] = -(int64_t)g->a.n;
-		} else ++g->gap[j]; // simply increase by 1
+		if (g->gap[j] == 255) insert_to_hash(g->h, j);
+		else ++g->gap[j];
 		i = j;
 		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
@@ -108,7 +142,13 @@ rld_t *fm_merge_array(rld_t *e0, rld_t *e1, const char *fn)
 	rld_itr_init(e0, &itr0, 0);
 	rld_itr_init(e1, &itr1, 0);
 	for (i = k = 0; i < e0->mcnt[0]; ++i) {
-		int64_t g = gap->gap[i] < 0? gap->a.a[-gap->gap[i] - 1] : gap->gap[i];
+		int64_t g = gap->gap[i];
+		if (g == 255) {
+			khint_t k;
+			khash_t(h64) *h = gap->h->h[i>>BLOCK_BITS];
+			k = kh_get(h64, h, (i&BLOCK_MASK)<<BLOCK_SHIFT);
+			g += kh_key(h, k)&BLOCK_CMASK;
+		}
 		if (g) {
 			//printf("gap[%lld]=%lld\n", i, g);
 			dec_enc(e, &itr, e0, &itr0, &l0, &c0, k + 1); // first write symbols from the first index
@@ -119,39 +159,16 @@ rld_t *fm_merge_array(rld_t *e0, rld_t *e1, const char *fn)
 	if (k) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k); // write the remaining symbols from the first index
 	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
 	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
-	free(gap->gap); free(gap->a.a); free(gap);
+	// destroy
+	for (i = 0; (int)i < gap->h->n; ++i)
+		kh_destroy(h64, gap->h->h[i]);
+	free(gap->h->h); free(gap->h); free(gap->gap); free(gap);
 	if (fn) { // if data are written to a file, deallocate e0 and e1 to save memory
 		rld_destroy(e0);
 		if (e1 != e0) rld_destroy(e1);
 	}
 	rld_enc_finish(e, &itr.itr); // this will load the full index in memory
 	return e;
-}
-
-#include "khash.h"
-#include "ksort.h"
-KSORT_INIT_GENERIC(uint64_t)
-#define h64_eq(a, b) ((a)>>32 == (b)>>32)
-#define h64_hash(a) ((a)>>32)
-KHASH_INIT(h64, uint64_t, char, 0, h64_hash, h64_eq)
-
-#define BLOCK_BITS 16
-#define BLOCK_MASK ((1u<<BLOCK_BITS) - 1)
-#define BLOCK_SHIFT (64 - BLOCK_BITS)
-#define BLOCK_CMASK ((1ll<<BLOCK_SHIFT) - 1)
-
-typedef struct {
-	int n;
-	khash_t(h64) **h;
-} gaphash_t;
-
-static inline void insert_to_hash(gaphash_t *h, uint64_t j)
-{
-	khint_t k;
-	int ret;
-	khash_t(h64) *g = h->h[j>>BLOCK_BITS];
-	k = kh_put(h64, g, (j&BLOCK_MASK)<<BLOCK_SHIFT|1, &ret);
-	if (ret == 0) ++kh_key(g, k); // when the key is present, the key in the hash table will not be overwritten by put()
 }
 
 static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
@@ -161,11 +178,7 @@ static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
 	int c = 0;
 	uint64_t n_processed = 1;
 	double t = cputime();
-	h = calloc(1, sizeof(gaphash_t));
-	h->n = (e0->mcnt[0] + BLOCK_MASK) >> BLOCK_BITS;
-	h->h = malloc(h->n * sizeof(void*));
-	for (i = 0; (int)i < h->n; ++i)
-		h->h[i] = kh_init(h64);
+	h = init_gaphash(e0->mcnt[0]);
 	ok = alloca(8 * e0->asize);
 	ol = alloca(8 * e0->asize);
 	x = e1->mcnt[1];
@@ -217,7 +230,7 @@ rld_t *fm_merge_hash(rld_t *e0, rld_t *e1, const char *fn)
 		assert(l == kh_size(h));
 		free(h->flags);
 		h->flags = 0;
-		ks_introsort(uint64_t, kh_size(h), h->keys);
+		ks_introsort(uint64_t, kh_size(h), h->keys); // actually we do not really need sorting, but this is perhaps faster
 		for (k = 0; k < kh_size(h); ++k) {
 			uint64_t x = (uint64_t)i<<BLOCK_BITS | h->keys[k]>>BLOCK_SHIFT;
 			//printf("gap[%lld]=%lld\n", x, h->keys[k]&BLOCK_CMASK);

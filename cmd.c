@@ -328,11 +328,11 @@ int main_exact(int argc, char *argv[])
 
 int main_merge(int argc, char *argv[])
 {
-	int c, use_array = 0, force = 0;
+	int c, use_array = 1, force = 0;
 	rld_t *e0, *e1, *e;
-	while ((c = getopt(argc, argv, "fa")) >= 0) {
+	while ((c = getopt(argc, argv, "fh")) >= 0) {
 		switch (c) {
-			case 'a': use_array = 1; break;
+			case 'h': use_array = 0; break;
 			case 'f': force = 1; break;
 		}
 	}
