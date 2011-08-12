@@ -286,8 +286,7 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 		q += e->ssize;
 		if (q - *itr->i == RLD_LSIZE) q = *++itr->i;
 #ifdef _USE_RLE6
-		c = *(uint16_t*)q;
-		if (*sum + c > k) break;
+		if (*sum + (c = *(uint16_t*)q) > k) break;
 		{
 			uint16_t *p = ((uint16_t*)q) + 1;
 			cnt[0] += p[0]; cnt[1] += p[1]; cnt[2] += p[2]; cnt[3] += p[3]; cnt[4] += p[4]; cnt[5] += p[5];
