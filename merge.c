@@ -146,7 +146,7 @@ rld_t *fm_merge_array(rld_t *e0, rld_t *e1, const char *fn)
 			khint_t k;
 			khash_t(h64) *h = gap->h->h[i>>BLOCK_BITS];
 			k = kh_get(h64, h, (i&BLOCK_MASK)<<BLOCK_SHIFT);
-			g += kh_key(h, k)&BLOCK_CMASK;
+			if (k != kh_end(h)) g += kh_key(h, k)&BLOCK_CMASK;
 		}
 		if (g) {
 			//printf("gap[%lld]=%lld\n", i, g);
