@@ -111,22 +111,11 @@ static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 #ifdef _USE_RLE6
 inline int rld_enc0(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 {
-	int w;
-	w = l < 32? 1 : l < 1024? 2 : 4;
-	if (itr->q + w > (uint8_t*)itr->stail) {
+	if (itr->q + 1 > (uint8_t*)itr->stail) {
 		*itr->q = 0xff;
 		enc_next_block(r, itr);
 	}
-	if (w == 1) *itr->q++ = c<<5 | l;
-	else if (w == 2) {
-		*itr->q++ = 6<<5 | c<<2 | (l&0x3);
-		*itr->q++ = l>>2&0xff;
-	} else {
-		*itr->q++ = 6<<5 | 6<<2 | (c&0x3);
-		*itr->q++ = (c>>2)<<7 | (l&0x7f);
-		*itr->q++ = l>>7&0xff;
-		*itr->q++ = l>>15;
-	}
+	*itr->q++ = c<<5 | l;
 	r->cnt[0] += l;
 	r->cnt[c + 1] += l;
 	return 0;
@@ -134,7 +123,7 @@ inline int rld_enc0(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 
 int rld_enc(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 {
-	const int max_l = (1<<23) - 1;
+	const int max_l = 31;
 	for (; l > max_l; l -= max_l)
 		rld_enc0(r, itr, max_l, c);
 	rld_enc0(r, itr, l, c);
@@ -296,6 +285,14 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 	while (1) { // seek to the small block
 		q += e->ssize;
 		if (q - *itr->i == RLD_LSIZE) q = *++itr->i;
+#ifdef _USE_RLE6
+		c = *(uint16_t*)q;
+		if (*sum + c > k) break;
+		{
+			uint16_t *p = ((uint16_t*)q) + 1;
+			cnt[0] += p[0]; cnt[1] += p[1]; cnt[2] += p[2]; cnt[3] += p[3]; cnt[4] += p[4]; cnt[5] += p[5];
+		}
+#else
 		c = rld_size_bit(*q)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
 		if (*sum + c > k) break;
 		if (rld_size_bit(*q)) {
@@ -305,6 +302,7 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 			uint16_t *p = (uint16_t*)q;
 			for (j = 0; j < e->asize; ++j) cnt[j] += p[j+1];
 		}
+#endif
 		*sum += c;
 		itr->p = q;
 	}

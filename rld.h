@@ -73,25 +73,10 @@ static inline void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
 }
 
 #ifdef _USE_RLE6
-static inline int64_t rld_dec0(const rld_t *r, rlditr_t *itr, int *c)
+static inline int rld_dec0(const rld_t *r, rlditr_t *itr, int *c)
 {
-	int64_t l;
 	*c = *itr->q >> 5;
-	if (*c < 6) {
-		l = *itr->q&0x1f;
-		++itr->q;
-	} else if (*c == 6) {
-		*c = *itr->q>>2 & 0x7;
-		if (*c != 6) {
-			l = ((int64_t)itr->q[0]&0x3) | (int64_t)itr->q[1]<<2;
-			itr->q += 2;
-		} else {
-			*c = (itr->q[0]&0x3) | itr->q[1]>>7<<2;
-			l = ((uint32_t)itr->q[1]&0x7f) | (uint32_t)itr->q[2] << 7 | (uint32_t)itr->q[3] << 15;
-			itr->q += 4;
-		}
-	} else return 0;
-	return l;
+	return *itr->q++ & 0x1f;
 }
 #else
 static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
@@ -118,7 +103,7 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c)
 {
 	int64_t l = rld_dec0(e, itr, _c);
-	if (l == 0) {
+	if (l == 0 || *_c > e->asize) {
 		uint64_t last = rld_last_blk(e);
 		if (itr->p - *itr->i > RLD_LSIZE - e->ssize) itr->shead = *++itr->i;
 		else itr->shead += e->ssize;
