@@ -252,3 +252,78 @@ rld_t *fm_merge_hash(rld_t *e0, rld_t *e1, const char *fn)
 	rld_enc_finish(e, &itr.itr); // this will load the full index in memory
 	return e;
 }
+
+static uint64_t *compute_gap_bit(const rld_t *e0, const rld_t *e1)
+{
+	uint64_t k, l, *ok, *ol, i, j, x, *bits, n_bits;
+	uint64_t n_processed = 1;
+	int c = 0;
+	double t = cputime();
+	n_bits = e0->mcnt[0] + e1->mcnt[0];
+	bits = calloc((n_bits + 63) / 64, 8);
+	ok = alloca(8 * e0->asize);
+	ol = alloca(8 * e0->asize);
+	x = e1->mcnt[1];
+	k = l = --x; // get the last sentinel of e1
+	j = i = e0->mcnt[1] - 1; // to modify gap[j]
+	bits[(k+j+1)>>6] |= 1ull<<((k+j+1)&0x3f);
+	for (;;) {
+		rld_rank2a(e1, k - 1, l, ok, ol);
+		for (c = 0; c < e1->asize; ++c)
+			if (ok[c] < ol[c]) break;
+		if (c == 0) {
+			j = e0->mcnt[1] - 1;
+			k = l = --x;
+			if (x == (uint64_t)-1) break;
+		} else {
+			j = e0->cnt[c] + rld_rank11(e0, i, c) - 1;
+			k = l = e1->cnt[c] + ok[c];
+		}
+		bits[(k+j+1)>>6] |= 1ull<<((k+j+1)&0x3f);
+		i = j;
+		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
+					(long long)n_processed / 1000000, cputime() - t, rssmem());
+	}
+	return bits;
+}
+
+rld_t *fm_merge_bit(rld_t *e0, rld_t *e1, const char *fn)
+{
+	uint64_t *bits, i, k, n = e0->mcnt[0] + e1->mcnt[0];
+	rlditr_t itr0, itr1;
+	rlditr2_t itr;
+	rld_t *e;
+	int c0, c1, last;
+	int64_t l0, l1;
+
+	bits = compute_gap_bit(e0, e1);
+	e = rld_init(e0->asize, e0->sbits, fn);
+	rld_itr_init(e, &itr.itr, 0);
+	itr.l = l0 = l1 = 0; itr.c = c0 = c1 = -1;
+	rld_itr_init(e0, &itr0, 0);
+	rld_itr_init(e1, &itr1, 0);
+	last = bits[0]&1; k = 1;
+	for (i = 1; i < n; ++i) {
+		int c = bits[i>>6]>>(i&0x3f)&1;
+		if (c != last) {
+			if (last == 0) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
+			else dec_enc(e, &itr, e1, &itr1, &l1, &c1, k);
+			last = c; k = 1;
+		} else ++k;
+	}
+	if (k) {
+		if (last == 0) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
+		else dec_enc(e, &itr, e1, &itr1, &l1, &c1, k);
+	}
+	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
+	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
+	// destroy
+	free(bits);
+	if (fn) { // if data are written to a file, deallocate e0 and e1 to save memory
+		rld_destroy(e0);
+		if (e1 != e0) rld_destroy(e1);
+	}
+	rld_enc_finish(e, &itr.itr); // this will load the full index in memory
+	return e;
+}
