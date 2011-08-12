@@ -111,8 +111,9 @@ static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 #ifdef _USE_RLE6
 inline int rld_enc0(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 {
-	if (itr->q + 1 > (uint8_t*)itr->stail) {
+	if (itr->q >= (uint8_t*)(itr->shead + r->ssize) - 1) {
 		*itr->q = 0xff;
+		itr->p = itr->stail;
 		enc_next_block(r, itr);
 	}
 	*itr->q++ = c<<5 | l;
