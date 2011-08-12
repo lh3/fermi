@@ -15,7 +15,7 @@ double rssmem()
 {
 	struct rusage r;
 	getrusage(RUSAGE_SELF, &r);
-	return r.ru_maxrss / 1024.0;
+	return r.ru_maxrss / 1024.0 / 1024.0;
 }
 
 double realtime()
