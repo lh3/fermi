@@ -337,7 +337,7 @@ int main_merge(int argc, char *argv[])
 		}
 	}
 	if (optind + 3 > argc) {
-		fprintf(stderr, "Usage: fermi merge [-fa] <out.bwt> <in0.bwt> <in1.bwt>\n");
+		fprintf(stderr, "Usage: fermi merge [-fh] <out.bwt> <in0.bwt> <in1.bwt>\n");
 		return 1;
 	}
 	if (force == 0) {

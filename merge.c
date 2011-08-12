@@ -56,7 +56,6 @@ typedef struct {
 	gaphash_t *h;
 } gaparr_t;
 
-#define GAP_MAX INT32_MAX
 #define MSG_SIZE 10000000
 
 static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
