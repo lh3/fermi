@@ -82,54 +82,28 @@ static inline void insert_to_hash(gaphash_t *h, uint64_t j)
 	if (ret == 0) ++kh_key(g, k); // when the key is present, the key in the hash table will not be overwritten by put()
 }
 
-static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
+static void *compute_gap(const rld_t *e0, const rld_t *e1, int use_hash)
 {
-	gaphash_t *h;
-	uint64_t k, *ok, i, x;
+	uint64_t k, *ok, i, x, *bits = 0, n_processed = 1;
 	int c = 0;
-	uint64_t n_processed = 1;
 	double t = cputime();
-	h = init_gaphash(e0->mcnt[0]);
-	ok = alloca(8 * e0->asize);
-	x = e1->mcnt[1];
-	k = --x; // get the last sentinel of e1
-	i = e0->mcnt[1] - 1; // to modify gap[j]
-	insert_to_hash(h, i);
-	for (;;) {
-		c = rld_rank1a(e1, k, ok);
-		if (c == 0) {
-			k = --x;
-			if (x == (uint64_t)-1) break;
-			i = e0->mcnt[1] - 1;
-		} else {
-			k = e1->cnt[c] + ok[c] - 1;
-			rld_rank1a(e0, i, ok);
-			i = e0->cnt[c] + ok[c] - 1;
-		}
-		insert_to_hash(h, i);
-		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
-			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
-					(long long)n_processed / 1000000, cputime() - t, rssmem());
-	}
-	return h;
-}
+	gaphash_t *h = 0;
 
-static uint64_t *compute_gap_bit(const rld_t *e0, const rld_t *e1)
-{
-	uint64_t k, *ok, i, x, *bits, n_bits;
-	uint64_t n_processed = 1;
-	int c = 0;
-	double t = cputime();
-	n_bits = e0->mcnt[0] + e1->mcnt[0];
-	bits = calloc((n_bits + 63) / 64, 8);
 	ok = alloca(8 * e0->asize);
 	x = e1->mcnt[1];
 	k = --x; // get the last sentinel of e1
 	i = e0->mcnt[1] - 1; // to modify gap[j]
-	bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
+	if (use_hash) {
+		h = init_gaphash(e0->mcnt[0]);
+		insert_to_hash(h, i);
+	} else {
+		uint64_t n_bits = e0->mcnt[0] + e1->mcnt[0];
+		bits = calloc((n_bits + 63) / 64, 8); // we could allocate bits in several blocks to avoid allocating a huge array
+		bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
+	}
 	for (;;) {
 		c = rld_rank1a(e1, k, ok);
-		if (c == 0) {
+		if (c == 0) { // sentinel; the order of sentinel has been lost; we have to rely on x to get it back
 			k = --x;
 			if (x == (uint64_t)-1) break;
 			i = e0->mcnt[1] - 1;
@@ -138,29 +112,28 @@ static uint64_t *compute_gap_bit(const rld_t *e0, const rld_t *e1)
 			rld_rank1a(e0, i, ok);
 			i = e0->cnt[c] + ok[c] - 1;
 		}
-		bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
+		if (use_hash) insert_to_hash(h, i);
+		else bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
 		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
 					(long long)n_processed / 1000000, cputime() - t, rssmem());
 	}
-	return bits;
+	return use_hash? (void*)h : (void*)bits;
 }
 
 rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash)
 {
-	uint64_t *bits = 0, i, n = e0->mcnt[0] + e1->mcnt[0];
+	void *gaparr;
+	uint64_t i, n = e0->mcnt[0] + e1->mcnt[0];
 	int64_t l0, l1;
 	int c0, c1;
-	gaphash_t *gap = 0; // only used when use_hash==1
 	rlditr_t itr0, itr1;
 	rlditr2_t itr;
 	rld_t *e;
 
 	// compute the gap array
-	if (use_hash) gap = compute_gap_hash(e0, e1);
-	else bits = compute_gap_bit(e0, e1);
-	// deallocate the rank indexes of e0 and e1; they are not needed any more
-	free(e0->frame); free(e1->frame);
+	gaparr = compute_gap(e0, e1, use_hash);
+	free(e0->frame); free(e1->frame); // deallocate the rank indexes of e0 and e1; they are not needed any more
 	e0->frame = e1->frame = 0;
 	// initialize the FM-index to be returned, and all the three iterators
 	e = rld_init(e0->asize, e0->sbits);
@@ -173,6 +146,7 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash)
 		int64_t last = -1;
 		int i;
 		khint_t k, l;
+		gaphash_t *gap = (gaphash_t*)gaparr;
 		for (i = 0; i < gap->n; ++i) {
 			khash_t(h64) *h = gap->h[i];
 			for (l = 0, k = kh_begin(h); k < kh_end(h); ++k)
@@ -193,9 +167,10 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash)
 		}
 		if (last != e0->mcnt[0] - 1)
 			dec_enc(e, &itr, e0, &itr0, &l0, &c0, e0->mcnt[0] - 1 - last);
+		free(gap->h);
 	} else {
+		uint64_t k = 1, *bits = (uint64_t*)gaparr;
 		int last = bits[0]&1;
-		uint64_t k = 1;
 		for (i = 1; i < n; ++i) {
 			int c = bits[i>>6]>>(i&0x3f)&1;
 			if (c != last) {
@@ -208,12 +183,12 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash)
 			if (last == 0) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
 			else dec_enc(e, &itr, e1, &itr1, &l1, &c1, k);
 		}
+		free(bits);
 	}
 	// finalize the merge
 	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
 	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
 	rld_destroy(e0); rld_destroy(e1);
-	free(bits);
 	rld_enc_finish(e, &itr.itr);
 	return e;
 }
