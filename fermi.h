@@ -93,7 +93,6 @@ extern "C" {
 	 *
 	 * @return     output FM-Index
 	 */
-	struct __rld_t *fm_merge_array(struct __rld_t *e0, struct __rld_t *e1, const char *fn);
 	struct __rld_t *fm_merge_hash(struct __rld_t *e0, struct __rld_t *e1, const char *fn);
 	struct __rld_t *fm_merge_bit(struct __rld_t *e0, struct __rld_t *e1, const char *fn);
 
