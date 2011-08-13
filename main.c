@@ -43,6 +43,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;
 	}
-	if (fm_verbose >= 3) fprintf(stderr, "[M::%s] Real time: %.3f sec; CPU: %.3f sec; RSS: %.3f MB\n", __func__, realtime() - start, cputime(), rssmem());
+	if (ret == 0 && fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] Real time: %.3f sec; CPU: %.3f sec; RSS: %.3f MB\n", __func__, realtime() - start, cputime(), rssmem());
 	return ret;
 }

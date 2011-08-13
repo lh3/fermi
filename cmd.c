@@ -351,7 +351,7 @@ int main_merge(int argc, char *argv[])
 	e0 = rld_restore(argv[optind+1]);
 	e1 = rld_restore(argv[optind+2]);
 	if (use_array) {
-		if (e0->mcnt[0] * 7 > e1->mcnt[0]) {
+		if (e0->mcnt[0] * 70 > e1->mcnt[0]) {
 			if (fm_verbose >= 3) fprintf(stderr, "[M::%s] Use a bit vector to encode the gap array.\n", __func__);
 			e = fm_merge_bit(e0, e1, argv[optind]);
 		} else {

@@ -49,7 +49,7 @@ extern "C" {
 	void rld_destroy(rld_t *e);
 
 	uint64_t rld_rank11(const rld_t *e, uint64_t k, int c);
-	void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok);
+	int rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok);
 	void rld_rank21(const rld_t *e, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol);
 	void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *ol);
 

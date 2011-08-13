@@ -314,39 +314,20 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 	return c + *sum;
 }
 
-uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
-{
-	uint64_t y, z, *cnt;
-	rlditr_t itr;
-	if (k == (uint64_t)-1) return 0;
-	cnt = alloca(e->asize1 * 8);
-	rld_locate_blk(e, &itr, k, cnt, &z);
-	y = cnt[c];
-	++k; // because k is the coordinate but not length
-	while (1) {
-		int a = -1, l;
-		l = rld_dec0(e, &itr, &a);
-		if (z + l >= k) return y + (a == c? k - z: 0);
-		z += l;
-		if (a == c) y += l;
-	}
-}
-
 void rld_rank21(const rld_t *e, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
 {
 	*ok = rld_rank11(e, k, c);
 	*ol = rld_rank11(e, l, c);
 }
 
-void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
+int rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 {
 	uint64_t z, l;
 	int a = -1;
 	rlditr_t itr;
 	if (k == (uint64_t)-1) {
-		int a;
 		for (a = 0; a < e->asize; ++a) ok[a] = 0;
-		return;
+		return -1;
 	}
 	rld_locate_blk(e, &itr, k, ok, &z);
 	++k; // because k is the coordinate but not length
@@ -356,6 +337,16 @@ void rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 		z += l; ok[a] += l;
 	}
 	ok[a] += k - z;
+	return a;
+}
+
+uint64_t rld_rank11(const rld_t *e, uint64_t k, int c)
+{
+	uint64_t *ok;
+	if (k == (uint64_t)-1) return 0;
+	ok = alloca(e->asize1 * 8);
+	rld_rank1a(e, k, ok);
+	return ok[c];
 }
 
 void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *ol)
