@@ -61,34 +61,31 @@ typedef struct {
 static gaparr_t *compute_gap_array(const rld_t *e0, const rld_t *e1)
 {
 	gaparr_t *g;
-	uint64_t k, l, *ok, *ol, i, j, x;
+	uint64_t k, *ok, i, x;
 	uint64_t n_processed = 1;
 	int c = 0;
 	double t = cputime();
 	g = calloc(1, sizeof(gaparr_t));
 	ok = alloca(8 * e0->asize);
-	ol = alloca(8 * e0->asize);
 	g->gap = calloc(e0->mcnt[0], 4);
 	g->h = init_gaphash(e0->mcnt[0]);
 	x = e1->mcnt[1];
-	k = l = --x; // get the last sentinel of e1
-	j = i = e0->mcnt[1] - 1; // to modify gap[j]
-	++g->gap[j];
+	k = --x; // get the last sentinel of e1
+	i = e0->mcnt[1] - 1; // to modify gap[j]
+	++g->gap[i];
 	for (;;) {
-		rld_rank2a(e1, k - 1, l, ok, ol);
-		for (c = 0; c < e1->asize; ++c)
-			if (ok[c] < ol[c]) break;
+		c = rld_rank1a(e1, k, ok);
 		if (c == 0) {
-			j = e0->mcnt[1] - 1;
-			k = l = --x;
+			k = --x;
 			if (x == (uint64_t)-1) break;
+			i = e0->mcnt[1] - 1;
 		} else {
-			j = e0->cnt[c] + rld_rank11(e0, i, c) - 1;
-			k = l = e1->cnt[c] + ok[c];
+			k = e1->cnt[c] + ok[c] - 1;
+			rld_rank1a(e0, i, ok);
+			i = e0->cnt[c] + ok[c] - 1;
 		}
-		if (g->gap[j] == 255) insert_to_hash(g->h, j);
-		else ++g->gap[j];
-		i = j;
+		if (g->gap[i] == 255) insert_to_hash(g->h, i);
+		else ++g->gap[i];
 		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
 					(long long)n_processed / 1000000, cputime() - t, rssmem());
