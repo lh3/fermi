@@ -33,12 +33,14 @@
 typedef int64_t saint_t;
 #define SAINT_MAX INT64_MAX
 #define SAIS_CORE sais_core64
+#define SAIS_BWT  sais_bwt64
 #define SAIS_MAIN sais64
 #else
 #include <limits.h>
 typedef int saint_t;
 #define SAINT_MAX INT_MAX
 #define SAIS_CORE sais_core
+#define SAIS_BWT  sais_bwt
 #define SAIS_MAIN sais
 #endif
 
@@ -120,7 +122,7 @@ static void induceSA(const unsigned char *T, saint_t *SA, saint_t *C, saint_t *B
  *
  * @return    0 upon success
  */
-saint_t SAIS_CORE(const unsigned char *T, saint_t *SA, saint_t fs, saint_t n, saint_t k, int cs)
+int SAIS_CORE(const unsigned char *T, saint_t *SA, saint_t fs, saint_t n, saint_t k, int cs)
 {
 	saint_t *C, *B;
 	saint_t  i, j, c, m, q, qlen, name;
@@ -213,9 +215,22 @@ saint_t SAIS_CORE(const unsigned char *T, saint_t *SA, saint_t fs, saint_t n, sa
  * @param k          size of the alphabet including the sentinel; no more than 256
  * @return           0 upon success
  */
-saint_t SAIS_MAIN(const unsigned char *T, saint_t *SA, saint_t n, saint_t k)
+int SAIS_MAIN(const unsigned char *T, saint_t *SA, saint_t n, int k)
 {
 	if (T == NULL || SA == NULL || T[n - 1] != '\0' || n <= 0) return -1;
 	if (k < 0 || k > 256) k = 256;
-	return SAIS_CORE(T, SA, 0, n, k, 1);
+	return SAIS_CORE(T, SA, 0, n, (saint_t)k, 1);
+}
+
+int SAIS_BWT(unsigned char *T, saint_t n, int k)
+{
+	saint_t *SA, i;
+	int ret;
+	if ((SA = malloc(n * sizeof(saint_t))) == 0) return -1;
+	if ((ret = SAIS_MAIN(T, SA, n, k)) != 0) return ret;
+	for (i = 0; i < n; ++i)
+		if (SA[i]) SA[i] = T[SA[i] - 1]; // if SA[i]==0, SA[i]=0
+	for (i = 0; i < n; ++i) T[i] = SA[i];
+	free(SA);
+	return 0;
 }
