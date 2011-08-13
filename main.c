@@ -8,6 +8,7 @@ int main_chkbwt(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_exact(int argc, char *argv[]);
 int main_merge(int argc, char *argv[]);
+int main_build(int argc, char *argv[]);
 int main_strlen(int argc, char *argv[]);
 
 double rssmem();
@@ -38,6 +39,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
 	else if (strcmp(argv[1], "exact") == 0) ret = main_exact(argc-1, argv+1);
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
+	else if (strcmp(argv[1], "build") == 0) ret = main_build(argc-1, argv+1);
 	else if (strcmp(argv[1], "strlen") == 0) ret = main_strlen(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);

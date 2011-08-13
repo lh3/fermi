@@ -355,3 +355,90 @@ int main_merge(int argc, char *argv[])
 	rld_destroy(e);
 	return 0;
 }
+
+int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
+{
+	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6;
+	int64_t i, l, max;
+	uint8_t *s;
+	char *idxfn = 0;
+	double t;
+
+	{ // parse the command line
+		int c;
+		while ((c = getopt(argc, argv, "PRfb:o:")) >= 0) {
+			switch (c) {
+				case 'P': plain = 1; break;
+				case 'f': force = 1; break;
+				case 'R': no_reverse = 1; break;
+				case 'b': sbits = atoi(optarg); break;
+				case 'o': idxfn = strdup(optarg); break;
+			}
+		}
+		if (argc == optind) {
+			fprintf(stderr, "Usage: fermi build [-fRP] [-b sbits] [-o outFile] <in.fa>\n");
+			return 1;
+		}
+		if (!plain) {
+			if (idxfn) {
+				FILE *fp;
+				if (!force && (fp = fopen(idxfn, "rb")) != 0) {
+					fclose(fp);
+					fprintf(stderr, "[E::%s] File `%s' exists. Please use `-f' to overwrite.\n", __func__, idxfn);
+					return 1;
+				}
+			} else idxfn = strdup("-");
+		}
+	}
+	
+	{ // read sequences
+		kseq_t *seq;
+		gzFile fp;
+		fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "r") : gzdopen(fileno(stdin), "r");
+		if (fp == 0) {
+			fprintf(stderr, "[E::%s] Fail to open the input file.\n", __func__);
+			return 1;
+		}
+		t = cputime();
+		seq = kseq_init(fp);
+		l = 0; max = 16;
+		s = malloc(max);
+		while (kseq_read(seq) >= 0) {
+			if (l + (seq->seq.l + 1) * 2 > max) {
+				max = l + (seq->seq.l + 1) * 2 + 1;
+				kroundup32(max);
+				s = realloc(s, max);
+			}
+			seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
+			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
+			l += seq->seq.l + 1;
+			if (!no_reverse) {
+				seq_revcomp6(seq->seq.l, (uint8_t*)seq->seq.s);
+				memcpy(s + l, seq->seq.s, seq->seq.l + 1);
+				l += seq->seq.l + 1;
+			}
+		}
+		kseq_destroy(seq);
+		gzclose(fp);
+		fprintf(stderr, "[M::%s] Loaded sequences in %.3f seconds.\n", __func__, cputime() - t);
+	}
+
+	t = cputime();
+	fm_bwtgen(asize, l, s);
+	fprintf(stderr, "[M::%s] Constructed the BWT in %.3f seconds.\n", __func__, cputime() - t);
+
+	if (!plain) {
+		rld_t *e;
+		t = cputime();
+		e = fm_bwtenc(asize, sbits, l, s);
+		rld_dump(e, idxfn);
+		rld_destroy(e);
+		fprintf(stderr, "[M::%s] Encoded and dumped BWT in %.3f seconds.\n", __func__, cputime() - t);
+	} else {
+		for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
+		putchar('\n');
+	}
+
+	free(s); free(idxfn);
+	return 0;
+}

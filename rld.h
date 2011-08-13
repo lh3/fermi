@@ -58,7 +58,7 @@ extern "C" {
 #define rld_last_blk(e) ((e)->n_bytes>>3>>(e)->sbits<<(e)->sbits)
 #define rld_seek_blk(e, k) ((e)->z[(k)>>RLD_LBITS] + ((k)&RLD_LMASK))
 
-#define rld_size_bit(x) ((x)>>31&1)
+#define rld_size_bit(x) ((x)>>31&1) // FIXME: NOT WORKING ON BIG-ENDIAN MACHINES!!!!!!!!!!
 
 static inline void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
 {

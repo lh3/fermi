@@ -28,6 +28,9 @@ typedef struct __kstring_t { // implemented in kstring.h
 extern "C" {
 #endif
 
+	int fm_bwtgen(int asize, int64_t l, uint8_t *s);
+	struct __rld_t *fm_bwtenc(int asize, int sbits, int64_t l, const uint8_t *s);
+
 	/**
 	 * Backward search for a generic FM-Index
 	 *
