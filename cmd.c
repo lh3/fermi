@@ -166,7 +166,7 @@ int main_index(int argc, char *argv[])
 		double t = cputime();
 		rlditr_t itr;
 		rld_t *e;
-		e = rld_init(6, bbits, 0);
+		e = rld_init(6, bbits);
 		rld_itr_init(e, &itr, 0);
 		k = 1; c = s[0];
 		for (i = 1; i < l; ++i) {
@@ -216,7 +216,7 @@ int main_chkbwt(int argc, char *argv[])
 	rld_itr_init(e, &itr, 0);
 	for (i = 0; i < e->asize; ++i) cnt[i] = 0;
 	t = cputime();
-	while ((l = rld_dec(e, &itr, &c)) >= 0) {
+	while ((l = rld_dec(e, &itr, &c, 0)) >= 0) {
 		if (c >= e->asize) {
 			fprintf(stderr, "[E::%s] Symbol `%d' is not in the alphabet.\n", __func__, c);
 			exit(1); // memory leak
@@ -350,7 +350,8 @@ int main_merge(int argc, char *argv[])
 	}
 	e0 = rld_restore(argv[optind+1]);
 	e1 = rld_restore(argv[optind+2]);
-	e = use_array? fm_merge_bit(e0, e1, argv[optind]) : fm_merge_hash(e0, e1, argv[optind]);
+	e = use_array? fm_merge_bit(e0, e1) : fm_merge_hash(e0, e1);
+	rld_dump(e, argv[optind]);
 	rld_destroy(e);
 	return 0;
 }

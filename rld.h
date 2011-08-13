@@ -32,15 +32,13 @@ typedef struct __rld_t {
 	// modified during indexing
 	uint64_t n_frames;
 	uint64_t *frame;
-	// on-disk generation
-	FILE *fp;
 } rld_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-	rld_t *rld_init(int asize, int bbits, const char *fn);
+	rld_t *rld_init(int asize, int bbits);
 	int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c);
 	uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr);
 
@@ -99,13 +97,17 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 }
 #endif
 
-static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c)
+static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c, int is_free)
 {
 	int64_t l = rld_dec0(e, itr, _c);
 	if (l == 0 || *_c > e->asize) {
 		uint64_t last = rld_last_blk(e);
-		if (itr->p - *itr->i > RLD_LSIZE - e->ssize) itr->shead = *++itr->i;
-		else itr->shead += e->ssize;
+		if (itr->p - *itr->i > RLD_LSIZE - e->ssize) {
+			if (is_free) {
+				free(*itr->i); *itr->i = 0;
+			}
+			itr->shead = *++itr->i;
+		} else itr->shead += e->ssize;
 		if (itr->shead == rld_seek_blk(e, last)) return -1;
 		itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
 		itr->q = (uint8_t*)itr->p;

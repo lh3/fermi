@@ -43,7 +43,7 @@ static void dump_header(const rld_t *e, FILE *fp)
 	fwrite(&e->n_bytes, 8, 1, fp);
 }
 
-rld_t *rld_init(int asize, int bbits, const char *fn)
+rld_t *rld_init(int asize, int bbits)
 {
 	rld_t *e;
 #ifdef _USE_RLE6
@@ -62,10 +62,6 @@ rld_t *rld_init(int asize, int bbits, const char *fn)
 	e->asize1 = asize + 1;
 	e->offset0[0] = (e->asize1*16+63)/64;
 	e->offset0[1] = (e->asize1*32+63)/64;
-	if (fn) {
-		e->fp = strcmp(fn, "-")? fopen(fn, "wb+") : stdout;
-		dump_header(e, e->fp);
-	}
 	return e;
 }
 
@@ -74,7 +70,6 @@ void rld_destroy(rld_t *e)
 	int i = 0;
 	if (e == 0) return;
 	for (i = 0; i < e->n; ++i) free(e->z[i]);
-	if (e->fp) fclose(e->fp);
 	free(e->z); free(e->cnt); free(e->mcnt); free(e->frame); free(e);
 }
 
@@ -82,11 +77,6 @@ static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 {
 	int i;
 	if (itr->p + 1 - *itr->i == RLD_LSIZE) {
-		if (e->fp) {
-			fwrite(e->z[e->n - 1], 8, RLD_LSIZE, e->fp);
-			free(e->z[e->n - 1]);
-			e->z[e->n - 1] = 0;
-		}
 		++e->n;
 		e->z = realloc(e->z, e->n * sizeof(void*));
 		itr->i = e->z + e->n - 1;
@@ -198,22 +188,7 @@ uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr)
 	e->n_bytes = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (itr->p - *itr->i)) * 8;
 	// recompute e->cnt as the accumulative count; e->mcnt[] keeps the marginal counts
 	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
-	if (e->fp) {
-		uint64_t k;
-		fseek(e->fp, 28 + 8 * e->asize, SEEK_SET);
-		for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE) {
-			e->z[i] = malloc(8 * RLD_LSIZE);
-			fread(e->z[i], 8, RLD_LSIZE, e->fp);
-		}
-		fwrite(e->z[i], 8, k, e->fp);
-		rld_rank_index(e);
-		fwrite(&e->n_frames, 8, 1, e->fp);
-		fwrite(e->frame, 8 * e->asize1, e->n_frames, e->fp);
-		rewind(e->fp);
-		dump_header(e, e->fp);
-		fclose(e->fp);
-		e->fp = 0;
-	} else rld_rank_index(e);
+	rld_rank_index(e);
 	return e->n_bytes;
 }
 
@@ -247,7 +222,7 @@ rld_t *rld_restore(const char *fn)
 	fread(magic, 1, 4, fp); magic[4] = 0;
 	if (strcmp(magic, "RLD\1")) return 0; // read magic
 	if (fread(a, 4, 2, fp) != 2) return 0; // read asize and sbits
-	e = rld_init(a[0], a[1], 0);
+	e = rld_init(a[0], a[1]);
 	fread(e->mcnt, 8, e->asize + 1, fp);
 	for (i = 0; i <= e->asize; ++i) e->cnt[i] = e->mcnt[i];
 	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
@@ -385,21 +360,3 @@ void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *
 		rld_rank1a(e, l, ol);
 	}
 }
-
-#ifdef RLD_MAIN
-int main(int argc, char *argv[])
-{
-	int i, l, c;
-	rld_t *r = rld_enc_init(6, 3);
-	for (i = 100000; i < 100100; ++i)
-		rld_enc(r, i, 2);
-	rld_enc_finish(r);
-	rld_dec_init(r, 0);
-	for (i = 100000; i < 100100; ++i) {
-		l = rld_dec(r, &c);
-		printf("%d, %d\n", l, c);
-	}
-	rld_destroy(r);
-	return 0;
-}
-#endif
