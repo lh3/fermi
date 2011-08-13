@@ -328,11 +328,11 @@ int main_exact(int argc, char *argv[])
 
 int main_merge(int argc, char *argv[])
 {
-	int c, use_array = 1, force = 0;
+	int c, use_hash = 0, force = 0;
 	rld_t *e0, *e1, *e;
 	while ((c = getopt(argc, argv, "fh")) >= 0) {
 		switch (c) {
-			case 'h': use_array = 0; break;
+			case 'h': use_hash = 1; break;
 			case 'f': force = 1; break;
 		}
 	}
@@ -350,7 +350,7 @@ int main_merge(int argc, char *argv[])
 	}
 	e0 = rld_restore(argv[optind+1]);
 	e1 = rld_restore(argv[optind+2]);
-	e = use_array? fm_merge_bit(e0, e1) : fm_merge_hash(e0, e1);
+	e = fm_merge(e0, e1, use_hash);
 	rld_dump(e, argv[optind]);
 	rld_destroy(e);
 	return 0;

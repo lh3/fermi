@@ -114,52 +114,6 @@ static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
 	return h;
 }
 
-rld_t *fm_merge_hash(rld_t *e0, rld_t *e1)
-{
-	gaphash_t *gap;
-	rlditr_t itr0, itr1;
-	rlditr2_t itr;
-	rld_t *e;
-	khint_t k, l;
-	int i, c0, c1;
-	int64_t l0, l1, last = -1;
-
-	gap = compute_gap_hash(e0, e1);
-	free(e0->frame); free(e1->frame); // deallocate the rank indexes
-	e0->frame = 0; e1->frame = 0;
-	e = rld_init(e0->asize, e0->sbits);
-	rld_itr_init(e, &itr.itr, 0);
-	itr.l = l0 = l1 = 0; itr.c = c0 = c1 = -1;
-	rld_itr_init(e0, &itr0, 0);
-	rld_itr_init(e1, &itr1, 0);
-	for (i = 0; i < gap->n; ++i) {
-		khash_t(h64) *h = gap->h[i];
-		for (l = 0, k = kh_begin(h); k < kh_end(h); ++k)
-			if (kh_exist(h, k))
-				h->keys[l++] = kh_key(h, k);
-		assert(l == kh_size(h));
-		free(h->flags);
-		h->flags = 0;
-		ks_introsort(uint64_t, kh_size(h), h->keys); // actually we do not really need sorting, but this is perhaps faster
-		for (k = 0; k < kh_size(h); ++k) {
-			uint64_t x = (uint64_t)i<<BLOCK_BITS | h->keys[k]>>BLOCK_SHIFT;
-			//printf("gap[%lld]=%lld\n", x, h->keys[k]&BLOCK_CMASK);
-			dec_enc(e, &itr, e0, &itr0, &l0, &c0, x - last);
-			dec_enc(e, &itr, e1, &itr1, &l1, &c1, h->keys[k]&BLOCK_CMASK);
-			last = x;
-		}
-		kh_destroy(h64, h);
-	}
-	if (last != e0->mcnt[0] - 1)
-		dec_enc(e, &itr, e0, &itr0, &l0, &c0, e0->mcnt[0] - 1 - last);
-	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
-	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
-	rld_destroy(e0); rld_destroy(e1);
-	free(gap->h); free(gap);
-	rld_enc_finish(e, &itr.itr);
-	return e;
-}
-
 static uint64_t *compute_gap_bit(const rld_t *e0, const rld_t *e1)
 {
 	uint64_t k, *ok, i, x, *bits, n_bits;
@@ -192,36 +146,70 @@ static uint64_t *compute_gap_bit(const rld_t *e0, const rld_t *e1)
 	return bits;
 }
 
-rld_t *fm_merge_bit(rld_t *e0, rld_t *e1)
+rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash)
 {
-	uint64_t *bits, i, k, n = e0->mcnt[0] + e1->mcnt[0];
+	uint64_t *bits = 0, i, n = e0->mcnt[0] + e1->mcnt[0];
 	int64_t l0, l1;
+	int c0, c1;
+	gaphash_t *gap = 0; // only used when use_hash==1
 	rlditr_t itr0, itr1;
 	rlditr2_t itr;
 	rld_t *e;
-	int c0, c1, last;
 
-	bits = compute_gap_bit(e0, e1);
+	// compute the gap array
+	if (use_hash) gap = compute_gap_hash(e0, e1);
+	else bits = compute_gap_bit(e0, e1);
+	// deallocate the rank indexes of e0 and e1; they are not needed any more
 	free(e0->frame); free(e1->frame);
 	e0->frame = e1->frame = 0;
+	// initialize the FM-index to be returned, and all the three iterators
 	e = rld_init(e0->asize, e0->sbits);
 	rld_itr_init(e, &itr.itr, 0);
 	itr.l = l0 = l1 = 0; itr.c = c0 = c1 = -1;
 	rld_itr_init(e0, &itr0, 0);
 	rld_itr_init(e1, &itr1, 0);
-	last = bits[0]&1; k = 1;
-	for (i = 1; i < n; ++i) {
-		int c = bits[i>>6]>>(i&0x3f)&1;
-		if (c != last) {
+	// use the gap array to merge the two BWTs
+	if (use_hash) {
+		int64_t last = -1;
+		int i;
+		khint_t k, l;
+		for (i = 0; i < gap->n; ++i) {
+			khash_t(h64) *h = gap->h[i];
+			for (l = 0, k = kh_begin(h); k < kh_end(h); ++k)
+				if (kh_exist(h, k))
+					h->keys[l++] = kh_key(h, k);
+			assert(l == kh_size(h));
+			free(h->flags);
+			h->flags = 0;
+			ks_introsort(uint64_t, kh_size(h), h->keys); // actually we do not really need sorting, but this is perhaps faster
+			for (k = 0; k < kh_size(h); ++k) {
+				uint64_t x = (uint64_t)i<<BLOCK_BITS | h->keys[k]>>BLOCK_SHIFT;
+				//printf("gap[%lld]=%lld\n", x, h->keys[k]&BLOCK_CMASK);
+				dec_enc(e, &itr, e0, &itr0, &l0, &c0, x - last);
+				dec_enc(e, &itr, e1, &itr1, &l1, &c1, h->keys[k]&BLOCK_CMASK);
+				last = x;
+			}
+			kh_destroy(h64, h);
+		}
+		if (last != e0->mcnt[0] - 1)
+			dec_enc(e, &itr, e0, &itr0, &l0, &c0, e0->mcnt[0] - 1 - last);
+	} else {
+		int last = bits[0]&1;
+		uint64_t k = 1;
+		for (i = 1; i < n; ++i) {
+			int c = bits[i>>6]>>(i&0x3f)&1;
+			if (c != last) {
+				if (last == 0) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
+				else dec_enc(e, &itr, e1, &itr1, &l1, &c1, k);
+				last = c; k = 1;
+			} else ++k;
+		}
+		if (k) {
 			if (last == 0) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
 			else dec_enc(e, &itr, e1, &itr1, &l1, &c1, k);
-			last = c; k = 1;
-		} else ++k;
+		}
 	}
-	if (k) {
-		if (last == 0) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
-		else dec_enc(e, &itr, e1, &itr1, &l1, &c1, k);
-	}
+	// finalize the merge
 	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
 	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
 	rld_destroy(e0); rld_destroy(e1);
