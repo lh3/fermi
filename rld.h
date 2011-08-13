@@ -84,8 +84,7 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 	int w;
 	uint64_t x;
 	int64_t l, y = 0;
-//	assert(itr->p <= itr->stail);
-	x = itr->p[0] << (64 - itr->r) | (itr->p < itr->stail && itr->r < 64? itr->p[1] >> itr->r : 0);
+	x = itr->p[0] << (64 - itr->r) | (itr->p != itr->stail && itr->r != 64? itr->p[1] >> itr->r : 0);
 	if (x>>63 == 0) {
 		if ((w = 0x333333335555779bll>>(x>>59<<2)&0xf) == 0xb && x>>58 == 0) return 0;
 		l = (x >> (64 - w)) - 1;
