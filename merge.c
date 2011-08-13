@@ -254,32 +254,29 @@ rld_t *fm_merge_hash(rld_t *e0, rld_t *e1, const char *fn)
 
 static uint64_t *compute_gap_bit(const rld_t *e0, const rld_t *e1)
 {
-	uint64_t k, l, *ok, *ol, i, j, x, *bits, n_bits;
+	uint64_t k, *ok, i, x, *bits, n_bits;
 	uint64_t n_processed = 1;
 	int c = 0;
 	double t = cputime();
 	n_bits = e0->mcnt[0] + e1->mcnt[0];
 	bits = calloc((n_bits + 63) / 64, 8);
 	ok = alloca(8 * e0->asize);
-	ol = alloca(8 * e0->asize);
 	x = e1->mcnt[1];
-	k = l = --x; // get the last sentinel of e1
-	j = i = e0->mcnt[1] - 1; // to modify gap[j]
-	bits[(k+j+1)>>6] |= 1ull<<((k+j+1)&0x3f);
+	k = --x; // get the last sentinel of e1
+	i = e0->mcnt[1] - 1; // to modify gap[j]
+	bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
 	for (;;) {
-		rld_rank2a(e1, k - 1, l, ok, ol);
-		for (c = 0; c < e1->asize; ++c)
-			if (ok[c] < ol[c]) break;
+		c = rld_rank1a(e1, k, ok);
 		if (c == 0) {
-			j = e0->mcnt[1] - 1;
-			k = l = --x;
+			k = --x;
 			if (x == (uint64_t)-1) break;
+			i = e0->mcnt[1] - 1;
 		} else {
-			j = e0->cnt[c] + rld_rank11(e0, i, c) - 1;
-			k = l = e1->cnt[c] + ok[c];
+			k = e1->cnt[c] + ok[c] - 1;
+			rld_rank1a(e0, i, ok);
+			i = e0->cnt[c] + ok[c] - 1;
 		}
-		bits[(k+j+1)>>6] |= 1ull<<((k+j+1)&0x3f);
-		i = j;
+		bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
 		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
 					(long long)n_processed / 1000000, cputime() - t, rssmem());
