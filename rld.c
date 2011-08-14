@@ -50,6 +50,13 @@ rld_t *rld_init(int asize, int bbits)
 	asize = 6;
 #endif
 	e = calloc(1, sizeof(rld_t));
+	if (bbits <= 0 || asize <= 0) {
+		e->b3 = b3_init();
+		e->asize = 6;
+		e->cnt = (uint64_t*)e->b3->cnt;
+		e->mcnt = (uint64_t*)e->b3->mcnt;
+		return e;
+	}
 	e->n = 1;
 	e->z = malloc(sizeof(void*));
 	e->z[0] = calloc(RLD_LSIZE, 8);
@@ -69,6 +76,10 @@ void rld_destroy(rld_t *e)
 {
 	int i = 0;
 	if (e == 0) return;
+	if (e->b3) {
+		b3_destroy(e->b3);
+		e->mcnt = e->cnt = 0;
+	}
 	for (i = 0; i < e->n; ++i) free(e->z[i]);
 	free(e->z); free(e->cnt); free(e->mcnt); free(e->frame); free(e);
 }
@@ -124,7 +135,9 @@ int rld_enc(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
 {
 	int w;
-	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;
+	uint64_t x;
+	if (e->b3) return b3_enc(e->b3, &itr->b3, l, c);
+	x = rld_delta_enc1(l, &w) << e->abits | c;
 	w += e->abits;
 	if (w >= itr->r && itr->p == itr->stail) enc_next_block(e, itr);
 	if (w > itr->r) {
@@ -184,6 +197,7 @@ void rld_rank_index(rld_t *e)
 uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr)
 {
 	int i;
+	if (e->b3) return b3_enc_finish(e->b3, &itr->b3);
 	enc_next_block(e, itr);
 	e->n_bytes = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (itr->p - *itr->i)) * 8;
 	// recompute e->cnt as the accumulative count; e->mcnt[] keeps the marginal counts
@@ -197,7 +211,8 @@ int rld_dump(const rld_t *e, const char *fn)
 	uint64_t k;
 	int i;
 	FILE *fp;
-	fp = strcmp(fn, "-")? fopen(fn, "wb") : fdopen(fileno(stdout), "wb");
+	if (e->b3) return b3_dump(e->b3, fn);
+	fp = strcmp(fn, "-")? fopen(fn, "wb") : stdout;
 	if (fp == 0) return -1;
 	dump_header(e, fp);
 	for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE)
@@ -219,6 +234,13 @@ rld_t *rld_restore(const char *fn)
 	int i;
 
 	if ((fp = fopen(fn, "rb")) == 0) return 0;
+	fread(magic, 1, 1, fp);
+	ungetc(magic[0], fp);
+	if (magic[0] == 'B') {
+		e = rld_init(0, 0);
+		e->b3 = b3_restore(fp);
+		return e;
+	}
 	fread(magic, 1, 4, fp); magic[4] = 0;
 	if (strcmp(magic, "RLD\1")) return 0; // read magic
 	if (fread(a, 4, 2, fp) != 2) return 0; // read asize and sbits

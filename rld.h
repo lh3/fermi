@@ -4,7 +4,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
 #include <stdio.h>
+#include "bit3.h"
 
 #define RLD_LBITS 23
 #define RLD_LSIZE (1<<RLD_LBITS)
@@ -14,6 +16,7 @@ typedef struct {
 	int r; // bits remained in the last 64-bit integer
 	uint64_t *p, *shead, *stail, **i;
 	uint8_t *q;
+	b3itr_t b3;
 } rlditr_t;
 
 typedef struct __rld_t {
@@ -32,6 +35,8 @@ typedef struct __rld_t {
 	// modified during indexing
 	uint64_t n_frames;
 	uint64_t *frame;
+	//
+	bit3_t *b3;
 } rld_t;
 
 #ifdef __cplusplus
@@ -62,12 +67,15 @@ extern "C" {
 
 static inline void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
 {
-	itr->i = e->z + (k >> RLD_LBITS);
-	itr->shead = *itr->i + k%RLD_LSIZE;
-	itr->stail = itr->shead + e->ssize - 1;
-	itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
-	itr->q = (uint8_t*)itr->p;
-	itr->r = 64;
+	memset(itr, 0, sizeof(rlditr_t));
+	if (!e->b3) {
+		itr->i = e->z + (k >> RLD_LBITS);
+		itr->shead = *itr->i + k%RLD_LSIZE;
+		itr->stail = itr->shead + e->ssize - 1;
+		itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
+		itr->q = (uint8_t*)itr->p;
+		itr->r = 64;
+	} else itr->b3.r = 0, itr->b3.i = e->b3->z, itr->b3.p = e->b3->z[0];
 }
 
 #ifdef _USE_RLE6
@@ -99,7 +107,9 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 
 static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c, int is_free)
 {
-	int64_t l = rld_dec0(e, itr, _c);
+	int64_t l;
+	if (e->b3) return b3_dec(e->b3, &itr->b3, _c, is_free);
+	l = rld_dec0(e, itr, _c);
 	if (l == 0 || *_c > e->asize) {
 		uint64_t last = rld_last_blk(e);
 		if (itr->p - *itr->i > RLD_LSIZE - e->ssize) {

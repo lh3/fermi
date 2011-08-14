@@ -221,31 +221,33 @@ int main_chkbwt(int argc, char *argv[])
 			fprintf(stderr, "[E::%s] Symbol `%d' is not in the alphabet.\n", __func__, c);
 			exit(1); // memory leak
 		}
-		for (i = 0; i < l; ++i) {
-			++cnt[c];
-			rld_rank1a(e, sum, rank);
-			for (j = 0; j < e->asize; ++j) {
-				if (cnt[j] != rank[j]) {
-					fprintf(stderr, "[E::%s] rank(%d,%lld)=%lld != %lld\n", __func__,
-							j, (unsigned long long)sum, (unsigned long long)rank[j], (unsigned long long)cnt[j]);
-					exit(1); // memory leak
+		if (!plain) {
+			for (i = 0; i < l; ++i) {
+				++cnt[c];
+				rld_rank1a(e, sum, rank);
+				for (j = 0; j < e->asize; ++j) {
+					if (cnt[j] != rank[j]) {
+						fprintf(stderr, "[E::%s] rank(%d,%lld)=%lld != %lld\n", __func__,
+								j, (unsigned long long)sum, (unsigned long long)rank[j], (unsigned long long)cnt[j]);
+						exit(1); // memory leak
+					}
 				}
+				++sum;
+				if (sum%10000000 == 0)
+					fprintf(stderr, "[M::%s] Checked %lld symbols.\n", __func__, (unsigned long long)sum);
 			}
-			++sum;
-			if (sum%10000000 == 0)
-				fprintf(stderr, "[M::%s] Checked %lld symbols.\n", __func__, (unsigned long long)sum);
-		}
-		if (plain) for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
+		} else for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
 	}
 	fprintf(stderr, "[M::%s] Checked the rank function in %.3lf seconds.\n", __func__, cputime() - t);
-	for (j = 0; j < e->asize; ++j) {
-		if (cnt[j] != e->mcnt[j+1]) {
-			fprintf(stderr, "[E::%s] Different counts: %lld != %lld\n", __func__,
-					(unsigned long long)cnt[j], (unsigned long long)e->mcnt[j+1]);
-			exit(1);
+	if (!plain) {
+		for (j = 0; j < e->asize; ++j) {
+			if (cnt[j] != e->mcnt[j+1]) {
+				fprintf(stderr, "[E::%s] Different counts: %lld != %lld\n", __func__,
+						(unsigned long long)cnt[j], (unsigned long long)e->mcnt[j+1]);
+				exit(1);
+			}
 		}
-	}
-	if (plain) putchar('\n');
+	} else putchar('\n');
 	rld_destroy(e);
 	return 0;
 }
