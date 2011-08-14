@@ -11,8 +11,8 @@ bit3_t *b3_init()
 	b3->z[0] = calloc(B3_LSIZE, 2);
 	b3->mcnt = calloc(7, 8);
 	b3->cnt = calloc(7, 8);
-	b3->cnttab = calloc(0x10000, 8);
-	for (i = 0; i < 0x10000; ++i) {
+	b3->cnttab = calloc(0x8000, 8);
+	for (i = 0; i < 0x8000; ++i) {
 		uint64_t x = 0;
 		for (j = 0; j <= 12; j += 3)
 			x += 1ull<<((i>>j&7)<<3);
@@ -35,10 +35,10 @@ int64_t b3_enc_finish(bit3_t *b3, b3itr_t *itr)
 	b3_enc(b3, itr, 1, 7);
 	while (itr->r || (itr->p - *itr->i) % B3_SFSIZE) b3_enc(b3, itr, 1, 7);
 	b3->n_bytes = ((uint64_t)(b3->n - 1) * B3_LSIZE + (itr->p - *itr->i)) * 2;
-	b3->n_frames = b3->n_bytes / B3_SSIZE / B3_FSIZE * 6 + b3->n_bytes / B3_SSIZE;
-	b3->frame = q = malloc(b3->n_frames * 8);
+	b3->n_frames = (b3->n_bytes + B3_SFSIZE - 1) / B3_SFSIZE * 6 + 6 + (b3->n_bytes + B3_SSIZE - 1) / B3_SSIZE;
+	b3->frame = q = calloc(b3->n_frames, 8);
 	itr->i = b3->z; itr->p = *itr->i;
-	for (i = 0; i < 7; ++i) *q++ = 0;
+	for (i = 0; i < 6; ++i) *q++ = 0;
 	do {
 		for (i = 0; i < B3_FSIZE; ++i) {
 			uint64_t c = 0;
@@ -46,12 +46,13 @@ int64_t b3_enc_finish(bit3_t *b3, b3itr_t *itr)
 				c += b3->cnttab[*itr->p++];
 			*q++ = c;
 			if (c>>56) stop = 1;
-			for (j = 0; j < 6; ++j, c >>= 8)
+			for (j = 0; j < 6; ++j, c >>= 8) {
 				b3->cnt[j+1] += c&0xff;
-			b3->cnt[0] += 3 * B3_SSIZE;
+				b3->cnt[0] += c&0xff;
+			}
 		}
 		for (j = 0; j < 6; ++j)
-			*q++ = b3->cnt[j+1];
+			*q++ = b3->cnt[j + 1];
 		if (itr->p - *itr->i == B3_LSIZE) itr->p = *++itr->i;
 	} while (!stop);
 	for (j = 0; j < 7; ++j) b3->mcnt[j] = b3->cnt[j];
@@ -73,7 +74,7 @@ int b3_dump(const bit3_t *b3, const char *fn)
 		fwrite(b3->z[i], 2, B3_LSIZE, fp);
 	fwrite(b3->z[i], 2, k, fp);
 	fwrite(&b3->n_frames, 8, 1, fp);
-	fwrite(&b3->frame, 8, b3->n_frames, fp);
+	fwrite(b3->frame, 8, b3->n_frames, fp);
 	fclose(fp);
 	return 0;
 }
@@ -103,4 +104,28 @@ bit3_t *b3_restore(FILE *fp)
 	b3->frame = malloc(b3->n_frames * 8);
 	fread(b3->frame, 8, b3->n_frames, fp);
 	return b3;
+}
+
+int b3_rank1a(const bit3_t *b3, uint64_t k, uint64_t *ok)
+{
+	uint64_t *p, k5 = k/5, x;
+	uint16_t *q;
+	int c, l, i;
+	if (k == (uint64_t)-1) {
+		for (c = 0; c < 6; ++c) ok[c] = 0;
+		return -1;
+	}
+	p = b3->frame + k5 / B3_SFSIZE * (6 + B3_FSIZE);
+	for (c = 0; c < 6; ++c) ok[c] = p[c];
+	l = k5 / B3_SSIZE % B3_FSIZE;
+	for (i = 0, p += 6; i < l; ++i, ++p)
+		for (c = 0; c < 6; ++c)
+			ok[c] += *p>>(c<<3)&0xff;
+	q = b3->z[k5 / B3_LSIZE] + (k5 % B3_LSIZE / B3_SSIZE * B3_SSIZE);
+	l = k5 % B3_SSIZE;
+	for (i = 0, x = 0; i < l; ++i) x += b3->cnttab[*q++];
+	for (c = 0; c < 6; ++c) ok[c] += x>>(c<<3)&0xff;
+	l = k % 5;
+	for (c = i = 0; c <= l; ++c, i += 3) ++ok[*q>>i&7];
+	return *q>>(i-3)&7;
 }

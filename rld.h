@@ -46,6 +46,7 @@ extern "C" {
 	rld_t *rld_init(int asize, int bbits);
 	int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c);
 	uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr);
+	void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k);
 
 	int rld_dump(const rld_t *e, const char *fn);
 	rld_t *rld_restore(const char *fn);
@@ -64,19 +65,6 @@ extern "C" {
 #define rld_seek_blk(e, k) ((e)->z[(k)>>RLD_LBITS] + ((k)&RLD_LMASK))
 
 #define rld_size_bit(x) ((x)>>31&1) // FIXME: NOT WORKING ON BIG-ENDIAN MACHINES!!!!!!!!!!
-
-static inline void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
-{
-	memset(itr, 0, sizeof(rlditr_t));
-	if (!e->b3) {
-		itr->i = e->z + (k >> RLD_LBITS);
-		itr->shead = *itr->i + k%RLD_LSIZE;
-		itr->stail = itr->shead + e->ssize - 1;
-		itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
-		itr->q = (uint8_t*)itr->p;
-		itr->r = 64;
-	} else itr->b3.r = 0, itr->b3.i = e->b3->z, itr->b3.p = e->b3->z[0];
-}
 
 #ifdef _USE_RLE6
 static inline int rld_dec0(const rld_t *r, rlditr_t *itr, int *c)

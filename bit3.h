@@ -31,6 +31,7 @@ void b3_destroy(bit3_t *b3);
 int64_t b3_enc_finish(bit3_t *b3, b3itr_t *itr);
 int b3_dump(const bit3_t *b3, const char *fn);
 bit3_t *b3_restore(FILE *fp);
+int b3_rank1a(const bit3_t *b3, uint64_t k, uint64_t *ok);
 
 static inline int b3_enc(bit3_t *b3, b3itr_t *itr, int64_t l, int c)
 {

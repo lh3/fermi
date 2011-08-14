@@ -206,6 +206,19 @@ uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr)
 	return e->n_bytes;
 }
 
+void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
+{
+	memset(itr, 0, sizeof(rlditr_t));
+	if (!e->b3) {
+		itr->i = e->z + (k >> RLD_LBITS);
+		itr->shead = *itr->i + k%RLD_LSIZE;
+		itr->stail = itr->shead + e->ssize - 1;
+		itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
+		itr->q = (uint8_t*)itr->p;
+		itr->r = 64;
+	} else itr->b3.r = 0, itr->b3.i = e->b3->z, itr->b3.p = e->b3->z[0];
+}
+
 int rld_dump(const rld_t *e, const char *fn)
 {
 	uint64_t k;
@@ -238,7 +251,11 @@ rld_t *rld_restore(const char *fn)
 	ungetc(magic[0], fp);
 	if (magic[0] == 'B') {
 		e = rld_init(0, 0);
+		b3_destroy(e->b3);
 		e->b3 = b3_restore(fp);
+		e->asize = 6;
+		e->cnt = (uint64_t*)e->b3->cnt;
+		e->mcnt = (uint64_t*)e->b3->mcnt;
 		return e;
 	}
 	fread(magic, 1, 4, fp); magic[4] = 0;
@@ -326,6 +343,7 @@ int rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 		for (a = 0; a < e->asize; ++a) ok[a] = 0;
 		return -1;
 	}
+	if (e->b3) return b3_rank1a(e->b3, k, ok);
 	rld_locate_blk(e, &itr, k, ok, &z);
 	++k; // because k is the coordinate but not length
 	while (1) {
@@ -354,6 +372,11 @@ void rld_rank2a(const rld_t *e, uint64_t k, uint64_t l, uint64_t *ok, uint64_t *
 	if (k == (uint64_t)-1) { // special treatment for k==-1
 		for (a = 0; a < e->asize; ++a) ok[a] = 0;
 		rld_rank1a(e, l, ol);
+		return;
+	}
+	if (e->b3) {
+		b3_rank1a(e->b3, k, ok);
+		b3_rank1a(e->b3, l, ol);
 		return;
 	}
 	y = rld_locate_blk(e, &itr, k, ok, &z); // locate the block bracketing k
