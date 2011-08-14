@@ -363,11 +363,19 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 	uint8_t *s;
 	char *idxfn = 0;
 	double t;
+	rld_t *e0 = 0;
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "PRfb:o:")) >= 0) {
+		while ((c = getopt(argc, argv, "PRfb:o:i:")) >= 0) {
 			switch (c) {
+				case 'i':
+					e0 = rld_restore(optarg);
+					if (e0 == 0) {
+						fprintf(stderr, "[E::%s] Fail to open the index file `%s' exists.\n", __func__, optarg);
+						return 1;
+					}
+					break;
 				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
 				case 'R': no_reverse = 1; break;
@@ -423,22 +431,26 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		fprintf(stderr, "[M::%s] Loaded sequences in %.3f seconds.\n", __func__, cputime() - t);
 	}
 
-	t = cputime();
-	fm_bwtgen(asize, l, s);
-	fprintf(stderr, "[M::%s] Constructed the BWT in %.3f seconds.\n", __func__, cputime() - t);
-
-	if (!plain) {
+	if (e0) {
 		rld_t *e;
-		t = cputime();
-		e = fm_bwtenc(asize, sbits, l, s);
-		rld_dump(e, idxfn);
-		rld_destroy(e);
-		fprintf(stderr, "[M::%s] Encoded and dumped BWT in %.3f seconds.\n", __func__, cputime() - t);
+		e = fm_append(e0, l, s);
 	} else {
-		for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
-		putchar('\n');
-	}
+		t = cputime();
+		fm_bwtgen(asize, l, s);
+		fprintf(stderr, "[M::%s] Constructed the BWT in %.3f seconds.\n", __func__, cputime() - t);
 
+		if (!plain) {
+			rld_t *e;
+			t = cputime();
+			e = fm_bwtenc(asize, sbits, l, s);
+			rld_dump(e, idxfn);
+			rld_destroy(e);
+			fprintf(stderr, "[M::%s] Encoded and dumped BWT in %.3f seconds.\n", __func__, cputime() - t);
+		} else {
+			for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
+			putchar('\n');
+		}
+	}
 	free(s); free(idxfn);
 	return 0;
 }

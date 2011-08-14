@@ -30,6 +30,7 @@ extern "C" {
 
 	int fm_bwtgen(int asize, int64_t l, uint8_t *s);
 	struct __rld_t *fm_bwtenc(int asize, int sbits, int64_t l, const uint8_t *s);
+	struct __rld_t *fm_append(struct __rld_t *e0, int len, uint8_t *T);
 
 	/**
 	 * Backward search for a generic FM-Index
