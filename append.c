@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdio.h>
 #include "rld.h"
 #include "ksort.h"
 
@@ -7,19 +8,18 @@ typedef struct {
 	uint32_t suf;
 } sufrank_t;
 
+double cputime();
+void ks_introsort_uint64_t(size_t, uint64_t*); // defined in merge.c
+int sais(const unsigned char *T, int *SA, int n, int k);
+
+/*
 #define sr_rank(a) (*(uint64_t*)&(a))
 #define sufrank_lt(a, b) (*(uint64_t*)&(a) < *(uint64_t*)&(b))
 KSORT_INIT(96, sufrank_t, sufrank_lt)
 
-void ks_introsort_uint64_t(size_t, uint64_t*);
-
-int sais(const unsigned char *T, int *SA, int n, int k);
 int sais_core(const unsigned char *T, int *SA, int fs, int n, int k, int cs);
 void suffixsort(int *x, int *p, int n, int k, int l);
-double cputime();
 
-#include <stdio.h>
-/*
 static void gen_sufrank(const rld_t *e0, int len, const uint8_t *T, const int *C, uint32_t *ws)
 {
 	sufrank_t *sr;
