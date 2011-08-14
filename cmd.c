@@ -434,6 +434,8 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 	if (e0) {
 		rld_t *e;
 		e = fm_append(e0, l, s);
+		rld_dump(e, idxfn);
+		rld_destroy(e);
 	} else {
 		t = cputime();
 		fm_bwtgen(asize, l, s);
