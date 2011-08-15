@@ -20,9 +20,11 @@ void qsufsort_mod(int *V, int *I, int numChar, int largestInputSymbol, int small
 
 rld_t *fm_append(rld_t *e0, int len, const uint8_t *T)
 {
+	extern rld_t *fm_merge_from_BWT(rld_t *e0, int len, const uint8_t *BWT, const int64_t *rank_l);
 	int c, k, *C, *p, *rank_s, *aux;
 	uint64_t i, *oi, *rank_l;
 	uint32_t *ws;
+	uint8_t *BWT;
 	rld_t *e;
 	sufrank_t *sr;
 
@@ -37,6 +39,7 @@ rld_t *fm_append(rld_t *e0, int len, const uint8_t *T)
 	rank_l = (uint64_t*)ws;
 	rank_s = (int*)ws + 2 * (len + 1);
 	aux = rank_s + len + 1;
+	BWT = (uint8_t*)aux;
 	// grab some memory from the stack
 	p = alloca(sizeof(int) * e0->asize);
 	oi = alloca(8 * e0->asize);
@@ -85,14 +88,21 @@ rld_t *fm_append(rld_t *e0, int len, const uint8_t *T)
 		for (; i >= 0; --i) aux[i+1] = -1;
 		qsufsort_mod(rank_s, aux, len, len, 1);
 		//suffixsort(rank_s, aux, len, len+1, 1);
+		lr = rank_s[0] - 1;
+		for (i = 1; i < len; ++i) { // FIXME: ONLY work for e0->asize==6; use a loop for other alphabets
+			r = rank_s[i] - 1;
+			BWT[r] = (lr >= C[1]) + (lr >= C[2]) + (lr >= C[3]) + (lr >= C[4]) + (lr >= C[5]);
+			lr = r;
+		}
+		BWT[rank_s[0]-1] = (lr >= C[1]) + (lr >= C[2]) + (lr >= C[3]) + (lr >= C[4]) + (lr >= C[5]);
 #if 0
 		int *SA = malloc((len+1) * sizeof(int));
 		sais(T, SA, len, e0->asize);
 		for (i = 0; i < len; ++i) assert(i == SA[rank_s[i]-1]);
 #endif
 	}
+	e = fm_merge_from_BWT(e0, len, BWT, (int64_t*)rank_l);
 	free(ws);
-	exit(1);
 	return e;
 }
 

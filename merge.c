@@ -220,3 +220,31 @@ rld_t *fm_merge_from_SA(rld_t *e0, int len, const uint8_t *T, const int *SA, con
 	rld_enc_finish(e, &itr.itr);
 	return e;
 }
+
+rld_t *fm_merge_from_BWT(rld_t *e0, int len, const uint8_t *BWT, const int64_t *rank_l)
+{
+	int64_t l0, last = -1;
+	int c0, i;
+	rlditr_t itr0;
+	rlditr2_t itr;
+	rld_t *e;
+
+	free(e0->frame); e0->frame = 0;
+	e = rld_init(e0->asize, e0->sbits);
+	rld_itr_init(e, &itr.itr, 0);
+	itr.l = l0 = 0; itr.c = c0 = -1;
+	rld_itr_init(e0, &itr0, 0);
+	for (i = 0; i < len; ++i) {
+		if (rank_l[i] != last) {
+			dec_enc(e, &itr, e0, &itr0, &l0, &c0, rank_l[i] - last);
+			last = rank_l[i];
+		}
+		rld_enc2(e, &itr, 1, BWT[i]);
+	}
+	if (last != e0->mcnt[0] - 1)
+		dec_enc(e, &itr, e0, &itr0, &l0, &c0, e0->mcnt[0] - 1 - last);
+	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
+	rld_destroy(e0);
+	rld_enc_finish(e, &itr.itr);
+	return e;
+}
