@@ -363,7 +363,7 @@ int main_merge(int argc, char *argv[])
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
 	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6, use_sais = 0;
-	int64_t i, l, max, block_size = 0xfffff0;
+	int64_t i, sum_l = 0, l, max, block_size = 0xfffff0;
 	uint8_t *s;
 	char *idxfn = 0;
 	double t;
@@ -420,8 +420,8 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		while (kseq_read(seq) >= 0) {
 			if (l + (seq->seq.l + 1) * 2 > block_size) {
 				e = fm_build(e, asize, sbits, l, s, use_sais);
-				fprintf(stderr, "[M::%s] Constructed BWT for %lld symbols in %.3f seconds.\n", __func__, (long long)l, cputime() - t);
-				t = cputime(); l = 0;
+				fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
+				l = 0;
 			}
 			if (l + (seq->seq.l + 1) * 2 > max) { // we do not set max as block_size because this is more flexible
 				max = l + (seq->seq.l + 1) * 2 + 1;
@@ -436,11 +436,12 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 				memcpy(s + l, seq->seq.s, seq->seq.l + 1);
 				l += seq->seq.l + 1;
 			}
+			sum_l += (seq->seq.l + 1) * 2;
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
 		e = fm_build(e, asize, sbits, l, s, use_sais);
-		fprintf(stderr, "[M::%s] Constructed BWT for the last %lld symbols in %.3f seconds.\n", __func__, (long long)l, cputime() - t);
+		fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
 	}
 
 	if (plain) {
