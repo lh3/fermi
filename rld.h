@@ -58,6 +58,7 @@ extern "C" {
 
 #define rld_last_blk(e) ((e)->n_bytes>>3>>(e)->sbits<<(e)->sbits)
 #define rld_seek_blk(e, k) ((e)->z[(k)>>RLD_LBITS] + ((k)&RLD_LMASK))
+#define rld_get_stail(e, itr) ((itr)->shead + (e)->ssize - ((itr)->shead + (e)->ssize - *(itr)->i == RLD_LSIZE? 2 : 1))
 
 #define rld_size_bit(x) ((x)>>31&1) // FIXME: NOT WORKING ON BIG-ENDIAN MACHINES!!!!!!!!!!
 
@@ -102,7 +103,7 @@ static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c, int is_fre
 		if (itr->shead == rld_seek_blk(e, last)) return -1;
 		itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
 		itr->q = (uint8_t*)itr->p;
-		itr->stail = itr->shead + e->ssize - 1;
+		itr->stail = rld_get_stail(e, itr);
 		itr->r = 64;
 		return rld_dec0(e, itr, _c);
 	} else return l;

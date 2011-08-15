@@ -75,7 +75,7 @@ void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
 {
 	itr->i = e->z + (k >> RLD_LBITS);
 	itr->shead = *itr->i + k%RLD_LSIZE;
-	itr->stail = itr->shead + e->ssize - 1;
+	itr->stail = rld_get_stail(e, itr);
 	itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
 	itr->q = (uint8_t*)itr->p;
 	itr->r = 64;
@@ -88,7 +88,7 @@ void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
 static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 {
 	int i;
-	if (itr->p + 1 - *itr->i == RLD_LSIZE) {
+	if (itr->stail + 2 - *itr->i == RLD_LSIZE) {
 		++e->n;
 		e->z = realloc(e->z, e->n * sizeof(void*));
 		itr->i = e->z + e->n - 1;
@@ -104,7 +104,7 @@ static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 		for (i = 0; i <= e->asize; ++i) p[i] = e->cnt[i] - e->mcnt[i];
 		itr->p = itr->shead + e->offset0[0];
 	}
-	itr->stail = itr->shead + e->ssize - 1;
+	itr->stail = rld_get_stail(e, itr);
 	itr->q = (uint8_t*)itr->p;
 	itr->r = 64;
 	for (i = 0; i <= e->asize; ++i) e->mcnt[i] = e->cnt[i];
@@ -304,7 +304,7 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 		itr->p = q;
 	}
 	itr->shead = itr->p;
-	itr->stail = itr->shead + e->ssize - 1;
+	itr->stail = rld_get_stail(e, itr);
 	itr->p += e->offset0[rld_size_bit(*itr->shead)];
 	itr->q = (uint8_t*)itr->p;
 	itr->r = 64;
@@ -314,8 +314,7 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 #ifdef _DNA_ONLY
 static inline int64_t rld_dec0_dna(const rld_t *e, rlditr_t *itr, int *c)
 {
-	uint64_t x;
-	x = itr->p[0] << (64 - itr->r) | (itr->p != itr->stail && itr->r != 64? itr->p[1] >> itr->r : 0);
+	uint64_t x = itr->r == 64? itr->p[0] : itr->p[0] << (64 - itr->r) | itr->p[1] >> itr->r;
 	if (x>>63 == 0) {
 		int64_t y;
 		int l, w = 0x333333335555779bll>>(x>>59<<2)&0xf;
