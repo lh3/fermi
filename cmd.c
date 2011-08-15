@@ -420,7 +420,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		while (kseq_read(seq) >= 0) {
 			if (l + (seq->seq.l + 1) * 2 > block_size) {
 				e = fm_build(e, asize, sbits, l, s, use_sais);
-				fprintf(stderr, "[M::%s] Constructed BWT for %lld symbols in %.3f seconds.\n", __func__, l, cputime() - t);
+				fprintf(stderr, "[M::%s] Constructed BWT for %lld symbols in %.3f seconds.\n", __func__, (long long)l, cputime() - t);
 				t = cputime(); l = 0;
 			}
 			if (l + (seq->seq.l + 1) * 2 > max) { // we do not set max as block_size because this is more flexible
@@ -440,7 +440,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		kseq_destroy(seq);
 		gzclose(fp);
 		e = fm_build(e, asize, sbits, l, s, use_sais);
-		fprintf(stderr, "[M::%s] Constructed BWT for the last %lld symbols in %.3f seconds.\n", __func__, l, cputime() - t);
+		fprintf(stderr, "[M::%s] Constructed BWT for the last %lld symbols in %.3f seconds.\n", __func__, (long long)l, cputime() - t);
 	}
 
 	if (plain) {
