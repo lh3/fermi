@@ -85,7 +85,6 @@ static inline void insert_to_hash(gaphash_t *h, uint64_t j)
 static void *compute_gap(const rld_t *e0, const rld_t *e1, int use_hash)
 {
 	uint64_t k, *ok, i, x, *bits = 0, n_processed = 1;
-	int c = 0;
 	double t = cputime();
 	gaphash_t *h = 0;
 
@@ -102,7 +101,7 @@ static void *compute_gap(const rld_t *e0, const rld_t *e1, int use_hash)
 		bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
 	}
 	for (;;) {
-		c = rld_rank1a(e1, k, ok);
+		int c = rld_rank1a(e1, k, ok);
 		if (c == 0) { // sentinel; the order of sentinel has been lost; we have to rely on x to get it back
 			k = --x;
 			if (x == (uint64_t)-1) break;
