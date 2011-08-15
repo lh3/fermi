@@ -286,7 +286,7 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 			cnt[0] += p[0]; cnt[1] += p[1]; cnt[2] += p[2]; cnt[3] += p[3]; cnt[4] += p[4]; cnt[5] += p[5];
 		}
 #else
-		c = rld_size_bit(*q)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
+		c = rld_size_bit(*q)? (uint32_t)(*q)&0x7fffffff : *(uint16_t*)q;
 		if (*sum + c > k) break;
 		if (rld_size_bit(*q)) {
 			uint32_t *p = (uint32_t*)q + 1;
