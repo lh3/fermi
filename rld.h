@@ -95,6 +95,28 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 	else ++itr->p, itr->r = 64 + itr->r - w;
 	return y;
 }
+static inline int64_t rld_dec0a(const rld_t *e, rlditr_t *itr, int *c) // FIXME: assuming e->abits==3
+{
+	uint64_t x;
+	x = itr->p[0] << (64 - itr->r) | (itr->p != itr->stail && itr->r != 64? itr->p[1] >> itr->r : 0);
+	if (x>>63 == 0) {
+		int64_t y;
+		int l, w = 0x333333335555779bll>>(x>>59<<2)&0xf;
+		l = (x >> (64 - w)) - 1;
+		y = x << w >> (64 - l) | 1u << l;
+		w += l;
+		*c = x << w >> 61;
+		w += 3;
+		if (itr->r > w) itr->r -= w;
+		else ++itr->p, itr->r = 64 + itr->r - w;
+		return y;
+	} else {
+		*c = x << 1 >> 61;
+		if (itr->r > 4) itr->r -= 4;
+		else ++itr->p, itr->r = 60 + itr->r;
+		return 1;
+	}
+}
 #endif
 
 static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c, int is_free)

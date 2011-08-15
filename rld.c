@@ -307,7 +307,7 @@ int rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 	rld_locate_blk(e, &itr, k, ok, &z);
 	++k; // because k is the coordinate but not length
 	while (1) {
-		l = rld_dec0(e, &itr, &a);
+		l = rld_dec0a(e, &itr, &a);
 		if (z + l >= k) break;
 		z += l; ok[a] += l;
 	}
