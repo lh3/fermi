@@ -1,6 +1,6 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2
-DFLAGS=		-D_DNA_ONLY -D_USE_RLE6 #-DNDEBUG
+DFLAGS=		-D_DNA_ONLY #-D_USE_RLE6 #-DNDEBUG
 OBJS=		utils.o seq.o sais.o sais64.o saux.o rld.o exact.o merge.o \
 			append.o build.o cmd.o ext/qssmod.o
 PROG=		fermi
