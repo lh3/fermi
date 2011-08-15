@@ -330,29 +330,33 @@ int main_merge(int argc, char *argv[])
 {
 	int c, use_hash = 0, force = 0;
 	rld_t *e0, *e1, *e;
-	while ((c = getopt(argc, argv, "fh")) >= 0) {
+	char *idxfn = 0;
+	while ((c = getopt(argc, argv, "fho:")) >= 0) {
 		switch (c) {
-			case 'h': use_hash = 1; break;
 			case 'f': force = 1; break;
+			case 'h': use_hash = 1; break;
+			case 'o': idxfn = strdup(optarg); break;
 		}
 	}
-	if (optind + 3 > argc) {
-		fprintf(stderr, "Usage: fermi merge [-fh] <out.bwt> <in0.bwt> <in1.bwt>\n");
+	if (optind + 2 > argc) {
+		fprintf(stderr, "Usage: fermi merge [-fh] [-o out.bwt] <in0.bwt> <in1.bwt>\n");
 		return 1;
 	}
-	if (force == 0) {
-		FILE *fp = fopen(argv[optind], "r");
+	if (force == 0 && idxfn) {
+		FILE *fp = fopen(idxfn, "r");
 		if (fp) {
 			fclose(fp);
-			fprintf(stderr, "[E::%s] File `%s' exists. Please use `-f' to overwrite.\n", __func__, argv[optind]);
+			fprintf(stderr, "[E::%s] File `%s' exists. Please use `-f' to overwrite.\n", __func__, idxfn);
 			return 1;
 		}
 	}
-	e0 = rld_restore(argv[optind+1]);
-	e1 = rld_restore(argv[optind+2]);
+	if (idxfn == 0) idxfn = strdup("-");
+	e0 = rld_restore(argv[optind+0]);
+	e1 = rld_restore(argv[optind+1]);
 	e = fm_merge(e0, e1, use_hash);
-	rld_dump(e, argv[optind]);
+	rld_dump(e, idxfn);
 	rld_destroy(e);
+	free(idxfn);
 	return 0;
 }
 

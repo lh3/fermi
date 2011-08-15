@@ -39,12 +39,13 @@ extern "C" {
 #endif
 
 	rld_t *rld_init(int asize, int bbits);
-	int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c);
-	uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr);
-
+	void rld_destroy(rld_t *e);
 	int rld_dump(const rld_t *e, const char *fn);
 	rld_t *rld_restore(const char *fn);
-	void rld_destroy(rld_t *e);
+
+	void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k);
+	int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c);
+	uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr);
 
 	uint64_t rld_rank11(const rld_t *e, uint64_t k, int c);
 	int rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok);
@@ -59,16 +60,6 @@ extern "C" {
 #define rld_seek_blk(e, k) ((e)->z[(k)>>RLD_LBITS] + ((k)&RLD_LMASK))
 
 #define rld_size_bit(x) ((x)>>31&1) // FIXME: NOT WORKING ON BIG-ENDIAN MACHINES!!!!!!!!!!
-
-static inline void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
-{
-	itr->i = e->z + (k >> RLD_LBITS);
-	itr->shead = *itr->i + k%RLD_LSIZE;
-	itr->stail = itr->shead + e->ssize - 1;
-	itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
-	itr->q = (uint8_t*)itr->p;
-	itr->r = 64;
-}
 
 #ifdef _USE_RLE6
 static inline int rld_dec0(const rld_t *r, rlditr_t *itr, int *c)
@@ -95,30 +86,6 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 	else ++itr->p, itr->r = 64 + itr->r - w;
 	return y;
 }
-#ifdef _DNA_ONLY
-static inline int64_t rld_dec0_dna(const rld_t *e, rlditr_t *itr, int *c)
-{
-	uint64_t x;
-	x = itr->p[0] << (64 - itr->r) | (itr->p != itr->stail && itr->r != 64? itr->p[1] >> itr->r : 0);
-	if (x>>63 == 0) {
-		int64_t y;
-		int l, w = 0x333333335555779bll>>(x>>59<<2)&0xf;
-		l = (x >> (64 - w)) - 1;
-		y = x << w >> (64 - l) | 1u << l;
-		w += l;
-		*c = x << w >> 61;
-		w += 3;
-		itr->r -= w;
-		if (itr->r <= 0) ++itr->p, itr->r += 64;
-		return y;
-	} else {
-		*c = x << 1 >> 61;
-		itr->r -= 4;
-		if (itr->r <= 0) ++itr->p, itr->r += 64;
-		return 1;
-	}
-}
-#endif
 #endif
 
 static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c, int is_free)

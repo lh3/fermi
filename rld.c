@@ -11,6 +11,10 @@
 #define RLD_IBITS_PLUS 4
 #endif
 
+/******************
+ * Delta encoding *
+ ******************/
+
 static const char LogTable256[256] = {
 #define LT(n) n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n
     -1, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
@@ -33,15 +37,9 @@ inline uint32_t rld_delta_enc1(uint32_t x, int *width)
 	return (x^(1<<y)) | (y+1)<<y;
 }
 
-static void dump_header(const rld_t *e, FILE *fp)
-{
-	int32_t a[2];
-	a[0] = e->asize; a[1] = e->sbits;
-	fwrite("RLD\1", 1, 4, fp); // write magic
-	fwrite(a, 4, 2, fp); // write asize and sbits
-	fwrite(e->mcnt, 8, e->asize + 1, fp); // write the marginal counts
-	fwrite(&e->n_bytes, 8, 1, fp);
-}
+/***********************************
+ * Initialization and deallocation *
+ ***********************************/
 
 rld_t *rld_init(int asize, int bbits)
 {
@@ -72,6 +70,20 @@ void rld_destroy(rld_t *e)
 	for (i = 0; i < e->n; ++i) free(e->z[i]);
 	free(e->z); free(e->cnt); free(e->mcnt); free(e->frame); free(e);
 }
+
+void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
+{
+	itr->i = e->z + (k >> RLD_LBITS);
+	itr->shead = *itr->i + k%RLD_LSIZE;
+	itr->stail = itr->shead + e->ssize - 1;
+	itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
+	itr->q = (uint8_t*)itr->p;
+	itr->r = 64;
+}
+
+/************
+ * Encoding *
+ ************/
 
 static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 {
@@ -192,14 +204,22 @@ uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr)
 	return e->n_bytes;
 }
 
+/*****************
+ * Save and load *
+ *****************/
+
 int rld_dump(const rld_t *e, const char *fn)
 {
 	uint64_t k;
-	int i;
+	int i, a[2];
 	FILE *fp;
 	fp = strcmp(fn, "-")? fopen(fn, "wb") : fdopen(fileno(stdout), "wb");
 	if (fp == 0) return -1;
-	dump_header(e, fp);
+	a[0] = e->asize; a[1] = e->sbits;
+	fwrite("RLD\1", 1, 4, fp); // write magic
+	fwrite(a, 4, 2, fp); // write asize and sbits
+	fwrite(e->mcnt, 8, e->asize + 1, fp); // write the marginal counts
+	fwrite(&e->n_bytes, 8, 1, fp);
 	for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE)
 		fwrite(e->z[i], 8, RLD_LSIZE, fp);
 	fwrite(e->z[i], 8, k, fp);
@@ -245,11 +265,9 @@ rld_t *rld_restore(const char *fn)
 	return e;
 }
 
-uint64_t rld_rawlen(const rld_t *e)
-{
-	uint64_t x = rld_last_blk(e);
-	return rld_seek_blk(e, x)[0];
-}
+/******************
+ * Computing rank *
+ ******************/
 
 static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k, uint64_t *cnt, uint64_t *sum)
 {
@@ -292,6 +310,31 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 	itr->r = 64;
 	return c + *sum;
 }
+
+#ifdef _DNA_ONLY
+static inline int64_t rld_dec0_dna(const rld_t *e, rlditr_t *itr, int *c)
+{
+	uint64_t x;
+	x = itr->p[0] << (64 - itr->r) | (itr->p != itr->stail && itr->r != 64? itr->p[1] >> itr->r : 0);
+	if (x>>63 == 0) {
+		int64_t y;
+		int l, w = 0x333333335555779bll>>(x>>59<<2)&0xf;
+		l = (x >> (64 - w)) - 1;
+		y = x << w >> (64 - l) | 1u << l;
+		w += l;
+		*c = x << w >> 61;
+		w += 3;
+		itr->r -= w;
+		if (itr->r <= 0) ++itr->p, itr->r += 64;
+		return y;
+	} else {
+		*c = x << 1 >> 61;
+		itr->r -= 4;
+		if (itr->r <= 0) ++itr->p, itr->r += 64;
+		return 1;
+	}
+}
+#endif
 
 void rld_rank21(const rld_t *e, uint64_t k, uint64_t l, int c, uint64_t *ok, uint64_t *ol) // FIXME: can be faster
 {
