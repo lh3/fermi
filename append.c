@@ -18,7 +18,7 @@ KSORT_INIT(96, sufrank_t, sufrank_lt)
 
 void qsufsort_mod(int *V, int *I, int numChar, int largestInputSymbol, int smallestInputSymbol);
 
-rld_t *fm_append(rld_t *e0, int len, const uint8_t *T)
+rld_t *fm_append_qsufsort(rld_t *e0, int len, const uint8_t *T)
 {
 	extern rld_t *fm_merge_from_BWT(rld_t *e0, int len, const uint8_t *BWT, const int64_t *rank_l);
 	int c, k, *C, *p, *rank_s, *aux;
@@ -106,7 +106,7 @@ rld_t *fm_append(rld_t *e0, int len, const uint8_t *T)
 	return e;
 }
 
-rld_t *fm_appenda(rld_t *e0, int len, const uint8_t *T)
+rld_t *fm_append_sais(rld_t *e0, int len, const uint8_t *T)
 {
 	extern rld_t *fm_merge_from_SA(rld_t *e0, int len, const uint8_t *T, const int *SA, const uint64_t *rank_l);
 	int c, k, *C, *p, *SA;

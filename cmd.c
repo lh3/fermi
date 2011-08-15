@@ -362,29 +362,31 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6;
-	int64_t i, l, max;
+	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6, use_sais = 0;
+	int64_t i, l, max, block_size = 0xfffff0;
 	uint8_t *s;
 	char *idxfn = 0;
 	double t;
-	rld_t *e0 = 0;
+	rld_t *e = 0;
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "PRfb:o:i:")) >= 0) {
+		while ((c = getopt(argc, argv, "PRfdb:o:i:s:")) >= 0) {
 			switch (c) {
 				case 'i':
-					e0 = rld_restore(optarg);
-					if (e0 == 0) {
-						fprintf(stderr, "[E::%s] Fail to open the index file `%s' exists.\n", __func__, optarg);
+					e = rld_restore(optarg);
+					if (e == 0) {
+						fprintf(stderr, "[E::%s] Fail to open the index file `%s'.\n", __func__, optarg);
 						return 1;
 					}
 					break;
 				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
+				case 'd': use_sais = 1; break;
 				case 'R': no_reverse = 1; break;
 				case 'b': sbits = atoi(optarg); break;
 				case 'o': idxfn = strdup(optarg); break;
+				case 's': block_size = atol(optarg); break;
 			}
 		}
 		if (argc == optind) {
@@ -411,12 +413,17 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 			fprintf(stderr, "[E::%s] Fail to open the input file.\n", __func__);
 			return 1;
 		}
-		t = cputime();
 		seq = kseq_init(fp);
 		l = 0; max = 16;
 		s = malloc(max);
+		t = cputime();
 		while (kseq_read(seq) >= 0) {
-			if (l + (seq->seq.l + 1) * 2 > max) {
+			if (l + (seq->seq.l + 1) * 2 > block_size) {
+				e = fm_build(e, asize, sbits, l, s, use_sais);
+				fprintf(stderr, "[M::%s] Constructed BWT for %lld symbols in %.3f seconds.\n", __func__, l, cputime() - t);
+				t = cputime(); l = 0;
+			}
+			if (l + (seq->seq.l + 1) * 2 > max) { // we do not set max as block_size because this is more flexible
 				max = l + (seq->seq.l + 1) * 2 + 1;
 				kroundup32(max);
 				s = realloc(s, max);
@@ -432,30 +439,16 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
-		fprintf(stderr, "[M::%s] Loaded sequences in %.3f seconds.\n", __func__, cputime() - t);
+		e = fm_build(e, asize, sbits, l, s, use_sais);
+		fprintf(stderr, "[M::%s] Constructed BWT for the last %lld symbols in %.3f seconds.\n", __func__, l, cputime() - t);
 	}
 
-	if (e0) {
-		rld_t *e;
-		e = fm_append(e0, l, s);
+	if (plain) {
+		for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
+		putchar('\n');
+	} else {
 		rld_dump(e, idxfn);
 		rld_destroy(e);
-	} else {
-		t = cputime();
-		fm_bwtgen(asize, l, s);
-		fprintf(stderr, "[M::%s] Constructed the BWT in %.3f seconds.\n", __func__, cputime() - t);
-
-		if (!plain) {
-			rld_t *e;
-			t = cputime();
-			e = fm_bwtenc(asize, sbits, l, s);
-			rld_dump(e, idxfn);
-			rld_destroy(e);
-			fprintf(stderr, "[M::%s] Encoded and dumped BWT in %.3f seconds.\n", __func__, cputime() - t);
-		} else {
-			for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
-			putchar('\n');
-		}
 	}
 	free(s); free(idxfn);
 	return 0;
