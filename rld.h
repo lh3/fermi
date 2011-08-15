@@ -95,7 +95,8 @@ static inline int64_t rld_dec0(const rld_t *e, rlditr_t *itr, int *c)
 	else ++itr->p, itr->r = 64 + itr->r - w;
 	return y;
 }
-static inline int64_t rld_dec0a(const rld_t *e, rlditr_t *itr, int *c) // FIXME: assuming e->abits==3
+#ifdef _DNA_ONLY
+static inline int64_t rld_dec0_dna(const rld_t *e, rlditr_t *itr, int *c)
 {
 	uint64_t x;
 	x = itr->p[0] << (64 - itr->r) | (itr->p != itr->stail && itr->r != 64? itr->p[1] >> itr->r : 0);
@@ -117,6 +118,7 @@ static inline int64_t rld_dec0a(const rld_t *e, rlditr_t *itr, int *c) // FIXME:
 		return 1;
 	}
 }
+#endif
 #endif
 
 static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c, int is_free)

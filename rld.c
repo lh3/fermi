@@ -271,11 +271,15 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 		c = rld_size_bit(*q)? *((uint32_t*)q)&0x7fffffff : *(uint16_t*)q;
 		if (*sum + c > k) break;
 		if (rld_size_bit(*q)) {
-			uint32_t *p = (uint32_t*)q;
-			for (j = 0; j < e->asize; ++j) cnt[j] += p[j+1];
+			uint32_t *p = (uint32_t*)q + 1;
+			for (j = 0; j < e->asize; ++j) cnt[j] += p[j];
 		} else {
-			uint16_t *p = (uint16_t*)q;
-			for (j = 0; j < e->asize; ++j) cnt[j] += p[j+1];
+			uint16_t *p = (uint16_t*)q + 1;
+#ifdef _DNA_ONLY
+			cnt[0] += p[0]; cnt[1] += p[1]; cnt[2] += p[2]; cnt[3] += p[3]; cnt[4] += p[4]; cnt[5] += p[5];
+#else
+			for (j = 0; j < e->asize; ++j) cnt[j] += p[j];
+#endif
 		}
 #endif
 		*sum += c;
@@ -307,7 +311,11 @@ int rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 	rld_locate_blk(e, &itr, k, ok, &z);
 	++k; // because k is the coordinate but not length
 	while (1) {
-		l = rld_dec0a(e, &itr, &a);
+#ifdef _DNA_ONLY
+		l = rld_dec0_dna(e, &itr, &a);
+#else
+		l = rld_dec0(e, &itr, &a);
+#endif
 		if (z + l >= k) break;
 		z += l; ok[a] += l;
 	}
