@@ -311,7 +311,7 @@ static inline uint64_t rld_locate_blk(const rld_t *e, rlditr_t *itr, uint64_t k,
 	return c + *sum;
 }
 
-#ifdef _DNA_ONLY
+#if defined(_DNA_ONLY) && !defined(_USE_RLE6)
 static inline int64_t rld_dec0_dna(const rld_t *e, rlditr_t *itr, int *c)
 {
 	uint64_t x = itr->r == 64? itr->p[0] : itr->p[0] << (64 - itr->r) | itr->p[1] >> itr->r;
@@ -353,7 +353,7 @@ int rld_rank1a(const rld_t *e, uint64_t k, uint64_t *ok)
 	rld_locate_blk(e, &itr, k, ok, &z);
 	++k; // because k is the coordinate but not length
 	while (1) {
-#ifdef _DNA_ONLY
+#if defined(_DNA_ONLY) && !defined(_USE_RLE6)
 		l = rld_dec0_dna(e, &itr, &a);
 #else
 		l = rld_dec0(e, &itr, &a);
