@@ -60,7 +60,7 @@ extern "C" {
 #define rld_seek_blk(e, k) ((e)->z[(k)>>RLD_LBITS] + ((k)&RLD_LMASK))
 #define rld_get_stail(e, itr) ((itr)->shead + (e)->ssize - ((itr)->shead + (e)->ssize - *(itr)->i == RLD_LSIZE? 2 : 1))
 
-#define rld_size_bit(x) ((x)>>31&1) // FIXME: NOT WORKING ON BIG-ENDIAN MACHINES!!!!!!!!!!
+#define rld_size_bit(x) ((uint32_t)(x)>>31) // FIXME: NOT WORKING ON BIG-ENDIAN MACHINES!!!!!!!!!!
 
 #ifdef _USE_RLE6
 static inline int rld_dec0(const rld_t *r, rlditr_t *itr, int *c)
