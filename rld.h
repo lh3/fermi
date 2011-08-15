@@ -107,13 +107,13 @@ static inline int64_t rld_dec0a(const rld_t *e, rlditr_t *itr, int *c) // FIXME:
 		w += l;
 		*c = x << w >> 61;
 		w += 3;
-		if (itr->r > w) itr->r -= w;
-		else ++itr->p, itr->r = 64 + itr->r - w;
+		itr->r -= w;
+		if (itr->r <= 0) ++itr->p, itr->r += 64;
 		return y;
 	} else {
 		*c = x << 1 >> 61;
-		if (itr->r > 4) itr->r -= 4;
-		else ++itr->p, itr->r = 60 + itr->r;
+		itr->r -= 4;
+		if (itr->r <= 0) ++itr->p, itr->r += 64;
 		return 1;
 	}
 }
