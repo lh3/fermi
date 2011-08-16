@@ -363,7 +363,7 @@ int main_merge(int argc, char *argv[])
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
 	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6, use_sais = 0;
-	int64_t i, sum_l = 0, l, max, block_size = 0xfffff0;
+	int64_t i, sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
 	double t;
