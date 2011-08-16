@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Contact: Heng Li <lh3@live.co.uk>\n\n");
 		fprintf(stderr, "Usage:   fermi <command> [arguments]\n\n");
 		fprintf(stderr, "Command: strlen    Total number of symbols to index\n");
-		fprintf(stderr, "         build     Generated FM-Index\n");
+		fprintf(stderr, "         build     Generate FM-Index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
 		fprintf(stderr, "         merge     Merge two FM-Indexes\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
