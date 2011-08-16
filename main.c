@@ -3,7 +3,6 @@
 #include <sys/time.h>
 #include "fermi.h"
 
-int main_index(int argc, char *argv[]);
 int main_chkbwt(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_exact(int argc, char *argv[]);
@@ -26,7 +25,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Contact: Heng Li <lh3@live.co.uk>\n\n");
 		fprintf(stderr, "Usage:   fermi <command> [arguments]\n\n");
 		fprintf(stderr, "Command: strlen    Total number of symbols to index\n");
-		fprintf(stderr, "         index     Generated FM-Index\n");
+		fprintf(stderr, "         build     Generated FM-Index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
 		fprintf(stderr, "         merge     Merge two FM-Indexes\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
@@ -34,12 +33,11 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		return 1;
 	}
-	if (strcmp(argv[1], "index") == 0) ret = main_index(argc-1, argv+1);
+	if (strcmp(argv[1], "build") == 0) ret = main_build(argc-1, argv+1);
 	else if (strcmp(argv[1], "chkbwt") == 0) ret = main_chkbwt(argc-1, argv+1);
 	else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
 	else if (strcmp(argv[1], "exact") == 0) ret = main_exact(argc-1, argv+1);
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
-	else if (strcmp(argv[1], "build") == 0) ret = main_build(argc-1, argv+1);
 	else if (strcmp(argv[1], "strlen") == 0) ret = main_strlen(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
