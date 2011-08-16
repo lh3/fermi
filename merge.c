@@ -8,6 +8,8 @@
 double cputime();
 double rssmem();
 
+uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads);
+
 typedef struct {
 	rlditr_t itr;
 	int c;
@@ -121,7 +123,7 @@ static void *compute_gap(const rld_t *e0, const rld_t *e1, int use_hash)
 	return use_hash? (void*)h : (void*)bits;
 }
 
-rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash)
+rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash, int n_threads)
 {
 	void *gaparr;
 	uint64_t i, n = e0->mcnt[0] + e1->mcnt[0];
@@ -132,7 +134,7 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash)
 	rld_t *e;
 
 	// compute the gap array
-	gaparr = compute_gap(e0, e1, use_hash);
+	gaparr = n_threads > 1? (void*)fm_compute_gap_bits(e0, e1, n_threads) : compute_gap(e0, e1, use_hash);
 	free(e0->frame); free(e1->frame); // deallocate the rank indexes of e0 and e1; they are not needed any more
 	e0->frame = e1->frame = 0;
 	// initialize the FM-index to be returned, and all the three iterators

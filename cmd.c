@@ -174,18 +174,19 @@ int main_exact(int argc, char *argv[])
 
 int main_merge(int argc, char *argv[])
 {
-	int c, use_hash = 0, force = 0;
+	int c, use_hash = 0, force = 0, n_threads = 1;
 	rld_t *e0, *e1, *e;
 	char *idxfn = 0;
-	while ((c = getopt(argc, argv, "fho:")) >= 0) {
+	while ((c = getopt(argc, argv, "fho:t:")) >= 0) {
 		switch (c) {
 			case 'f': force = 1; break;
 			case 'h': use_hash = 1; break;
+			case 't': n_threads = atoi(optarg); break;
 			case 'o': idxfn = strdup(optarg); break;
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi merge [-fh] [-o out.bwt] <in0.bwt> <in1.bwt>\n");
+		fprintf(stderr, "Usage: fermi merge [-fh] [-o out.bwt] [-t nThreads] <in0.bwt> <in1.bwt>\n");
 		return 1;
 	}
 	if (force == 0 && idxfn) {
@@ -199,7 +200,7 @@ int main_merge(int argc, char *argv[])
 	if (idxfn == 0) idxfn = strdup("-");
 	e0 = rld_restore(argv[optind+0]);
 	e1 = rld_restore(argv[optind+1]);
-	e = fm_merge(e0, e1, use_hash);
+	e = fm_merge(e0, e1, use_hash, n_threads);
 	rld_dump(e, idxfn);
 	rld_destroy(e);
 	free(idxfn);
