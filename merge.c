@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "fermi.h"
 #include "rld.h"
+#include "utils.h"
 
 double cputime();
 double rssmem();
@@ -97,7 +98,7 @@ static void *compute_gap(const rld_t *e0, const rld_t *e1, int use_hash)
 		insert_to_hash(h, i);
 	} else {
 		uint64_t n_bits = e0->mcnt[0] + e1->mcnt[0];
-		bits = calloc((n_bits + 63) / 64, 8); // we could allocate bits in several blocks to avoid allocating a huge array
+		bits = xcalloc((size_t)(n_bits + 63) / 64, 8); // we could allocate bits in several blocks to avoid allocating a huge array
 		bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
 	}
 	for (;;) {
