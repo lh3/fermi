@@ -1,4 +1,5 @@
 #include <pthread.h>
+#include <stdio.h>
 #include "rld.h"
 #include "utils.h"
 
@@ -54,7 +55,7 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 		worker_t *w = data + j;
 		w->e0 = e0; w->e1 = e1;
 		w->step = n_threads;
-		w->size = BLOCK_SIZE / n_threads;
+		w->size = ((BLOCK_SIZE < rest? BLOCK_SIZE : rest) + n_threads - 1) / n_threads;
 		w->k = w->x = j;
 		w->i = w->e0->mcnt[1] - 1;
 		w->buf = malloc(w->size * 8);
