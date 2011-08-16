@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include "utils.h"
 #include "rld.h"
 #include "ksort.h"
 
@@ -33,7 +34,7 @@ rld_t *fm_append_qsufsort(rld_t *e0, int len, const uint8_t *T)
 	for (c = 0; c <= e0->asize; ++c) C[c] = 0;
 	for (k = 0; k < len; ++k) ++C[T[k] + 1]; // marginal count
 	for (c = 1; c <= e0->asize; ++c) C[c] += C[c-1]; // accumulative count
-	ws = malloc((len + 1) * 16);
+	ws = xmalloc((len + 1) * 16);
 	// set pointers
 	sr = (sufrank_t*)ws;
 	rank_l = (uint64_t*)ws;

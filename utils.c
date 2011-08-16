@@ -1,10 +1,22 @@
 #include <sys/resource.h>
 #include <sys/time.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
 
 // 1: error; 2: warning; 3: message
 int fm_verbose = 3;
+
+void *xmalloc_core(size_t s, const char *func)
+{
+	unsigned char *x;
+	x = (unsigned char*)malloc(s);
+	if (x == 0) {
+		fprintf(stderr, "[E::%s] Fail to allocate %ld bytes of memory.\n", func, s);
+		return 0;
+	}
+	return x;
+}
 
 double cputime()
 {
