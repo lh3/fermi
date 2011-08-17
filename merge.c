@@ -85,9 +85,9 @@ static inline void insert_to_hash(gaphash_t *h, uint64_t j)
 	if (ret == 0) ++kh_key(g, k); // when the key is present, the key in the hash table will not be overwritten by put()
 }
 
-static void *compute_gap(const rld_t *e0, const rld_t *e1, int use_hash)
+static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
 {
-	uint64_t k, *ok, i, x, *bits = 0, n_processed = 1;
+	uint64_t k, *ok, i, x, n_processed = 1;
 	double t = cputime();
 	gaphash_t *h = 0;
 
@@ -95,14 +95,8 @@ static void *compute_gap(const rld_t *e0, const rld_t *e1, int use_hash)
 	x = e1->mcnt[1];
 	k = --x; // get the last sentinel of e1
 	i = e0->mcnt[1] - 1; // to modify gap[j]
-	if (use_hash) {
-		h = init_gaphash(e0->mcnt[0]);
-		insert_to_hash(h, i);
-	} else {
-		uint64_t n_bits = e0->mcnt[0] + e1->mcnt[0];
-		bits = xcalloc((size_t)(n_bits + 63) / 64, 8); // we could allocate bits in several blocks to avoid allocating a huge array
-		bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
-	}
+	h = init_gaphash(e0->mcnt[0]);
+	insert_to_hash(h, i);
 	for (;;) {
 		int c = rld_rank1a(e1, k, ok);
 		if (c == 0) { // sentinel; the order of sentinel has been lost; we have to rely on x to get it back
@@ -114,13 +108,12 @@ static void *compute_gap(const rld_t *e0, const rld_t *e1, int use_hash)
 			rld_rank1a(e0, i, ok);
 			i = e0->cnt[c] + ok[c] - 1;
 		}
-		if (use_hash) insert_to_hash(h, i);
-		else bits[(k+i+1)>>6] |= 1ull<<((k+i+1)&0x3f);
+		insert_to_hash(h, i);
 		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
 					(long long)n_processed / 1000000, cputime() - t, rssmem());
 	}
-	return use_hash? (void*)h : (void*)bits;
+	return h;
 }
 
 rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash, int n_threads)
@@ -134,7 +127,7 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash, int n_threads)
 	rld_t *e;
 
 	// compute the gap array
-	gaparr = n_threads > 1? (void*)fm_compute_gap_bits(e0, e1, n_threads) : compute_gap(e0, e1, use_hash);
+	gaparr = !use_hash? (void*)fm_compute_gap_bits(e0, e1, n_threads) : (void*)compute_gap_hash(e0, e1);
 	free(e0->frame); free(e1->frame); // deallocate the rank indexes of e0 and e1; they are not needed any more
 	e0->frame = e1->frame = 0;
 	// initialize the FM-index to be returned, and all the three iterators
