@@ -24,6 +24,7 @@
 #ifndef _NO_ATOMIC
 
 #define BLOCK_SIZE 0x40000
+#define TIMER_INTV 64
 
 typedef struct {
 	int start, step;
@@ -45,8 +46,10 @@ static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
 	int n = 0;
-	int64_t i, k, x, *buf;
+	int64_t i, k, x, *buf, n_processed = 0;
 	uint64_t *ok;
+	double tcpu, treal;
+	tcpu = cputime(); treal = realtime();
 	ok = alloca(8 * w->e0->asize);
 	buf = malloc(BLOCK_SIZE * 8);
 	k = x = w->start;
@@ -66,11 +69,15 @@ static void *worker(void *data)
 		}
 		if (n == BLOCK_SIZE) {
 			update_bits(n, buf, w->bits);
+			if (fm_verbose >= 3 && ++n_processed % TIMER_INTV == 0)
+				fprintf(stderr, "[M::%s@%d] processed %f million symbols in %.3f * %.1f seconds.\n", __func__, w->start,
+						(double)n_processed*BLOCK_SIZE/1e6, cputime() - tcpu, (cputime() - tcpu) / (realtime() - treal));
 			n = 0;
 		}
 		buf[n++] = k + i + 1;
 	}
 	if (n) update_bits(n, buf, w->bits);
+	free(buf);
 	return 0;
 }
 
