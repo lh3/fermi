@@ -87,7 +87,7 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 		w->size = ((BLOCK_SIZE < rest? BLOCK_SIZE : rest) + n_threads - 1) / n_threads;
 		w->k = w->x = j;
 		w->i = w->e0->mcnt[1] - 1;
-		w->buf = malloc(w->size * 8);
+		w->buf = xmalloc(w->size * 8);
 	}
 	n_writers = n_threads;
 	kroundup32(n_writers);
@@ -122,6 +122,7 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 			fprintf(stderr, "[M::%s] %.3f million symbols remain; CPU time: %.3f; wall-clock / CPU: %.2f\n", __func__,
 					rest / 1e6, cputime()-tcpu, (cputime()-tcpu)/(realtime()-treal));
 	}
+	for (j = 0; j < n_threads; ++j) free(wo[j].buf);
 	free(wo); free(wr); free(tid);
 	return bits;
 }
