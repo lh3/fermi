@@ -5,7 +5,7 @@ OBJS=		utils.o seq.o sais.o sais64.o saux.o rld.o exact.o merge.o pmerge.o \
 			append.o build.o cmd.o ext/qssmod.o
 PROG=		fermi
 INCLUDES=	
-LIBS=		-lm -lz
+LIBS=		-lpthread -lm -lz
 
 .SUFFIXES:.c .o
 

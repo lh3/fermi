@@ -1,5 +1,6 @@
 #include <pthread.h>
 #include <stdio.h>
+#include "fermi.h"
 #include "rld.h"
 #include "utils.h"
 
@@ -45,6 +46,7 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 	pthread_attr_t attr;
 	worker_t *data;
 	int j;
+	double tcpu, treal;
 
 	bits = xcalloc((e0->mcnt[0] + e1->mcnt[0] + 63) / 64, 8);
 	pthread_attr_init(&attr);
@@ -60,6 +62,7 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 		w->i = w->e0->mcnt[1] - 1;
 		w->buf = malloc(w->size * 8);
 	}
+	tcpu = cputime(); treal = realtime();
 	while (rest) {
 		for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, data + j);
 		for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
@@ -70,6 +73,9 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 				bits[w->buf[i]>>6] |= 1ull<<(w->buf[i]&0x3f);
 			rest -= w->n;
 		}
+		if (fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] %.3f million symbols remain; CPU time: %.3f; wall-clock / CPU: %.2f\n", __func__,
+					rest / 1e6, cputime()-tcpu, (cputime()-tcpu)/(realtime()-treal));
 	}
 	free(data); free(tid);
 	return bits;
