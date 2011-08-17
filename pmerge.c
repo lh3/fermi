@@ -70,7 +70,7 @@ static void *worker(void *data)
 		if (n == BLOCK_SIZE) {
 			update_bits(n, buf, w->bits);
 			if (fm_verbose >= 3 && ++n_processed % TIMER_INTV == 0)
-				fprintf(stderr, "[M::%s@%d] processed %f million symbols in %.3f * %.1f seconds.\n", __func__, w->start,
+				fprintf(stderr, "[M::%s@%d] processed %.3f million symbols in %.3f / %.1f seconds.\n", __func__, w->start,
 						(double)n_processed*BLOCK_SIZE/1e6, cputime() - tcpu, (cputime() - tcpu) / (realtime() - treal));
 			n = 0;
 		}
