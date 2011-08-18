@@ -174,8 +174,8 @@ int main_exact(int argc, char *argv[])
 
 int main_merge(int argc, char *argv[])
 {
-	int c, use_hash = 0, force = 0, n_threads = 1;
-	rld_t *e0, *e1, *e;
+	int i, c, use_hash = 0, force = 0, n_threads = 1;
+	rld_t *e0, *e1;
 	char *idxfn = 0;
 	while ((c = getopt(argc, argv, "fho:t:")) >= 0) {
 		switch (c) {
@@ -186,7 +186,7 @@ int main_merge(int argc, char *argv[])
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi merge [-fh] [-o out.bwt] [-t nThreads] <in0.bwt> <in1.bwt>\n");
+		fprintf(stderr, "Usage: fermi merge [-fh] [-o out.bwt] [-t nThreads] <in0.bwt> <in1.bwt> [...]\n");
 		return 1;
 	}
 	if (force == 0 && idxfn) {
@@ -198,11 +198,13 @@ int main_merge(int argc, char *argv[])
 		}
 	}
 	if (idxfn == 0) idxfn = strdup("-");
-	e0 = rld_restore(argv[optind+0]);
-	e1 = rld_restore(argv[optind+1]);
-	e = fm_merge(e0, e1, use_hash, n_threads);
-	rld_dump(e, idxfn);
-	rld_destroy(e);
+	e0 = rld_restore(argv[optind]);
+	for (i = optind + 1; i < argc; ++i) {
+		e1 = rld_restore(argv[i]);
+		e0 = fm_merge(e0, e1, use_hash, n_threads); // e0 and e1 will be deallocated during merge
+	}
+	rld_dump(e0, idxfn);
+	rld_destroy(e0);
 	free(idxfn);
 	return 0;
 }
