@@ -210,20 +210,22 @@ uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr)
 
 int rld_dump(const rld_t *e, const char *fn)
 {
-	uint64_t k;
-	int i, a[2];
+	uint64_t k = 0;
+	int i;
+	uint32_t a;
 	FILE *fp;
 	fp = strcmp(fn, "-")? fopen(fn, "wb") : fdopen(fileno(stdout), "wb");
 	if (fp == 0) return -1;
-	a[0] = e->asize; a[1] = e->sbits;
-	fwrite("RLD\1", 1, 4, fp); // write magic
-	fwrite(a, 4, 2, fp); // write asize and sbits
-	fwrite(e->mcnt, 8, e->asize + 1, fp); // write the marginal counts
-	fwrite(&e->n_bytes, 8, 1, fp);
+	a = e->asize<<16 | e->sbits;
+	fwrite("RLD\2", 1, 4, fp); // write magic
+	fwrite(&a, 4, 1, fp); // write sbits and asize
+	fwrite(&k, 8, 1, fp); // preserve 8 bytes for future uses
+	fwrite(&e->n_bytes, 8, 1, fp); // n_bytes can always be divided by 8
+	fwrite(&e->n_frames, 8, 1, fp); // number of frames
+	fwrite(e->mcnt + 1, 8, e->asize, fp); // write the marginal counts
 	for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE)
 		fwrite(e->z[i], 8, RLD_LSIZE, fp);
 	fwrite(e->z[i], 8, k, fp);
-	fwrite(&e->n_frames, 8, 1, fp);
 	fwrite(e->frame, 8 * e->asize1, e->n_frames, fp);
 	fclose(fp);
 	return 0;
@@ -233,20 +235,19 @@ rld_t *rld_restore(const char *fn)
 {
 	FILE *fp;
 	rld_t *e;
-	uint32_t a[2];
-	char magic[5];
-	uint64_t k, n_blks;
-	int i;
+	uint64_t k, n_blks, a[4];
+	int i, x;
 
 	if ((fp = fopen(fn, "rb")) == 0) return 0;
-	fread(magic, 1, 4, fp); magic[4] = 0;
-	if (strcmp(magic, "RLD\1")) return 0; // read magic
-	if (fread(a, 4, 2, fp) != 2) return 0; // read asize and sbits
-	e = rld_init(a[0], a[1]);
-	fread(e->mcnt, 8, e->asize + 1, fp);
+	fread(a, 8, 4, fp);
+	if (strncmp((char*)a, "RLD\2", 4)) return 0;
+	x = ((uint32_t*)a)[1];
+	e = rld_init(x>>16, x&0xffff);
+	e->n_bytes = a[2]; e->n_frames = a[3];
+	fread(e->mcnt + 1, 8, e->asize, fp);
 	for (i = 0; i <= e->asize; ++i) e->cnt[i] = e->mcnt[i];
-	for (e->cnt[0] = 0, i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
-	fread(&e->n_bytes, 8, 1, fp);
+	for (i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
+	e->mcnt[0] = e->cnt[e->asize];
 	if (e->n_bytes / 8 > RLD_LSIZE) { // allocate enough memory
 		e->n = (e->n_bytes / 8 + RLD_LSIZE - 1) / RLD_LSIZE;
 		e->z = realloc(e->z, e->n * sizeof(void*));
@@ -256,7 +257,6 @@ rld_t *rld_restore(const char *fn)
 	for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE)
 		fread(e->z[i], 8, RLD_LSIZE, fp);
 	fread(e->z[i], 8, k, fp);
-	fread(&e->n_frames, 8, 1, fp);
 	e->frame = malloc(e->n_frames * e->asize1 * 8);
 	fread(e->frame, 8 * e->asize1, e->n_frames, fp);
 	fclose(fp);
