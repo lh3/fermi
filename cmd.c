@@ -211,7 +211,7 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6, use_sais = 0;
+	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6;
 	int64_t i, sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
@@ -231,7 +231,6 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 					break;
 				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
-				case 'd': use_sais = 1; break;
 				case 'R': no_reverse = 1; break;
 				case 'b': sbits = atoi(optarg); break;
 				case 'o': idxfn = strdup(optarg); break;
@@ -268,7 +267,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		t = cputime();
 		while (kseq_read(seq) >= 0) {
 			if (l + (seq->seq.l + 1) * 2 > block_size) {
-				e = fm_build(e, asize, sbits, l, s, use_sais);
+				e = fm_build(e, asize, sbits, l, s);
 				fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
 				l = 0;
 			}
@@ -289,7 +288,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
-		e = fm_build(e, asize, sbits, l, s, use_sais);
+		e = fm_build(e, asize, sbits, l, s);
 		fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
 	}
 

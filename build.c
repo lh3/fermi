@@ -32,11 +32,11 @@ rld_t *fm_bwtenc(int asize, int sbits, int64_t l, const uint8_t *s)
 	return e;
 }
 
-rld_t *fm_build(rld_t *e0, int asize, int sbits, int64_t l, uint8_t *s, int use_sais)
+rld_t *fm_build(rld_t *e0, int asize, int sbits, int64_t l, uint8_t *s)
 {
 	if (!e0) {
 		fm_bwtgen(asize, l, s);
 		return fm_bwtenc(asize, sbits, l, s);
 	}
-	return use_sais? fm_append_sais(e0, l, s) : fm_append_qsufsort(e0, l, s);
+	return fm_append(e0, l, s);
 }
