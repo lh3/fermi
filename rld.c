@@ -235,15 +235,17 @@ rld_t *rld_restore(const char *fn)
 {
 	FILE *fp;
 	rld_t *e;
-	uint64_t k, n_blks, a[4];
-	int i, x;
+	char magic[4];
+	uint64_t k, n_blks, a[3];
+	int32_t i, x;
 
 	if ((fp = fopen(fn, "rb")) == 0) return 0;
-	fread(a, 8, 4, fp);
-	if (strncmp((char*)a, "RLD\2", 4)) return 0;
-	x = ((uint32_t*)a)[1];
+	fread(magic, 1, 4, fp);
+	if (strncmp(magic, "RLD\2", 4)) return 0;
+	fread(&x, 4, 1, fp);
 	e = rld_init(x>>16, x&0xffff);
-	e->n_bytes = a[2]; e->n_frames = a[3];
+	fread(a, 8, 3, fp);
+	e->n_bytes = a[1]; e->n_frames = a[2];
 	fread(e->mcnt + 1, 8, e->asize, fp);
 	for (i = 0; i <= e->asize; ++i) e->cnt[i] = e->mcnt[i];
 	for (i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
