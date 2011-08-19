@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008 Yuta Mori    All Rights Reserved.
- *               2011 Heng Li <lh3@live.co.uk>
+ *               2011 Attractive Chaos <attractor@live.co.uk>
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -24,24 +24,30 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/** Compute the suffix array for a string containing multiple sentinels, represented by NULL. */
+/* This is a library for constructing the suffix array for a string containing
+ * multiple sentinels with sentinels all represented by 0. The last symbol in
+ * the string must be a sentinel. The library is modified from an early version
+ * of Yuta Mori's SAIS library, but is slower than the lastest SAIS by about
+ * 30%, partly due to the recent optimization Yuta has applied and partly due
+ * to the extra comparisons between sentinels. This is not the first effort in
+ * supporting multi-sentinel strings, but is probably the easiest to use. */
 
 #include <stdlib.h>
 
-#ifdef _SAIS64
+#ifdef _KSA64
 #include <stdint.h>
 typedef int64_t saint_t;
 #define SAINT_MAX INT64_MAX
-#define SAIS_CORE sais_core64
-#define SAIS_BWT  sais_bwt64
-#define SAIS_MAIN sais64
+#define SAIS_CORE ksa_core64
+#define SAIS_BWT  ksa_bwt64
+#define SAIS_MAIN ksa_sa64
 #else
 #include <limits.h>
 typedef int saint_t;
 #define SAINT_MAX INT_MAX
-#define SAIS_CORE sais_core
-#define SAIS_BWT  sais_bwt
-#define SAIS_MAIN sais
+#define SAIS_CORE ksa_core
+#define SAIS_BWT  ksa_bwt
+#define SAIS_MAIN ksa_sa
 #endif
 
 /* T is of type "const unsigned char*". If T[i] is a sentinel, chr(i) takes a negative value */

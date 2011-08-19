@@ -1,13 +1,13 @@
 #include "rld.h"
 #include "fermi.h"
 
-int sais_bwt(unsigned char *T, int n, int k);
-int sais_bwt64(unsigned char *T, int64_t n, int k);
+int ksa_bwt(unsigned char *T, int n, int k);
+int ksa_bwt64(unsigned char *T, int64_t n, int k);
 
 int fm_bwtgen(int asize, int64_t l, uint8_t *s)
 {
-	if (l <= INT32_MAX) return sais_bwt(s, l, asize);
-	else return sais_bwt64(s, l, asize);
+	if (l <= INT32_MAX) return ksa_bwt(s, l, asize);
+	else return ksa_bwt64(s, l, asize);
 }
 
 rld_t *fm_bwtenc(int asize, int sbits, int64_t l, const uint8_t *s)

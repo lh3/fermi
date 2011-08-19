@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2
 DFLAGS=		-D_DNA_ONLY #-D_USE_RLE6 #-DNDEBUG
-OBJS=		utils.o seq.o sais.o sais64.o saux.o rld.o exact.o merge.o pmerge.o \
+OBJS=		utils.o seq.o ksa.o ksa64.o saux.o rld.o exact.o merge.o pmerge.o \
 			append.o build.o cmd.o
 PROG=		fermi
 INCLUDES=	
@@ -17,8 +17,8 @@ all:$(PROG)
 fermi:$(OBJS) main.o
 		$(CC) $(CFLAGS) $(DFLAGS) $(OBJS) main.o -o $@ $(LIBS)
 
-sais64.o:sais.c
-		$(CC) -c $(CFLAGS) -D_SAIS64 $(DFLAGS) sais.c -o $@
+ksa64.o:ksa.c
+		$(CC) -c $(CFLAGS) -D_KSA64 $(DFLAGS) ksa.c -o $@
 
 rld.o:rld.h
 build.o:fermi.h rld.h
