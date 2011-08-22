@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include "rld.h"
 
 #ifdef _USE_RLE6
@@ -10,6 +13,8 @@
 #else
 #define RLD_IBITS_PLUS 4
 #endif
+
+#define rld_file_size(e) ((4 + (e)->asize) * 8 + (e)->n_bytes + 8 * (e)->n_frames * ((e)->asize + 1))
 
 /******************
  * Delta encoding *
@@ -67,8 +72,14 @@ void rld_destroy(rld_t *e)
 {
 	int i = 0;
 	if (e == 0) return;
-	for (i = 0; i < e->n; ++i) free(e->z[i]);
-	free(e->z); free(e->cnt); free(e->mcnt); free(e->frame); free(e);
+	if (e->mem) {
+		close(e->fd);
+		munmap(e->mem, rld_file_size(e));
+	} else {
+		for (i = 0; i < e->n; ++i) free(e->z[i]);
+		free(e->frame);
+	}
+	free(e->z); free(e->cnt); free(e->mcnt); free(e);
 }
 
 void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
@@ -231,15 +242,15 @@ int rld_dump(const rld_t *e, const char *fn)
 	return 0;
 }
 
-rld_t *rld_restore(const char *fn)
+static rld_t *rld_restore_header(const char *fn, FILE **_fp)
 {
 	FILE *fp;
 	rld_t *e;
 	char magic[4];
-	uint64_t k, n_blks, a[3];
+	uint64_t a[3];
 	int32_t i, x;
 
-	if ((fp = fopen(fn, "rb")) == 0) return 0;
+	if ((*_fp = fp = fopen(fn, "rb")) == 0) return 0;
 	fread(magic, 1, 4, fp);
 	if (strncmp(magic, "RLD\2", 4)) return 0;
 	fread(&x, 4, 1, fp);
@@ -250,6 +261,17 @@ rld_t *rld_restore(const char *fn)
 	for (i = 0; i <= e->asize; ++i) e->cnt[i] = e->mcnt[i];
 	for (i = 1; i <= e->asize; ++i) e->cnt[i] += e->cnt[i - 1];
 	e->mcnt[0] = e->cnt[e->asize];
+	return e;
+}
+
+rld_t *rld_restore(const char *fn)
+{
+	FILE *fp;
+	rld_t *e;
+	uint64_t k, n_blks;
+	int32_t i;
+
+	e = rld_restore_header(fn, &fp);
 	if (e->n_bytes / 8 > RLD_LSIZE) { // allocate enough memory
 		e->n = (e->n_bytes / 8 + RLD_LSIZE - 1) / RLD_LSIZE;
 		e->z = realloc(e->z, e->n * sizeof(void*));
@@ -262,6 +284,27 @@ rld_t *rld_restore(const char *fn)
 	e->frame = malloc(e->n_frames * e->asize1 * 8);
 	fread(e->frame, 8 * e->asize1, e->n_frames, fp);
 	fclose(fp);
+	n_blks = e->n_bytes * 8 / 64 / e->ssize + 1;
+	e->ibits = ilog2(e->mcnt[0] / n_blks) + RLD_IBITS_PLUS;
+	return e;
+}
+
+rld_t *rld_restore_mmap(const char *fn)
+{
+	FILE *fp;
+	rld_t *e;
+	int i;
+	int64_t n_blks;
+
+	e = rld_restore_header(fn, &fp);
+	fclose(fp);
+	free(e->z[0]); free(e->z);
+	e->n = (e->n_bytes / 8 + RLD_LSIZE - 1) / RLD_LSIZE;
+	e->z = calloc(e->n, sizeof(void*));
+	e->fd = open(fn, O_RDONLY);
+	e->mem = (uint64_t*)mmap(0, rld_file_size(e), PROT_READ, MAP_PRIVATE, e->fd, 0);
+	for (i = 0; i < e->n; ++i) e->z[i] = e->mem + (4 + e->asize) + (size_t)i * RLD_LSIZE;
+	e->frame = e->mem + (4 + e->asize) + e->n_bytes/8;
 	n_blks = e->n_bytes * 8 / 64 / e->ssize + 1;
 	e->ibits = ilog2(e->mcnt[0] / n_blks) + RLD_IBITS_PLUS;
 	return e;

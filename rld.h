@@ -32,6 +32,9 @@ typedef struct __rld_t {
 	// modified during indexing
 	uint64_t n_frames;
 	uint64_t *frame;
+	//
+	int fd;
+	uint64_t *mem; // only used for memory mapped file
 } rld_t;
 
 #ifdef __cplusplus
@@ -42,6 +45,7 @@ extern "C" {
 	void rld_destroy(rld_t *e);
 	int rld_dump(const rld_t *e, const char *fn);
 	rld_t *rld_restore(const char *fn);
+	rld_t *rld_restore_mmap(const char *fn);
 
 	void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k);
 	int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c);
