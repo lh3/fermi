@@ -83,17 +83,11 @@ extern "C" {
 	int fm6_search_forward_overlap(const struct __rld_t *e, int min, int len, const uint8_t *seq);
 
 	/**
-	 * Merge two generic FM-Indexes with intermediate data stored in an array
-	 *
-	 * When {fn} is NULL, the output FM-Index is constructed in memory. {e0} and {e1} are not
-	 * modified. When {fn} is a file name, the output FM-Index will be initially written to {fn}.
-	 * Before the index is completely written, {e0} and {e1} will be deallocated and working space
-	 * freed. And then the output index will be read back from disk and indexed for computing ranks.
-	 * This procedure saves memory. {@link #fm_merge_tree()} does similar things, but it uses a
-	 * B-tree rather than an array to keep intermediate data (the gap array).
+	 * Merge two generic FM-Indexes
 	 *
 	 * @param e0   first FM-Index
 	 * @param e1   second FM-Index
+	 * @param n_threads  number of threads to use
 	 *
 	 * @return     output FM-Index
 	 */
