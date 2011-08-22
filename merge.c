@@ -6,7 +6,6 @@
 #include "utils.h"
 
 double cputime();
-double rssmem();
 
 uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads);
 
@@ -45,81 +44,9 @@ static inline void dec_enc(rld_t *e, rlditr2_t *itr, const rld_t *e0, rlditr_t *
 	}
 }
 
-#include "khash.h"
-#include "ksort.h"
-KSORT_INIT_GENERIC(uint64_t)
-#define h64_eq(a, b) ((a)>>32 == (b)>>32)
-#define h64_hash(a) ((a)>>32)
-KHASH_INIT(h64, uint64_t, char, 0, h64_hash, h64_eq)
-
-#define BLOCK_BITS 16
-#define BLOCK_MASK ((1u<<BLOCK_BITS) - 1)
-#define BLOCK_SHIFT (64 - BLOCK_BITS)
-#define BLOCK_CMASK ((1ll<<BLOCK_SHIFT) - 1)
-
-#define MSG_SIZE 10000000
-
-typedef struct {
-	int n;
-	khash_t(h64) **h;
-} gaphash_t;
-
-static inline gaphash_t *init_gaphash(uint64_t n)
-{
-	int i;
-	gaphash_t *h;
-	h = calloc(1, sizeof(gaphash_t));
-	h->n = (n + BLOCK_MASK) >> BLOCK_BITS;
-	h->h = malloc(h->n * sizeof(void*));
-	for (i = 0; i < h->n; ++i)
-		h->h[i] = kh_init(h64);
-	return h;
-}
-
-static inline void insert_to_hash(gaphash_t *h, uint64_t j)
-{
-	khint_t k;
-	int ret;
-	khash_t(h64) *g = h->h[j>>BLOCK_BITS];
-	k = kh_put(h64, g, (j&BLOCK_MASK)<<BLOCK_SHIFT|1, &ret);
-	if (ret == 0) ++kh_key(g, k); // when the key is present, the key in the hash table will not be overwritten by put()
-}
-
-static gaphash_t *compute_gap_hash(const rld_t *e0, const rld_t *e1)
-{
-	uint64_t k, *ok, i, x, n_processed = 1;
-	double t = cputime();
-	gaphash_t *h = 0;
-
-	ok = alloca(8 * e0->asize);
-	x = e1->mcnt[1];
-	k = --x; // get the last sentinel of e1
-	i = e0->mcnt[1] - 1; // to modify gap[j]
-	h = init_gaphash(e0->mcnt[0]);
-	insert_to_hash(h, i);
-	for (;;) {
-		int c = rld_rank1a(e1, k, ok);
-		if (c == 0) { // sentinel; the order of sentinel has been lost; we have to rely on x to get it back
-			k = --x;
-			if (x == (uint64_t)-1) break;
-			i = e0->mcnt[1] - 1;
-		} else {
-			k = e1->cnt[c] + ok[c] - 1;
-			rld_rank1a(e0, i, ok);
-			i = e0->cnt[c] + ok[c] - 1;
-		}
-		insert_to_hash(h, i);
-		if (++n_processed % MSG_SIZE == 0 && fm_verbose >= 3)
-			fprintf(stderr, "[M::%s] processed %lld million symbols in %.3f seconds (peak memory: %.3f MB).\n", __func__,
-					(long long)n_processed / 1000000, cputime() - t, rssmem());
-	}
-	return h;
-}
-
 rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash, int n_threads)
 {
-	void *gaparr;
-	uint64_t i, n = e0->mcnt[0] + e1->mcnt[0];
+	uint64_t i, n = e0->mcnt[0] + e1->mcnt[0], *bits;
 	int64_t l0, l1;
 	int c0, c1;
 	rlditr_t itr0, itr1;
@@ -127,7 +54,7 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash, int n_threads)
 	rld_t *e;
 
 	// compute the gap array
-	gaparr = !use_hash? (void*)fm_compute_gap_bits(e0, e1, n_threads) : (void*)compute_gap_hash(e0, e1);
+	bits = fm_compute_gap_bits(e0, e1, n_threads);
 	free(e0->frame); free(e1->frame); // deallocate the rank indexes of e0 and e1; they are not needed any more
 	e0->frame = e1->frame = 0;
 	// initialize the FM-index to be returned, and all the three iterators
@@ -136,35 +63,8 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash, int n_threads)
 	itr.l = l0 = l1 = 0; itr.c = c0 = c1 = -1;
 	rld_itr_init(e0, &itr0, 0);
 	rld_itr_init(e1, &itr1, 0);
-	// use the gap array to merge the two BWTs
-	if (use_hash) {
-		int64_t last = -1;
-		int i;
-		khint_t k, l;
-		gaphash_t *gap = (gaphash_t*)gaparr;
-		for (i = 0; i < gap->n; ++i) {
-			khash_t(h64) *h = gap->h[i];
-			for (l = 0, k = kh_begin(h); k < kh_end(h); ++k)
-				if (kh_exist(h, k))
-					h->keys[l++] = kh_key(h, k);
-			assert(l == kh_size(h));
-			free(h->flags);
-			h->flags = 0;
-			ks_introsort(uint64_t, kh_size(h), h->keys); // actually we do not really need sorting, but this is perhaps faster
-			for (k = 0; k < kh_size(h); ++k) {
-				uint64_t x = (uint64_t)i<<BLOCK_BITS | h->keys[k]>>BLOCK_SHIFT;
-				//printf("gap[%lld]=%lld\n", x, h->keys[k]&BLOCK_CMASK);
-				dec_enc(e, &itr, e0, &itr0, &l0, &c0, x - last);
-				dec_enc(e, &itr, e1, &itr1, &l1, &c1, h->keys[k]&BLOCK_CMASK);
-				last = x;
-			}
-			kh_destroy(h64, h);
-		}
-		if (last != e0->mcnt[0] - 1)
-			dec_enc(e, &itr, e0, &itr0, &l0, &c0, e0->mcnt[0] - 1 - last);
-		free(gap->h);
-	} else {
-		uint64_t k = 1, *bits = (uint64_t*)gaparr;
+	{
+		uint64_t k = 1;
 		int last = bits[0]&1;
 		for (i = 1; i < n; ++i) {
 			int c = bits[i>>6]>>(i&0x3f)&1;

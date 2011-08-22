@@ -2,10 +2,11 @@
 #include <stdio.h>
 #include "utils.h"
 #include "rld.h"
+#include "ksort.h"
+KSORT_INIT_GENERIC(uint64_t)
 
 double cputime();
 int ksa_sa(const unsigned char *T, int *SA, int n, int k);
-void ks_introsort_uint64_t(size_t n, uint64_t a[]);
 
 rld_t *fm_append(rld_t *e0, int len, const uint8_t *T)
 {
