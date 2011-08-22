@@ -174,13 +174,12 @@ int main_exact(int argc, char *argv[])
 
 int main_merge(int argc, char *argv[])
 {
-	int i, c, use_hash = 0, force = 0, n_threads = 1;
+	int i, c, force = 0, n_threads = 1;
 	rld_t *e0, *e1;
 	char *idxfn = 0;
-	while ((c = getopt(argc, argv, "fho:t:")) >= 0) {
+	while ((c = getopt(argc, argv, "fo:t:")) >= 0) {
 		switch (c) {
 			case 'f': force = 1; break;
-			case 'h': use_hash = 1; break;
 			case 't': n_threads = atoi(optarg); break;
 			case 'o': idxfn = strdup(optarg); break;
 		}
@@ -201,7 +200,7 @@ int main_merge(int argc, char *argv[])
 	e0 = rld_restore(argv[optind]);
 	for (i = optind + 1; i < argc; ++i) {
 		e1 = rld_restore(argv[i]);
-		e0 = fm_merge(e0, e1, use_hash, n_threads); // e0 and e1 will be deallocated during merge
+		e0 = fm_merge(e0, e1, n_threads); // e0 and e1 will be deallocated during merge
 	}
 	rld_dump(e0, idxfn);
 	rld_destroy(e0);

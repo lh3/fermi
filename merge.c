@@ -150,7 +150,7 @@ uint64_t **fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads, 
  * Merge two FM-indexes *
  ************************/
 
-rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash, int n_threads)
+rld_t *fm_merge(rld_t *e0, rld_t *e1, int n_threads)
 {
 	uint64_t i, n = e0->mcnt[0] + e1->mcnt[0], **bits;
 	int64_t l0, l1, n_chunks;

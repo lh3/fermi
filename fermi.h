@@ -97,7 +97,7 @@ extern "C" {
 	 *
 	 * @return     output FM-Index
 	 */
-	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int use_hash, int n_threads);
+	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
 #ifdef __cplusplus
 }
