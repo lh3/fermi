@@ -40,19 +40,20 @@ int main_chkbwt(int argc, char *argv[])
 {
 	rld_t *e;
 	rlditr_t itr;
-	int i, j, l, c = 0, plain = 0;
+	int i, j, l, c = 0, plain = 0, use_mmap = 0;
 	uint64_t *cnt, *rank, sum = 0;
 	double t;
 	while ((c = getopt(argc, argv, "P")) >= 0) {
 		switch (c) {
 			case 'P': plain = 1; break;
+			case 'M': use_mmap = 1; break;
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fermi chkbwt [-P] <idxbase.bwt>\n");
+		fprintf(stderr, "Usage: fermi chkbwt [-MP] <idxbase.bwt>\n");
 		return 1;
 	}
-	e = rld_restore(argv[optind]);
+	e = use_mmap? rld_restore(argv[optind]) : rld_restore(argv[optind]);
 	if (e == 0) {
 		fprintf(stderr, "[E::%s] Fail to read the index file.\n", __func__);
 		return 1;
@@ -108,12 +109,12 @@ static void print_i(const rld_t *e, uint64_t i, kstring_t *s)
 int main_unpack(int argc, char *argv[])
 {
 	rld_t *e;
-	int c, n, m;
+	int c, n, m, use_mmap = 0;
 	uint64_t i, *list;
 	kstring_t s;
 	s.m = s.l = 0; s.s = 0;
 	n = m = 0; list = 0;
-	while ((c = getopt(argc, argv, "i:")) >= 0) {
+	while ((c = getopt(argc, argv, "Mi:")) >= 0) {
 		switch (c) {
 			case 'i':
 				if (n == m) {
@@ -122,13 +123,14 @@ int main_unpack(int argc, char *argv[])
 				}
 				list[n++] = atol(optarg); break;
 				break;
+			case 'M': use_mmap = 1; break;
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fermi unpack <idxbase.bwt>\n");
+		fprintf(stderr, "Usage: fermi unpack [-M] [-i index] <idxbase.bwt>\n");
 		return 1;
 	}
-	e = rld_restore(argv[optind]);
+	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	if (n) {
 		for (i = 0; (int)i < n; ++i)
 			if (list[i] >= 0 && list[i] < e->mcnt[1])
@@ -144,22 +146,23 @@ int main_unpack(int argc, char *argv[])
 
 int main_exact(int argc, char *argv[])
 {
-	int c, min_match = 30;
+	int c, min_match = 30, use_mmap = 0;
 	rld_t *e;
 	kseq_t *seq;
 	gzFile fp;
-	while ((c = getopt(argc, argv, "m:")) >= 0) {
+	while ((c = getopt(argc, argv, "m:M")) >= 0) {
 		switch (c) {
 			case 'm': min_match = atoi(optarg); break;
+			case 'M': use_mmap = 1; break;
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi exact [-m minMatch] <idxbase.bwt> <src.fa>\n");
+		fprintf(stderr, "Usage: fermi exact [-M] [-m minMatch] <idxbase.bwt> <src.fa>\n");
 		return 1;
 	}
 	fp = strcmp(argv[optind+1], "-")? gzopen(argv[optind+1], "r") : gzdopen(fileno(stdin), "r");
 	seq = kseq_init(fp);
-	e = rld_restore(argv[optind]);
+	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
 		printf(">%s\n", seq->name.s);
