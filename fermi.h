@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define FERMI_VERSION "0.0-dev (r192)"
+#define FERMI_VERSION "0.0-dev (r199)"
 
 extern int fm_verbose;
 
