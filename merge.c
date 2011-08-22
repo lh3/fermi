@@ -183,9 +183,9 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int use_hash, int n_threads)
 	return e;
 }
 
-/**********************************
- * Append a string to an FM-index *
- **********************************/
+/****************************************************************
+ * Append a string with precomputed SA/long-rank to an FM-index *
+ ****************************************************************/
 
 rld_t *fm_merge_from_SA(rld_t *e0, int len, const uint8_t *T, const int *SA, const int64_t *rank_l)
 {
@@ -212,5 +212,56 @@ rld_t *fm_merge_from_SA(rld_t *e0, int len, const uint8_t *T, const int *SA, con
 	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
 	rld_destroy(e0);
 	rld_enc_finish(e, &itr.itr);
+	return e;
+}
+
+/**********************************
+ * Append a string to an FM-index *
+ **********************************/
+
+#include "ksort.h"
+KSORT_INIT_GENERIC(uint64_t)
+
+rld_t *fm_append(rld_t *e0, int len, const uint8_t *T)
+{
+	extern int ksa_sa(const unsigned char *T, int *SA, int n, int k);
+	int c, k, *C, *p, *SA;
+	uint64_t i, *oi, *rank_l;
+	uint32_t *ws;
+	rld_t *e;
+
+	assert(T[len-1] == 0); // must be ended with a sentinel
+	C = alloca(sizeof(int) * (e0->asize + 1));
+	for (c = 0; c <= e0->asize; ++c) C[c] = 0;
+	for (k = 0; k < len; ++k) ++C[T[k] + 1]; // marginal count
+	for (c = 1; c <= e0->asize; ++c) C[c] += C[c-1]; // accumulative count
+	ws = xmalloc((size_t)(len + 1) * 12);
+	// set pointers
+	rank_l = (uint64_t*)ws;
+	SA = (int*)ws + 2 * (len + 1);
+	// construct the suffix array
+	ksa_sa(T, (int*)SA, len, e0->asize);
+	// grab some memory from the stack
+	p = alloca(sizeof(int) * e0->asize);
+	oi = alloca(8 * e0->asize);
+	// initialize the position array
+	for (c = 0; c < e0->asize; ++c) p[c] = C[c+1] - 1; // point to the last element of each bucket
+	// put the last sentinel 
+	i = e0->mcnt[1] - 1;
+	rank_l[p[0]--] = i;
+	// compute the rank of long suffixes
+	for (k = len - 2; k >= 0; --k) {
+		if ((c = T[k]) != 0) {
+			rld_rank1a(e0, i, oi);
+			i = e0->cnt[c] + oi[c] - 1;
+		} else i = e0->mcnt[1] - 1;
+		rank_l[p[c]--] = i;
+	}
+	// sort the rank of long suffixes
+	for (c = 1; c < e0->asize; ++c) // do not sort the sentinel bucket
+		ks_introsort_uint64_t(C[c+1] - C[c], rank_l + C[c]);
+	// merge to e0; e0 will be deallocated
+	e = fm_merge_from_SA(e0, len, T, SA, (int64_t*)rank_l);
+	free(ws);
 	return e;
 }
