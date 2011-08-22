@@ -69,7 +69,7 @@ static inline void update_bits(int n, const int64_t *buf, uint64_t **bits)
 {
 	const int64_t *q, *end = buf + n;
 	for (q = buf; q != end; ++q) {
-		uint64_t *p = bits[*q>>CHUNK_SHIFT] + (*q>>6&CHUNK_MASK) + (*q>>6);
+		uint64_t *p = bits[*q>>CHUNK_SHIFT] + (*q>>6&CHUNK_MASK);
 		uint64_t x = 1ull<<(*q&0x3f);
 		__sync_or_and_fetch(p, x); // SEE ALSO: http://gcc.gnu.org/onlinedocs/gcc-4.1.2/gcc/Atomic-Builtins.html
 	}
