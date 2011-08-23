@@ -108,7 +108,7 @@ static void *worker(void *data)
 	free(buf);
 	return 0;
 }
-
+//#include <sys/mman.h>
 uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 {
 	uint64_t *bits;
@@ -118,6 +118,7 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 	int j;
 
 	bits = xcalloc((e0->mcnt[0] + e1->mcnt[0] + 63) / 64, 8);
+//	bits = mmap(0, (e0->mcnt[0] + e1->mcnt[0] + 63) / 64 * 8, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0);
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
@@ -178,6 +179,7 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int n_threads)
 	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
 	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
 	free(bits);
+//	munmap(bits, (e0->mcnt[0] + e1->mcnt[0] + 63) / 64 * 8);
 	rld_destroy(e0); rld_destroy(e1);
 	rld_enc_finish(e, &itr.itr);
 	return e;
