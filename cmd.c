@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <zlib.h>
 #include <limits.h>
+#include <ctype.h>
 #include "rld.h"
 #include "fermi.h"
 #include "kseq.h"
@@ -216,7 +217,7 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6;
+	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6, inc_N = 0;
 	int64_t i, sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
@@ -225,7 +226,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "PRfdb:o:i:s:")) >= 0) {
+		while ((c = getopt(argc, argv, "NPRfdb:o:i:s:")) >= 0) {
 			switch (c) {
 				case 'i':
 					e = rld_restore(optarg);
@@ -240,6 +241,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 				case 'b': sbits = atoi(optarg); break;
 				case 'o': idxfn = strdup(optarg); break;
 				case 's': block_size = atol(optarg); break;
+				case 'N': inc_N = 1; break;
 			}
 		}
 		if (argc == optind) {
@@ -271,6 +273,21 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		s = malloc(max);
 		t = cputime();
 		while (kseq_read(seq) >= 0) {
+			int j, k;
+			if (!inc_N) { // skip reads containing 'N'
+				for (j = 0; j < seq->seq.l; ++j)
+					if (toupper(seq->seq.s[j]) == 'N') break;
+				if (j != seq->seq.l) continue;
+			}
+			for (j = k = 0; j < seq->seq.l; ++j) // skip leading non-alphabet characters
+				if (isalpha(seq->seq.s[j])) break;
+			for (; j < seq->seq.l; ++j) {
+				int c = seq->seq.s[j];
+				if (!isalpha(c)) c = seq->seq.s[j] = 0;
+				if (c || seq->seq.s[k-1]) seq->seq.s[k++] = c;
+			}
+			seq->seq.l = k; // NB: quality is untouched
+			seq->seq.s[k] = 0;
 			if (l + (seq->seq.l + 1) * 2 > block_size) {
 				e = fm_build(e, asize, sbits, l, s);
 				fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
