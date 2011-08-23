@@ -36,6 +36,16 @@ double cputime()
 	return r.ru_utime.tv_sec + r.ru_stime.tv_sec + 1e-6 * (r.ru_utime.tv_usec + r.ru_stime.tv_usec);
 }
 
+void liftrlimit()
+{
+#ifdef __linux__
+	struct rlimit r;
+	getrlimit(RLIMIT_AS, &r);
+	r.rlim_cur = r.rlim_max;
+	setrlimit(RLIMIT_AS, &r);
+#endif
+}
+
 /* Comment on the memory usage. We may think getrusage() is the easiest way to
  * get the memory usage of the current process.  However, on Linux, ru_maxrss
  * is not supported by the kernel. We can get the current usage from file

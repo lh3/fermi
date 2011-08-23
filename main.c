@@ -13,11 +13,13 @@ int main_strlen(int argc, char *argv[]);
 double rssmem();
 double cputime();
 double realtime();
+void liftrlimit();
 
 int main(int argc, char *argv[])
 {
 	int ret = 0;
 	double start = realtime();
+	liftrlimit();
 	if (argc == 1) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Program: fermi (FERragina-Manzini Index for DNA sequences)\n");
