@@ -84,7 +84,7 @@ static void *worker(void *data)
 	double tcpu, treal;
 	tcpu = cputime(); treal = realtime();
 	ok = alloca(8 * w->e0->asize);
-	buf = malloc(BLOCK_SIZE * 8);
+	buf = xmalloc(BLOCK_SIZE * 8);
 	k = x = w->start;
 	i = w->e0->mcnt[1] - 1;
 	buf[n++] = i + k + 1;
