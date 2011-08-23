@@ -51,25 +51,20 @@ static inline void dec_enc(rld_t *e, rlditr2_t *itr, const rld_t *e0, rlditr_t *
  * Compute the bit vector *
  **************************/
 
-#define CHUNK_BITS 23
-#define CHUNK_SIZE (1<<CHUNK_BITS)
-#define CHUNK_MASK (CHUNK_SIZE - 1)
-#define CHUNK_SHIFT (CHUNK_BITS + 6)
-
 #define BLOCK_SIZE 0x40000
 #define TIMER_INTV 64
 
 typedef struct {
 	int start, step;
 	const rld_t *e0, *e1;
-	uint64_t **bits;
+	uint64_t *bits;
 } worker_t;
 
-static inline void update_bits(int n, const int64_t *buf, uint64_t **bits)
+static inline void update_bits(int n, const int64_t *buf, uint64_t *bits)
 {
 	const int64_t *q, *end = buf + n;
 	for (q = buf; q != end; ++q) {
-		uint64_t *p = bits[*q>>CHUNK_SHIFT] + (*q>>6&CHUNK_MASK);
+		uint64_t *p = bits + (*q>>6);
 		uint64_t x = 1ull<<(*q&0x3f);
 		__sync_or_and_fetch(p, x); // SEE ALSO: http://gcc.gnu.org/onlinedocs/gcc-4.1.2/gcc/Atomic-Builtins.html
 	}
@@ -114,21 +109,15 @@ static void *worker(void *data)
 	return 0;
 }
 
-uint64_t **fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads, int64_t *n_chunks)
+uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 {
-	uint64_t **bits;
-	int64_t i, rest, n_int64;
+	uint64_t *bits;
 	pthread_t *tid;
 	pthread_attr_t attr;
 	worker_t *w;
 	int j;
 
-	n_int64 = (e0->mcnt[0] + e1->mcnt[0] + 63) / 64;
-	*n_chunks = (n_int64 + CHUNK_SIZE - 1) / CHUNK_SIZE;
-	bits = xcalloc(*n_chunks, sizeof(void*));
-	for (i = 0, rest = n_int64; i < *n_chunks - 1; ++i, rest -= CHUNK_SIZE)
-		bits[i] = xcalloc(CHUNK_SIZE, 8);
-	bits[i] = xcalloc(rest, 8);
+	bits = xcalloc((e0->mcnt[0] + e1->mcnt[0] + 63) / 64, 8);
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
@@ -152,15 +141,15 @@ uint64_t **fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads, 
 
 rld_t *fm_merge(rld_t *e0, rld_t *e1, int n_threads)
 {
-	uint64_t i, n = e0->mcnt[0] + e1->mcnt[0], **bits;
-	int64_t l0, l1, n_chunks;
+	uint64_t i, n = e0->mcnt[0] + e1->mcnt[0], *bits;
+	int64_t l0, l1;
 	int c0, c1;
 	rlditr_t itr0, itr1;
 	rlditr2_t itr;
 	rld_t *e;
 
 	// compute the gap array
-	bits = fm_compute_gap_bits(e0, e1, n_threads, &n_chunks);
+	bits = fm_compute_gap_bits(e0, e1, n_threads);
 	free(e0->frame); free(e1->frame); // deallocate the rank indexes of e0 and e1; they are not needed any more
 	e0->frame = e1->frame = 0;
 	// initialize the FM-index to be returned, and all the three iterators
@@ -171,9 +160,9 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int n_threads)
 	rld_itr_init(e1, &itr1, 0);
 	{
 		uint64_t k = 1;
-		int last = bits[0][0]&1;
+		int last = bits[0]&1;
 		for (i = 1; i < n; ++i) {
-			int c = bits[i>>CHUNK_SHIFT][i>>6&CHUNK_MASK]>>(i&0x3f)&1;
+			int c = bits[i>>6]>>(i&0x3f)&1;
 			if (c != last) {
 				if (last == 0) dec_enc(e, &itr, e0, &itr0, &l0, &c0, k);
 				else dec_enc(e, &itr, e1, &itr1, &l1, &c1, k);
@@ -188,7 +177,6 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int n_threads)
 	// finalize the merge
 	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
 	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
-	while (n_chunks--) free(bits[n_chunks]);
 	free(bits);
 	rld_destroy(e0); rld_destroy(e1);
 	rld_enc_finish(e, &itr.itr);

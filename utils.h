@@ -6,6 +6,7 @@
 #ifdef __cplusplus
 #endif
 
+	double rssmem();
 	double cputime();
 	double realtime();
 	void *xmalloc_core(size_t s, const char *func);
