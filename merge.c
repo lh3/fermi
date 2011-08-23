@@ -58,6 +58,7 @@ typedef struct {
 	int start, step;
 	const rld_t *e0, *e1;
 	uint64_t *bits;
+	int64_t *buf;
 } worker_t;
 
 static inline void update_bits(int n, const int64_t *buf, uint64_t *bits)
@@ -74,15 +75,14 @@ static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
 	int n = 0;
-	int64_t i, k, x, *buf, n_processed = 0;
+	int64_t i, k, x, n_processed = 0;
 	uint64_t *ok;
 	double tcpu, treal;
 	tcpu = cputime(); treal = realtime();
 	ok = alloca(8 * w->e0->asize);
-	buf = xmalloc(BLOCK_SIZE * 8);
 	k = x = w->start;
 	i = w->e0->mcnt[1] - 1;
-	buf[n++] = i + k + 1;
+	w->buf[n++] = i + k + 1;
 	for (;;) {
 		int c = rld_rank1a(w->e1, k, ok);
 		if (c == 0) {
@@ -96,19 +96,18 @@ static void *worker(void *data)
 			i = w->e0->cnt[c] + ok[c] - 1;
 		}
 		if (n == BLOCK_SIZE) {
-			update_bits(n, buf, w->bits);
+			update_bits(n, w->buf, w->bits);
 			if (fm_verbose >= 3 && ++n_processed % TIMER_INTV == 0)
 				fprintf(stderr, "[M::%s@%d] processed %.3f million symbols in %.3f / %.1f seconds.\n", __func__, w->start,
 						(double)n_processed*BLOCK_SIZE/1e6, cputime() - tcpu, (cputime() - tcpu) / (realtime() - treal));
 			n = 0;
 		}
-		buf[n++] = k + i + 1;
+		w->buf[n++] = k + i + 1;
 	}
-	if (n) update_bits(n, buf, w->bits);
-	free(buf);
+	if (n) update_bits(n, w->buf, w->bits);
 	return 0;
 }
-//#include <sys/mman.h>
+
 uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 {
 	uint64_t *bits;
@@ -117,8 +116,6 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 	worker_t *w;
 	int j;
 
-	bits = xcalloc((e0->mcnt[0] + e1->mcnt[0] + 63) / 64, 8);
-//	bits = mmap(0, (e0->mcnt[0] + e1->mcnt[0] + 63) / 64 * 8, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0);
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
@@ -128,10 +125,13 @@ uint64_t *fm_compute_gap_bits(const rld_t *e0, const rld_t *e1, int n_threads)
 		ww->e0 = e0; ww->e1 = e1;
 		ww->step = n_threads;
 		ww->start = j;
-		ww->bits = bits;
+		ww->buf = xmalloc(BLOCK_SIZE * 8);
 	}
+	bits = xcalloc((e0->mcnt[0] + e1->mcnt[0] + 63) / 64, 8);
+	for (j = 0; j < n_threads; ++j) w[j].bits = bits;
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
+	for (j = 0; j < n_threads; ++j) free(w[j].buf);
 	free(w); free(tid);
 	return bits;
 }
@@ -179,7 +179,6 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int n_threads)
 	assert(l0 == 0 && l1 == 0); // both e0 and e1 stream should be finished
 	rld_enc(e, &itr.itr, itr.l, itr.c); // write the remaining symbols in the iterator
 	free(bits);
-//	munmap(bits, (e0->mcnt[0] + e1->mcnt[0] + 63) / 64 * 8);
 	rld_destroy(e0); rld_destroy(e1);
 	rld_enc_finish(e, &itr.itr);
 	return e;
