@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include "rld.h"
+#include "utils.h"
 
 #ifdef _USE_RLE6
 #define RLD_IBITS_PLUS 3
@@ -15,6 +16,13 @@
 #endif
 
 #define rld_file_size(e) ((4 + (e)->asize) * 8 + (e)->n_bytes + 8 * (e)->n_frames * ((e)->asize + 1))
+
+#ifndef xcalloc
+#define xcalloc(n, s) calloc(n, s)
+#endif
+#ifndef xmalloc
+#define xmalloc(s) malloc(s)
+#endif
 
 /******************
  * Delta encoding *
@@ -52,13 +60,13 @@ rld_t *rld_init(int asize, int bbits)
 #ifdef _USE_RLE6
 	asize = 6;
 #endif
-	e = calloc(1, sizeof(rld_t));
+	e = xcalloc(1, sizeof(rld_t));
 	e->n = 1;
-	e->z = malloc(sizeof(void*));
-	e->z[0] = calloc(RLD_LSIZE, 8);
+	e->z = xmalloc(sizeof(void*));
+	e->z[0] = xcalloc(RLD_LSIZE, 8);
 	e->ssize = 1<<bbits;
-	e->cnt = calloc(asize + 1, 8);
-	e->mcnt = calloc(asize + 1, 8);
+	e->cnt = xcalloc(asize + 1, 8);
+	e->mcnt = xcalloc(asize + 1, 8);
 	e->abits = ilog2(asize) + 1;
 	e->asize = asize;
 	e->sbits = bbits;
@@ -103,7 +111,7 @@ static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 		++e->n;
 		e->z = realloc(e->z, e->n * sizeof(void*));
 		itr->i = e->z + e->n - 1;
-		itr->shead = *itr->i = calloc(RLD_LSIZE, 8);
+		itr->shead = *itr->i = xcalloc(RLD_LSIZE, 8);
 	} else itr->shead += e->ssize;
 	if (e->cnt[0] - e->mcnt[0] >= 0x8000) {
 		uint32_t *p = (uint32_t*)itr->shead;
@@ -173,7 +181,7 @@ void rld_rank_index(rld_t *e)
 		cnt = alloca(e->asize * 8);
 		e->ibits = ilog2(e->mcnt[0] / n_blks) + RLD_IBITS_PLUS;
 		e->n_frames = ((e->mcnt[0] + (1<<e->ibits) - 1) >> e->ibits) + 1;
-		e->frame = calloc(e->n_frames * e->asize1, 8);
+		e->frame = xcalloc(e->n_frames * e->asize1, 8);
 		e->frame[0] = 0;
 		for (j = 0; j < e->asize; ++j) cnt[j] = 0;
 		for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
@@ -276,12 +284,12 @@ rld_t *rld_restore(const char *fn)
 		e->n = (e->n_bytes / 8 + RLD_LSIZE - 1) / RLD_LSIZE;
 		e->z = realloc(e->z, e->n * sizeof(void*));
 		for (i = 1; i < e->n; ++i)
-			e->z[i] = calloc(RLD_LSIZE, 8);
+			e->z[i] = xcalloc(RLD_LSIZE, 8);
 	}
 	for (i = 0, k = e->n_bytes / 8; i < e->n - 1; ++i, k -= RLD_LSIZE)
 		fread(e->z[i], 8, RLD_LSIZE, fp);
 	fread(e->z[i], 8, k, fp);
-	e->frame = malloc(e->n_frames * e->asize1 * 8);
+	e->frame = xmalloc(e->n_frames * e->asize1 * 8);
 	fread(e->frame, 8 * e->asize1, e->n_frames, fp);
 	fclose(fp);
 	n_blks = e->n_bytes * 8 / 64 / e->ssize + 1;
@@ -300,7 +308,7 @@ rld_t *rld_restore_mmap(const char *fn)
 	fclose(fp);
 	free(e->z[0]); free(e->z);
 	e->n = (e->n_bytes / 8 + RLD_LSIZE - 1) / RLD_LSIZE;
-	e->z = calloc(e->n, sizeof(void*));
+	e->z = xcalloc(e->n, sizeof(void*));
 	e->fd = open(fn, O_RDONLY);
 	e->mem = (uint64_t*)mmap(0, rld_file_size(e), PROT_READ, MAP_PRIVATE, e->fd, 0);
 	for (i = 0; i < e->n; ++i) e->z[i] = e->mem + (4 + e->asize) + (size_t)i * RLD_LSIZE;

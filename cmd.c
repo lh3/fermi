@@ -202,7 +202,9 @@ int main_merge(int argc, char *argv[])
 	if (idxfn == 0) idxfn = strdup("-");
 	e0 = rld_restore(argv[optind]);
 	for (i = optind + 1; i < argc; ++i) {
+		fprintf(stderr, "[M::%s] Loading file `%s' into memory.\n", __func__, argv[i]);
 		e1 = rld_restore(argv[i]);
+		fprintf(stderr, "[M::%s] Merging file `%s' into the existing FM-index.\n", __func__, argv[i]);
 		e0 = fm_merge(e0, e1, n_threads); // e0 and e1 will be deallocated during merge
 	}
 	rld_dump(e0, idxfn);
