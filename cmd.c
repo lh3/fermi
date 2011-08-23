@@ -166,7 +166,7 @@ int main_exact(int argc, char *argv[])
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
 		printf(">%s\n", seq->name.s);
-		printf("%d\n", fm6_search_forward_overlap(e, min_match, seq->seq.l, (uint8_t*)seq->seq.s));
+		printf("%d\n", fm6_search_overlap(e, min_match, seq->seq.l, (uint8_t*)seq->seq.s, 0));
 		puts("//");
 	}
 	rld_destroy(e);

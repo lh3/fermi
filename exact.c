@@ -80,40 +80,52 @@ void fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 	}
 }
 
-int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *seq)
+int fm6_search_overlap(const rld_t *e, int min, int len, const uint8_t *seq, int is_back)
 {
-	int i, j, c, last_sentinel = 0, last_beg = 0;
+	int i, j, c, last_sentinel, last_beg, shift;
 	fmintv_t ik, ok[6];
 	kvec_t(fmintv_t) a[2], *curr, *prev, *tmp;
 
 	// initialize the vectors
 	kv_init(a[0]); kv_init(a[1]);
 	prev = &a[0]; curr = &a[1];
-	fm6_set_intv(e, seq[0], ik);
+	fm6_set_intv(e, seq[is_back? len-1 : 0], ik);
 	kv_push(fmintv_t, *prev, ik);
 
 	// core loop
-	for (i = 1; i < len; ++i) {
-		c = fm6_comp(seq[i]);
+	if (!is_back) last_sentinel = last_beg = 0,       shift = -1, i = 1;
+	else          last_sentinel = last_beg = len - 1, shift =  1, i = len - 2;
+	for (;;) {
+		c = is_back? seq[i] : fm6_comp(seq[i]);
 		curr->n = 0; // clear the curr list
 		for (j = 0; j < prev->n; ++j) { // traverse the prev list
-			fm6_extend(e, &prev->a[j], ok, 0);
+			fm6_extend(e, &prev->a[j], ok, is_back);
 			if (ok[c].x[2] && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2]))
 				kv_push(fmintv_t, *curr, ok[c]);
-			if (ok[0].x[2]) last_sentinel = i - 1;
+			if (ok[0].x[2]) last_sentinel = i + shift;
 		}
 		if (curr->n == 0) { // backward search
 			int depth;
-			if (last_sentinel < last_beg) break;
+			if (!is_back) {
+				if (last_sentinel < last_beg) break;
+			} else {
+				if (last_sentinel > last_beg) break;
+			}
 			c = seq[last_sentinel];
 			fm6_set_intv(e, c, ik);
-			for (j = last_sentinel - 1, depth = 1; j > 0; --j, ++depth) {
-				c = seq[j];
-				fm6_extend(e, &ik, ok, 1);
+			j = last_sentinel + shift;
+			for (depth = 1;; ++depth) {
+				c = is_back? fm6_comp(seq[j]) : seq[j];
+				fm6_extend(e, &ik, ok, !is_back);
 				if (!ok[c].x[2]) break;
 				if (depth >= min && ok[0].x[2] && (curr->n == 0 || ik.x[2] != curr->a[curr->n-1].x[2]))
 					kv_push(fmintv_t, *curr, ik);
 				ik = ok[c];
+				if (!is_back) {
+					if (--j <= 0) break;
+				} else {
+					if (++j >= len - 1) break;
+				}
 			}
 			if (curr->n == 0) break;
 			if (curr->n > 1) { // reverse the array such that smaller intervals come first
@@ -124,10 +136,15 @@ int fm6_search_forward_overlap(const rld_t *e, int min, int len, const uint8_t *
 				}
 			}
 			i = last_sentinel; // i will be increased by 1 in the next round of the loop
-			last_beg = i + 1;
+			last_beg = i - shift;
 		}
 		tmp = curr; curr = prev; prev = tmp;
+		if (!is_back) {
+			if (++i >= len) break;
+		} else {
+			if (--i < 0) break;
+		}
 	}
 	kv_destroy(a[0]); kv_destroy(a[1]);
-	return i;
+	return is_back? len - 1 - i : i;
 }

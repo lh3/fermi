@@ -80,7 +80,7 @@ extern "C" {
 	 *
 	 * @return     length of the maximal match
 	 */
-	int fm6_search_forward_overlap(const struct __rld_t *e, int min, int len, const uint8_t *seq);
+	int fm6_search_overlap(const struct __rld_t *e, int min, int len, const uint8_t *seq, int is_back);
 
 	/**
 	 * Merge two generic FM-Indexes
