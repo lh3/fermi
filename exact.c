@@ -1,3 +1,4 @@
+#include <assert.h>
 #include "rld.h"
 #include "kstring.h"
 #include "fermi.h"
@@ -80,11 +81,49 @@ void fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 	}
 }
 
+/*********************
+ *********************/
+
+typedef kvec_t(fmintv_t) fmintv_v;
+typedef kvec_t(uint64_t) vec64_t;
+
+static inline void reverse_fmivec(fmintv_v *p)
+{
+	if (p->n > 1) {
+		int j;
+		for (j = 0; j < p->n>>1; ++j) {
+			fmintv_t tmp = p->a[p->n - 1 - j];
+			p->a[p->n - 1 - j] = p->a[j];
+			p->a[j] = tmp;
+		}
+	}
+}
+
+static inline void overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p)
+{
+	int c, depth, dir, end;
+	fmintv_t ik, ok[6];
+	p->n = 0;
+	dir = at5? 1 : -1;
+	end = at5? len - 1 : 0;
+	c = seq[j];
+	fm6_set_intv(e, c, ik);
+	for (depth = 1, j += dir; j != end; j += dir, ++depth) {
+		c = at5? fm6_comp(seq[j]) : seq[j];
+		fm6_extend(e, &ik, ok, !at5);
+		if (!ok[c].x[2]) break; // cannot be extended
+		if (depth >= min && ok[0].x[2] && (p->n == 0 || ik.x[2] != p->a[p->n-1].x[2]))
+			kv_push(fmintv_t, *p, ik);
+		ik = ok[c];
+	}
+	reverse_fmivec(p); // reverse the array such that smaller intervals come first
+}
+
 int fm6_search_overlap(const rld_t *e, int min, int len, const uint8_t *seq, int is_back)
 {
 	int i, j, c, last_sentinel, last_beg, shift;
 	fmintv_t ik, ok[6];
-	kvec_t(fmintv_t) a[2], *curr, *prev, *tmp;
+	fmintv_v a[2], *curr, *prev, *tmp;
 
 	// initialize the vectors
 	kv_init(a[0]); kv_init(a[1]);
@@ -105,36 +144,13 @@ int fm6_search_overlap(const rld_t *e, int min, int len, const uint8_t *seq, int
 			if (ok[0].x[2]) last_sentinel = i + shift;
 		}
 		if (curr->n == 0) { // backward search
-			int depth;
 			if (!is_back) {
 				if (last_sentinel < last_beg) break;
 			} else {
 				if (last_sentinel > last_beg) break;
 			}
-			c = seq[last_sentinel];
-			fm6_set_intv(e, c, ik);
-			j = last_sentinel + shift;
-			for (depth = 1;; ++depth) {
-				c = is_back? fm6_comp(seq[j]) : seq[j];
-				fm6_extend(e, &ik, ok, !is_back);
-				if (!ok[c].x[2]) break;
-				if (depth >= min && ok[0].x[2] && (curr->n == 0 || ik.x[2] != curr->a[curr->n-1].x[2]))
-					kv_push(fmintv_t, *curr, ik);
-				ik = ok[c];
-				if (!is_back) {
-					if (--j <= 0) break;
-				} else {
-					if (++j >= len - 1) break;
-				}
-			}
+			overlap_intv(e, len, seq, min, last_sentinel, is_back, curr);
 			if (curr->n == 0) break;
-			if (curr->n > 1) { // reverse the array such that smaller intervals come first
-				for (j = 0; j < curr->n>>1; ++j) {
-					fmintv_t tmp = curr->a[curr->n - 1 - j];
-					curr->a[curr->n - 1 - j] = curr->a[j];
-					curr->a[j] = tmp;
-				}
-			}
 			i = last_sentinel; // i will be increased by 1 in the next round of the loop
 			last_beg = i - shift;
 		}
