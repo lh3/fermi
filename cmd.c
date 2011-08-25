@@ -288,7 +288,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 			}
 			seq->seq.l = k; // NB: quality is untouched
 			seq->seq.s[k] = 0;
-			if (l + (seq->seq.l + 1) * 2 > block_size) {
+			if (l && l + (seq->seq.l + 1) * 2 > block_size) {
 				e = fm_build(e, asize, sbits, l, s);
 				fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
 				l = 0;

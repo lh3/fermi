@@ -100,11 +100,11 @@ static inline void reverse_fmivec(fmintv_v *p)
 }
 
 static inline void overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p)
-{
+{ // requirement: seq[j] matches the end of a read
 	int c, depth, dir, end;
 	fmintv_t ik, ok[6];
 	p->n = 0;
-	dir = at5? 1 : -1;
+	dir = at5? 1 : -1; // at5 is true iff we start from the 5'-end of a read
 	end = at5? len - 1 : 0;
 	c = seq[j];
 	fm6_set_intv(e, c, ik);
