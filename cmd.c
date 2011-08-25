@@ -310,8 +310,10 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
-		e = fm_build(e, asize, sbits, l, s);
-		fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
+		if (l) {
+			e = fm_build(e, asize, sbits, l, s);
+			fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
+		}
 	}
 
 	if (plain) {
