@@ -44,7 +44,7 @@ int main_chkbwt(int argc, char *argv[])
 	int i, j, l, c = 0, plain = 0, use_mmap = 0;
 	uint64_t *cnt, *rank, sum = 0;
 	double t;
-	while ((c = getopt(argc, argv, "P")) >= 0) {
+	while ((c = getopt(argc, argv, "PM")) >= 0) {
 		switch (c) {
 			case 'P': plain = 1; break;
 			case 'M': use_mmap = 1; break;
@@ -54,10 +54,16 @@ int main_chkbwt(int argc, char *argv[])
 		fprintf(stderr, "Usage: fermi chkbwt [-MP] <idxbase.bwt>\n");
 		return 1;
 	}
-	e = use_mmap? rld_restore(argv[optind]) : rld_restore(argv[optind]);
+	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	if (e == 0) {
 		fprintf(stderr, "[E::%s] Fail to read the index file.\n", __func__);
 		return 1;
+	}
+	if (fm_verbose >= 3) {
+		fprintf(stderr, "[M::%s] marginal counts: (", __func__);
+		for (i = 0; i < e->asize1; ++i)
+			fprintf(stderr, "%lld%s", (long long)e->mcnt[i], i == e->asize? ")" : ", ");
+		fputc('\n', stderr);
 	}
 	cnt = alloca(e->asize * 8);
 	rank = alloca(e->asize * 8);

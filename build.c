@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "rld.h"
 #include "fermi.h"
 
@@ -34,9 +35,19 @@ rld_t *fm_bwtenc(int asize, int sbits, int64_t l, const uint8_t *s)
 
 rld_t *fm_build(rld_t *e0, int asize, int sbits, int64_t l, uint8_t *s)
 {
+	rld_t *e;
+	int64_t ori_l = e0? e0->mcnt[0] : 0;
 	if (!e0) {
 		fm_bwtgen(asize, l, s);
-		return fm_bwtenc(asize, sbits, l, s);
+		e = fm_bwtenc(asize, sbits, l, s);
+	} else e = fm_append(e0, l, s);
+	if (fm_verbose >= 3) {
+		int i;
+		fprintf(stderr, "[M::%s] marginal counts: (", __func__);
+		for (i = 0; i < e->asize1; ++i)
+			fprintf(stderr, "%lld%s", (long long)e->mcnt[i], i == e->asize? ")" : ", ");
+		fputc('\n', stderr);
 	}
-	return fm_append(e0, l, s);
+	assert(e->mcnt[0] == ori_l + l);
+	return e;
 }
