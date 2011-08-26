@@ -7,7 +7,9 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include "rld.h"
+#ifndef _NO_UTILS_H
 #include "utils.h"
+#endif
 
 #ifdef _USE_RLE6
 #define RLD_IBITS_PLUS 3
@@ -42,7 +44,7 @@ static inline int ilog2(uint32_t v)
 	return (t = (v >> 8)) ? 8 + LogTable256[t] : LogTable256[v];
 }
 
-inline uint32_t rld_delta_enc1(uint32_t x, int *width)
+inline int64_t rld_delta_enc1(int64_t x, int *width)
 {
 	int y = ilog2(x);
 	int z = ilog2(y + 1);
