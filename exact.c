@@ -26,10 +26,9 @@ uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_
 
 void fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 {
-	uint64_t k, *ok;
+	uint64_t k = x, *ok;
 	ok = alloca(8 * e->asize);
 	s->l = 0;
-	k = x;
 	while (1) {
 		int c = rld_rank1a(e, k, ok);
 		if (c) {

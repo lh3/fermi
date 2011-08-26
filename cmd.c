@@ -94,9 +94,8 @@ int main_chkbwt(int argc, char *argv[])
 	fprintf(stderr, "[M::%s] Checked the rank function in %.3lf seconds.\n", __func__, cputime() - t);
 	for (j = 0; j < e->asize; ++j) {
 		if (cnt[j] != e->mcnt[j+1]) {
-			fprintf(stderr, "[E::%s] Different counts: %lld != %lld\n", __func__,
+			fprintf(stderr, "[E::%s] Different counts for symbol %d: %lld != %lld\n", __func__, j,
 					(unsigned long long)cnt[j], (unsigned long long)e->mcnt[j+1]);
-			exit(1);
 		}
 	}
 	if (plain) putchar('\n');
