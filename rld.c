@@ -49,7 +49,7 @@ inline int64_t rld_delta_enc1(int64_t x, int *width)
 	int y = ilog2(x);
 	int z = ilog2(y + 1);
 	*width = (z<<1) + 1 + y;
-	return (x^(1<<y)) | (y+1)<<y;
+	return (x^(1<<y)) | (int64_t)(y+1)<<y;
 }
 
 /***********************************
@@ -182,7 +182,7 @@ void rld_rank_index(rld_t *e)
 		int j;
 		cnt = alloca(e->asize * 8);
 		e->ibits = ilog2(e->mcnt[0] / n_blks) + RLD_IBITS_PLUS;
-		e->n_frames = ((e->mcnt[0] + (1<<e->ibits) - 1) >> e->ibits) + 1;
+		e->n_frames = ((e->mcnt[0] + (1ll<<e->ibits) - 1) >> e->ibits) + 1;
 		e->frame = xcalloc(e->n_frames * e->asize1, 8);
 		e->frame[0] = 0;
 		for (j = 0; j < e->asize; ++j) cnt[j] = 0;
