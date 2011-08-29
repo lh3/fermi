@@ -1,0 +1,67 @@
+.TH fermi 1 "29 August 2011" "fermi-r224" "Bioinformatics tools"
+
+.SH NAME
+.PP
+fermi - FERragina-Manzini Index for DNA sequences
+
+.SH SYNOPSIS
+.PP
+fermi build seq1.fq > seq1.bwt
+.PP
+fermi merge -t 4 seq1.bwt seq2.bwt seq3.bwt > seq123.bwt
+
+.SH DESCRIPTION
+.PP
+Fermi is a set of tools blablabla...
+
+.SH COMMANDS AND OPTIONS
+
+.TP 10
+.B build
+.B fermi build
+.RB [ \-fRPN ]
+.RB [ \-i
+.IR inBWT ]
+.RB [ \-b
+.IR sbits ]
+.RB [ \-o
+.IR outFile ]
+.RB [ \-s
+.IR blkSize ]
+.I in.fa
+
+.TP
+.B merge
+.B fermi merge
+.RB [ \-f ]
+.RB [ \-o
+.IR out.bwt ]
+.RB [ \-t
+.IR nThreads ]
+.I in0.bwt in1.bwt
+.RI [ ... ]
+
+.TP
+.B unpack
+.B fermi unpack
+.RB [ \-M ]
+.RB [ \-i
+.IR index ]
+.I in.bwt
+
+.TP
+.B chkbwt
+.B fermi chkbwt
+.RB [ \-MP ]
+.I in.bwt
+
+.RE
+
+.SH AUTHOR
+.PP
+Heng Li <lh3@live.co.uk> implemented
+.BR fermi .
+
+.SH SEE ALSO
+.PP
+Fermi web site.
