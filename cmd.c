@@ -51,7 +51,10 @@ int main_chkbwt(int argc, char *argv[])
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fermi chkbwt [-MP] <idxbase.bwt>\n");
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi chkbwt [-MP] <idxbase.bwt>\n\n");
+		fprintf(stderr, "Options: -M        load the FM-index as a memory mapped file\n");
+		fprintf(stderr, "         -P        print the BWT to the stdout\n\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
@@ -133,7 +136,10 @@ int main_unpack(int argc, char *argv[])
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fermi unpack [-M] [-i index] <idxbase.bwt>\n");
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi unpack [-M] [-i index] <idxbase.bwt>\n\n");
+		fprintf(stderr, "Options: -i INT    index of the read to output, starting from 0 [null]\n");
+		fprintf(stderr, "         -M        load the FM-index as a memory mapped file\n\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
@@ -194,7 +200,11 @@ int main_merge(int argc, char *argv[])
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi merge [-fh] [-o out.bwt] [-t nThreads] <in0.bwt> <in1.bwt> [...]\n");
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi merge [-f] [-o out.bwt] [-t nThreads] <in0.bwt> <in1.bwt> [...]\n\n");
+		fprintf(stderr, "Options: -f        force to overwrite the output file (effective with -o)\n");
+		fprintf(stderr, "         -o FILE   output file name [null]\n");
+		fprintf(stderr, "         -t INT    number of threads to use\n\n");
 		return 1;
 	}
 	if (force == 0 && idxfn) {
@@ -231,7 +241,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "NPRfdb:o:i:s:")) >= 0) {
+		while ((c = getopt(argc, argv, "NPRfb:o:i:s:")) >= 0) {
 			switch (c) {
 				case 'i':
 					e = rld_restore(optarg);
@@ -250,7 +260,17 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 			}
 		}
 		if (argc == optind) {
-			fprintf(stderr, "Usage: fermi build [-fRP] [-b sbits] [-o outFile] <in.fa>\n");
+			fprintf(stderr, "\n");
+			fprintf(stderr, "Usage:   fermi build [-fRPN] [-i inBWT] [-b sbits] [-o outFile] [-s blkSize] <in.fa>\n\n");
+			fprintf(stderr, "Options: -b INT    use a small marker per 2^(INT+3) bytes [%d]\n", sbits);
+			fprintf(stderr, "         -f        force to overwrite the output file (effective with -o)\n");
+			fprintf(stderr, "         -i FILE   append the FM-index to the existing FILE [null]\n");
+			fprintf(stderr, "         -N        do not discard sequences containing ambiguous bases\n");
+			fprintf(stderr, "         -o FILE   output file name [null]\n");
+			fprintf(stderr, "         -P        output BWT to stdout; do not dump the FM-index\n");
+			fprintf(stderr, "         -R        do not index the reverse complement\n");
+			fprintf(stderr, "         -s INT    number of symbols to process at a time [%ld]\n", (long)block_size);
+			fprintf(stderr, "\n");
 			return 1;
 		}
 		if (!plain) {
