@@ -21,7 +21,7 @@ Fermi is a set of tools blablabla...
 .B fermi build
 .RB [ \-fRPN ]
 .RB [ \-i
-.IR inBWT ]
+.IR in.bwt ]
 .RB [ \-b
 .IR sbits ]
 .RB [ \-o
@@ -29,6 +29,26 @@ Fermi is a set of tools blablabla...
 .RB [ \-s
 .IR blkSize ]
 .I in.fa
+
+Construct the FM-index for file
+.I in.fa
+or append the constructed index to an existing FM-index
+.IR in.bwt .
+For a small input file, all the sequences will be loaded into memory and the
+index is constructed altogether. For a large file, this command will load
+.I blkSize
+symbols in turn, construct BWT for them and then append to the existing index
+using an algorithm similar to the
+.B merge
+command. For a large file, the memory consumption is about
+.RI ( S + blkSize *13),
+where
+.I S
+is the size of the final FM-index.
+
+By default, the original sequence and the reverse complemented seuqence are
+concatenated together to enable the forward-backward search.
+
 
 .TP
 .B merge
@@ -41,6 +61,15 @@ Fermi is a set of tools blablabla...
 .I in0.bwt in1.bwt
 .RI [ ... ]
 
+Merge multiple FM-indexes. This step takes about
+.RI ( N /8+ S )
+bytes of memory, where
+.I N
+is the total length of the concatenated sequence and
+.I S
+is the size of the final FM-index which is run-length-delta encoded.
+
+
 .TP
 .B unpack
 .B fermi unpack
@@ -49,11 +78,17 @@ Fermi is a set of tools blablabla...
 .IR index ]
 .I in.bwt
 
+Extract multiple or all sequences stored in the FM-index.
+
+
 .TP
 .B chkbwt
 .B fermi chkbwt
 .RB [ \-MP ]
 .I in.bwt
+
+Check the rank function or print the BWT in the text form.
+
 
 .RE
 
