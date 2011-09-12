@@ -5,18 +5,16 @@
 
 #define FERMI_VERSION "0.0-dev (r224)"
 
+#define FM_MASK30 0x3fffffff
+
 extern int fm_verbose;
 
 typedef struct {
 	uint64_t x[3]; // 0: start of the interval, backward; 1: forward; 2: size of the interval
-	union { // this is for meta information associated with the interval
-		uint64_t dummy;
-		uint64_t pos:32, terminated:1, tip:1;
-		uint64_t beg:32, end:32;
-		void *ptr;
-	} z;
+	uint64_t info;
 } fmintv_t;
 
+typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
 struct __rld_t; // defined in rld.h
 
 #ifndef KSTRING_T

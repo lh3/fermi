@@ -175,11 +175,15 @@ int main_exact(int argc, char *argv[])
 	fp = strcmp(argv[optind+1], "-")? gzopen(argv[optind+1], "r") : gzdopen(fileno(stdin), "r");
 	seq = kseq_init(fp);
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
+
+	fmintv_v a;
+	a.m = a.n = 0; a.a = 0;
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
 		printf(">%s\n", seq->name.s);
 		printf("%d\n", fm6_search_overlap(e, min_match, seq->seq.l, (uint8_t*)seq->seq.s, 0));
 		puts("//");
+		fm6_mem1(e, seq->seq.l, (uint8_t*)seq->seq.s, 32, &a);
 	}
 	rld_destroy(e);
 	kseq_destroy(seq);

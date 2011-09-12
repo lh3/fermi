@@ -4,7 +4,7 @@
 #include "fermi.h"
 #include "kvec.h"
 
-#define fm6_set_intv(e, c, ik) ((ik).x[0] = (e)->cnt[(c)], (ik).x[2] = (e)->cnt[c+1] - (e)->cnt[c], (ik).x[1] = (e)->cnt[fm6_comp(c)])
+#define fm6_set_intv(e, c, ik) ((ik).x[0] = (e)->cnt[(c)], (ik).x[2] = (e)->cnt[c+1] - (e)->cnt[c], (ik).x[1] = (e)->cnt[fm6_comp(c)], (ik).info = 0)
 
 uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
 {
@@ -76,7 +76,6 @@ void fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 /*********************
  *********************/
 
-typedef kvec_t(fmintv_t) fmintv_v;
 typedef kvec_t(uint64_t) vec64_t;
 
 static inline void reverse_fmivec(fmintv_v *p)
@@ -155,4 +154,57 @@ int fm6_search_overlap(const rld_t *e, int min, int len, const uint8_t *seq, int
 	}
 	kv_destroy(a[0]); kv_destroy(a[1]);
 	return is_back? len - 1 - i : i;
+}
+
+int fm6_mem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
+{
+	int i, j, c;
+	fmintv_t ik, ok[6];
+	fmintv_v a[2], *prev, *curr, *swap;
+	kv_init(a[0]); kv_init(a[1]);
+	prev = &a[0]; curr = &a[1];
+	fm6_set_intv(e, q[x], ik);
+
+	ik.info = x;
+	for (i = x + 1; i < len; ++i) {
+		c = fm6_comp(q[i]);
+		fm6_extend(e, &ik, ok, 0);
+		if (ok[c].x[2] == 0) break;
+		else if (ok[c].x[2] != ik.x[2])
+			kv_push(fmintv_t, *curr, ik);
+		ik = ok[c]; ik.info = i + 1;
+	}
+	if (i == len) kv_push(fmintv_t, *curr, ik); // push the last interval if we reach the end
+	reverse_fmivec(curr); // s.t. smaller intervals visited first
+	swap = curr; curr = prev; prev = swap;
+//	for (i = 0; i < prev->n; ++i) printf("[%lld, %lld, %lld], %d\n", prev->a[i].x[0], prev->a[i].x[1], prev->a[i].x[2], prev->a[i].z.end);
+
+	mem->n = 0;
+	for (i = x - 1; i >= -1; --i) {
+		c = i < 0? 0 : q[i];
+		curr->n = 0;
+		for (j = 0; j < prev->n; ++j) {
+			fm6_extend(e, &prev->a[j], ok, 1);
+			if (ok[c].x[2] != prev->a[j].x[2] || i == -1) {
+				if (curr->n == 0) {
+					if (mem->n == 0 || i + 1 < (mem->a[mem->n-1].info>>32&FM_MASK30)) { // skip contained matches
+						ik = prev->a[j]; ik.info |= (uint64_t)(i + 1)<<32;
+						if (mem->n && (prev->a[j].info&FM_MASK30) >= (mem->a[mem->n-1].info&FM_MASK30)) --mem->n;
+						kv_push(fmintv_t, *mem, ik);
+					}
+				} // otherwise the match is contained in another longer match
+			}
+			if (ok[c].x[2] && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2])) {
+				ok[c].info = prev->a[j].info;
+				kv_push(fmintv_t, *curr, ok[c]);
+			}
+		}
+		if (curr->n == 0) break;
+		swap = curr; curr = prev; prev = swap;
+	}
+
+//	for (i = 0; i < mem->n; ++i) printf("* %lld, %lld\n", mem->a[i].info>>32&FM_MASK30, mem->a[i].info&FM_MASK30);
+
+	free(a[0].a); free(a[1].a);
+	return 0;
 }
