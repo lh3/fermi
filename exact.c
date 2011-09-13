@@ -159,8 +159,10 @@ int fm6_search_overlap(const rld_t *e, int min, int len, const uint8_t *seq, int
 int fm6_mem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 {
 	int i, j, c;
+	uint64_t info;
 	fmintv_t ik, ok[6];
 	fmintv_v a[2], *prev, *curr, *swap;
+
 	kv_init(a[0]); kv_init(a[1]);
 	prev = &a[0]; curr = &a[1];
 	fm6_set_intv(e, q[x], ik);
@@ -172,7 +174,10 @@ int fm6_mem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 		if (ok[c].x[2] == 0) break;
 		else if (ok[c].x[2] != ik.x[2])
 			kv_push(fmintv_t, *curr, ik);
-		ik = ok[c]; ik.info = i + 1;
+		info = i + 1;
+		if (ok[0].x[2]) ik.info |= 1L<<30;
+		if (ok[0].x[2] == ik.x[2]) info |= 1L<<31;
+		ik = ok[c]; ik.info = info;
 	}
 	if (i == len) kv_push(fmintv_t, *curr, ik); // push the last interval if we reach the end
 	reverse_fmivec(curr); // s.t. smaller intervals visited first
