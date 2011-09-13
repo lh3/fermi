@@ -166,7 +166,7 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 	prev = &a[0]; curr = &a[1];
 	fm6_set_intv(e, q[x], ik);
 
-	ik.info = x;
+	ik.info = x + 1;
 	for (i = x + 1; i < len; ++i) {
 		c = fm6_comp(q[i]);
 		fm6_extend(e, &ik, ok, 0);
@@ -198,7 +198,7 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 				if (curr->n == 0 || full_match) {
 //					printf("%d, %lld, [%lld,%lld,%lld]\n", i+1, p->info, p->x[0], p->x[1], p->x[2]);
 					if (full_match || mem->n == 0 || i + 1 < (mem->a[mem->n-1].info>>32&FM_MASK30)) { // skip contained matches
-						ik = *p; ik.info |= (uint64_t)(ok[2].x[2] != 0) << 63 | (uint64_t)(i + 1)<<32;
+						ik = *p; ik.info |= (uint64_t)(ok[0].x[2] != 0) << 63 | (uint64_t)(i + 1)<<32;
 						kv_push(fmintv_t, *mem, ik);
 					}
 				} // otherwise the match is contained in another longer match
@@ -213,7 +213,7 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 	}
 	reverse_fmivec(mem); // s.t. sorted by the start coordinate
 
-	for (i = 0; i < mem->n; ++i) printf("[%lld,%lld,%lld] %lld, %lld\n", mem->a[i].x[0], mem->a[i].x[1], mem->a[i].x[2], mem->a[i].info>>32&FM_MASK30, mem->a[i].info&FM_MASK30);
+//	for (i = 0; i < mem->n; ++i) printf("[%lld,%lld,%lld] %lld, %lld\n", mem->a[i].x[0], mem->a[i].x[1], mem->a[i].x[2], mem->a[i].info>>32&FM_MASK30, mem->a[i].info&FM_MASK30);
 	free(a[0].a); free(a[1].a);
 	return ret;
 }
@@ -222,13 +222,19 @@ int fm6_smem(const rld_t *e, int len, const uint8_t *q, fmintv_v *mem)
 {
 	int x = 0, i;
 	fmintv_v tmp;
+	kstring_t s;
+	s.l = s.m = 0; s.s = 0;
 	kv_init(tmp);
 	mem->n = 0;
 	do {
 		x = fm6_smem1(e, len, q, x, &tmp);
-		for (i = 0; i < tmp.n; ++i)
+		for (i = 0; i < tmp.n; ++i) {
+//			fm6_write_smem(e, &tmp.a[i], &s); puts(s.s);
 			kv_push(fmintv_t, *mem, tmp.a[i]);
+		}
+//		if (x > 10) exit(1);
 	} while (x < len);
+	free(s.s);
 	return mem->n;
 }
 
