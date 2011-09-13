@@ -184,7 +184,7 @@ int main_exact(int argc, char *argv[])
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
 		fm6_smem(e, seq->seq.l, (uint8_t*)seq->seq.s, &a);
-		str.l = 0; kputs("SQ\t", &str); kputs(seq->name.s, &str); kputc('\t', &str); kputw(a.n, &str);
+		str.l = 0; kputs("SQ\t", &str); kputs(seq->name.s, &str); kputc('\t', &str); kputw(seq->seq.l, &str); kputc('\t', &str); kputw(a.n, &str);
 		puts(str.s);
 		for (i = 0; i < a.n; ++i) {
 			fputs("EM\t", stdout);

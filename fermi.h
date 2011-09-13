@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define FERMI_VERSION "0.0-dev (r224)"
+#define FERMI_VERSION "0.0-dev (r233)"
 
 #define FM_MASK30 0x3fffffff
 

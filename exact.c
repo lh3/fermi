@@ -191,13 +191,13 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 		c = i < 0? 0 : q[i];
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
-			int full_match = 0;
+			int fl_match = 0;
 			fm6_extend(e, p, ok, 1);
-			full_match = (ok[0].x[2] && p->x[1] < e->mcnt[1]);
-			if (ok[c].x[2] == 0 || full_match || i == -1) {
-				if (curr->n == 0 || full_match) {
+			fl_match = (ok[0].x[2] && p->x[1] < e->mcnt[1]);
+			if (ok[c].x[2] == 0 || fl_match || i == -1) {
+				if (curr->n == 0 || fl_match) {
 //					printf("%d, %lld, [%lld,%lld,%lld]\n", i+1, p->info, p->x[0], p->x[1], p->x[2]);
-					if (full_match || mem->n == 0 || i + 1 < (mem->a[mem->n-1].info>>32&FM_MASK30)) { // skip contained matches
+					if (fl_match || mem->n == 0 || i + 1 < (mem->a[mem->n-1].info>>32&FM_MASK30)) { // skip contained matches
 						ik = *p; ik.info |= (uint64_t)(ok[0].x[2] != 0) << 63 | (uint64_t)(i + 1)<<32;
 						kv_push(fmintv_t, *mem, ik);
 					}
