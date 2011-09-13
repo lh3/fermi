@@ -170,14 +170,14 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 	for (i = x + 1; i < len; ++i) {
 		c = fm6_comp(q[i]);
 		fm6_extend(e, &ik, ok, 0);
-		if (ok[c].x[2] == 0) break;
-		else if (ok[c].x[2] != ik.x[2]) { // change of the interval size
+		if (ok[c].x[2] != ik.x[2]) { // change of the interval size
 			if (ik.x[2] != ok[0].x[2]) kv_push(fmintv_t, *curr, ik);
 			if (ok[0].x[2]) { // some sequences come to an end
 				ok[0].info = i;
 				kv_push(fmintv_t, *curr, ok[0]);
 			}
 		}
+		if (ok[c].x[2] == 0) break;
 		ik = ok[c]; ik.info = i + 1;
 	}
 	if (i == len) kv_push(fmintv_t, *curr, ik); // push the last interval if we reach the end
@@ -222,19 +222,14 @@ int fm6_smem(const rld_t *e, int len, const uint8_t *q, fmintv_v *mem)
 {
 	int x = 0, i;
 	fmintv_v tmp;
-	kstring_t s;
-	s.l = s.m = 0; s.s = 0;
 	kv_init(tmp);
 	mem->n = 0;
 	do {
 		x = fm6_smem1(e, len, q, x, &tmp);
 		for (i = 0; i < tmp.n; ++i) {
-//			fm6_write_smem(e, &tmp.a[i], &s); puts(s.s);
 			kv_push(fmintv_t, *mem, tmp.a[i]);
 		}
-//		if (x > 10) exit(1);
 	} while (x < len);
-	free(s.s);
 	return mem->n;
 }
 
