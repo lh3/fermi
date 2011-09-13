@@ -158,18 +158,17 @@ int main_unpack(int argc, char *argv[])
 
 int main_exact(int argc, char *argv[])
 {
-	int c, min_match = 30, use_mmap = 0;
+	int c, use_mmap = 0;
 	rld_t *e;
 	kseq_t *seq;
 	gzFile fp;
-	while ((c = getopt(argc, argv, "m:M")) >= 0) {
+	while ((c = getopt(argc, argv, "M")) >= 0) {
 		switch (c) {
-			case 'm': min_match = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi exact [-M] [-m minMatch] <idxbase.bwt> <src.fa>\n");
+		fprintf(stderr, "Usage: fermi exact [-M] <idxbase.bwt> <src.fa>\n");
 		return 1;
 	}
 	fp = strcmp(argv[optind+1], "-")? gzopen(argv[optind+1], "r") : gzdopen(fileno(stdin), "r");
@@ -180,10 +179,9 @@ int main_exact(int argc, char *argv[])
 	a.m = a.n = 0; a.a = 0;
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
-		printf(">%s\n", seq->name.s);
-		printf("%d\n", fm6_search_overlap(e, min_match, seq->seq.l, (uint8_t*)seq->seq.s, 0));
-		puts("//");
+		printf("SQ\t%s\n", seq->name.s);
 		fm6_mem1(e, seq->seq.l, (uint8_t*)seq->seq.s, 32, &a);
+		puts("//");
 	}
 	rld_destroy(e);
 	kseq_destroy(seq);
