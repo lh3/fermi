@@ -86,6 +86,10 @@ extern "C" {
 	 */
 	int fm6_search_overlap(const struct __rld_t *e, int min, int len, const uint8_t *seq, int is_back);
 
+	int fm6_smem1(const struct __rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem);
+	int fm6_smem(const struct __rld_t *e, int len, const uint8_t *q, fmintv_v *mem);
+	int fm6_write_smem(const struct __rld_t *e, const fmintv_t *a, kstring_t *s);
+
 	/**
 	 * Merge two generic FM-Indexes
 	 *

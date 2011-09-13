@@ -156,9 +156,9 @@ int fm6_search_overlap(const rld_t *e, int min, int len, const uint8_t *seq, int
 	return is_back? len - 1 - i : i;
 }
 
-int fm6_mem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
+int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 {
-	int i, j, c;
+	int i, j, c, ret;
 	fmintv_t ik, ok[6];
 	fmintv_v a[2], *prev, *curr, *swap;
 
@@ -182,6 +182,7 @@ int fm6_mem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 	}
 	if (i == len) kv_push(fmintv_t, *curr, ik); // push the last interval if we reach the end
 	reverse_fmivec(curr); // s.t. smaller intervals visited first
+	ret = curr->a[0].info;
 	swap = curr; curr = prev; prev = swap;
 //	for (i = 0; i < prev->n; ++i) printf("[%lld, %lld, %lld], %lld\n", prev->a[i].x[0], prev->a[i].x[1], prev->a[i].x[2], prev->a[i].info);
 
@@ -214,5 +215,28 @@ int fm6_mem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 
 	for (i = 0; i < mem->n; ++i) printf("[%lld,%lld,%lld] %lld, %lld\n", mem->a[i].x[0], mem->a[i].x[1], mem->a[i].x[2], mem->a[i].info>>32&FM_MASK30, mem->a[i].info&FM_MASK30);
 	free(a[0].a); free(a[1].a);
-	return 0;
+	return ret;
+}
+
+int fm6_smem(const rld_t *e, int len, const uint8_t *q, fmintv_v *mem)
+{
+	int x = 0, i;
+	fmintv_v tmp;
+	kv_init(tmp);
+	mem->n = 0;
+	do {
+		x = fm6_smem1(e, len, q, x, &tmp);
+		for (i = 0; i < tmp.n; ++i)
+			kv_push(fmintv_t, *mem, tmp.a[i]);
+	} while (x < len);
+	return mem->n;
+}
+
+int fm6_write_smem(const rld_t *e, const fmintv_t *a, kstring_t *s)
+{
+	s->l = 0;
+	kputuw(a->info>>32&FM_MASK30, s); kputc('\t', s); kputuw(a->info&FM_MASK30, s); kputc('\t', s);
+	kputuw(a->x[2] > 0xffffffffU? 0xffffffffU : a->x[2], s); kputc('\t', s);
+	kputc("IE"[a->info>>63], s); kputc("IE"[a->x[1] < e->mcnt[1]], s);
+	return s->l;
 }

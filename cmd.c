@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include "rld.h"
 #include "fermi.h"
+#include "kstring.h"
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
@@ -158,10 +159,13 @@ int main_unpack(int argc, char *argv[])
 
 int main_exact(int argc, char *argv[])
 {
-	int c, use_mmap = 0;
+	int c, i, use_mmap = 0;
 	rld_t *e;
 	kseq_t *seq;
 	gzFile fp;
+	kstring_t str;
+	fmintv_v a;
+
 	while ((c = getopt(argc, argv, "M")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
@@ -175,12 +179,18 @@ int main_exact(int argc, char *argv[])
 	seq = kseq_init(fp);
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 
-	fmintv_v a;
 	a.m = a.n = 0; a.a = 0;
+	str.m = str.l = 0; str.s = 0;
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
-		printf("SQ\t%s\n", seq->name.s);
-		fm6_mem1(e, seq->seq.l, (uint8_t*)seq->seq.s, 32, &a);
+		fm6_smem(e, seq->seq.l, (uint8_t*)seq->seq.s, &a);
+		str.l = 0; kputs("SQ\t", &str); kputs(seq->name.s, &str); kputc('\t', &str); kputw(a.n, &str);
+		puts(str.s);
+		for (i = 0; i < a.n; ++i) {
+			fputs("EM\t", stdout);
+			fm6_write_smem(e, &a.a[i], &str);
+			puts(str.s);
+		}
 		puts("//");
 	}
 	rld_destroy(e);
