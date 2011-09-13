@@ -167,7 +167,7 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 	fm6_set_intv(e, q[x], ik);
 
 	ik.info = x + 1;
-	for (i = x + 1; i < len; ++i) {
+	for (i = x + 1; i < len; ++i) { // forward search
 		c = fm6_comp(q[i]);
 		fm6_extend(e, &ik, ok, 0);
 		if (ok[c].x[2] != ik.x[2]) { // change of the interval size
@@ -177,28 +177,28 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 				kv_push(fmintv_t, *curr, ok[0]);
 			}
 		}
-		if (ok[c].x[2] == 0) break;
+		if (ok[c].x[2] == 0) break; // cannot be extended
 		ik = ok[c]; ik.info = i + 1;
 	}
 	if (i == len) kv_push(fmintv_t, *curr, ik); // push the last interval if we reach the end
 	reverse_fmivec(curr); // s.t. smaller intervals visited first
-	ret = curr->a[0].info;
+	ret = curr->a[0].info; // this will be the returned value
 	swap = curr; curr = prev; prev = swap;
 //	for (i = 0; i < prev->n; ++i) printf("[%lld, %lld, %lld], %lld\n", prev->a[i].x[0], prev->a[i].x[1], prev->a[i].x[2], prev->a[i].info);
 
 	mem->n = 0;
-	for (i = x - 1; i >= -1; --i) {
+	for (i = x - 1; i >= -1; --i) { // backward search for MEMs
 		c = i < 0? 0 : q[i];
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
-			int fl_match = 0;
+			int fl_match; // whether this leads to a full-length read match
 			fm6_extend(e, p, ok, 1);
 			fl_match = (ok[0].x[2] && p->x[1] < e->mcnt[1]);
-			if (ok[c].x[2] == 0 || fl_match || i == -1) {
-				if (curr->n == 0 || fl_match) {
+			if (ok[c].x[2] == 0 || fl_match || i == -1) { // keep the hit if: full-length match, reaching the beginning or not extended further
+				if (curr->n == 0 || fl_match) { // curr->n to make sure there is no longer matches
 //					printf("%d, %lld, [%lld,%lld,%lld]\n", i+1, p->info, p->x[0], p->x[1], p->x[2]);
 					if (fl_match || mem->n == 0 || i + 1 < (mem->a[mem->n-1].info>>32&FM_MASK30)) { // skip contained matches
-						ik = *p; ik.info |= (uint64_t)(ok[0].x[2] != 0) << 63 | (uint64_t)(i + 1)<<32;
+						ik = *p; ik.info |= (uint64_t)(ok[0].x[2] != 0) << 63 | (uint64_t)(i + 1)<<32; // bit 64 keeps whether the left-end is closed
 						kv_push(fmintv_t, *mem, ik);
 					}
 				} // otherwise the match is contained in another longer match
@@ -238,6 +238,6 @@ int fm6_write_smem(const rld_t *e, const fmintv_t *a, kstring_t *s)
 	s->l = 0;
 	kputuw(a->info>>32&FM_MASK30, s); kputc('\t', s); kputuw(a->info&FM_MASK30, s); kputc('\t', s);
 	kputuw(a->x[2] > 0xffffffffU? 0xffffffffU : a->x[2], s); kputc('\t', s);
-	kputc("IE"[a->info>>63], s); kputc("IE"[a->x[1] < e->mcnt[1]], s);
+	kputc("OT"[a->info>>63], s); kputc("OT"[a->x[1] < e->mcnt[1]], s);
 	return s->l;
 }
