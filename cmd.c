@@ -244,7 +244,7 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, no_reverse = 0, asize = 6, inc_N = 0;
+	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0;
 	int64_t i, sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
@@ -253,7 +253,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "NPRfb:o:i:s:")) >= 0) {
+		while ((c = getopt(argc, argv, "NPfb:o:i:s:")) >= 0) {
 			switch (c) {
 				case 'i':
 					e = rld_restore(optarg);
@@ -264,7 +264,6 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 					break;
 				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
-				case 'R': no_reverse = 1; break;
 				case 'b': sbits = atoi(optarg); break;
 				case 'o': idxfn = strdup(optarg); break;
 				case 's': block_size = atol(optarg); break;
@@ -273,14 +272,13 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		}
 		if (argc == optind) {
 			fprintf(stderr, "\n");
-			fprintf(stderr, "Usage:   fermi build [-fRPN] [-i inBWT] [-b sbits] [-o outFile] [-s blkSize] <in.fa>\n\n");
+			fprintf(stderr, "Usage:   fermi build [-fPN] [-i inBWT] [-b sbits] [-o outFile] [-s blkSize] <in.fa>\n\n");
 			fprintf(stderr, "Options: -b INT    use a small marker per 2^(INT+3) bytes [%d]\n", sbits);
 			fprintf(stderr, "         -f        force to overwrite the output file (effective with -o)\n");
 			fprintf(stderr, "         -i FILE   append the FM-index to the existing FILE [null]\n");
 			fprintf(stderr, "         -N        do not discard sequences containing ambiguous bases\n");
 			fprintf(stderr, "         -o FILE   output file name [null]\n");
 			fprintf(stderr, "         -P        output BWT to stdout; do not dump the FM-index\n");
-			fprintf(stderr, "         -R        do not index the reverse complement\n");
 			fprintf(stderr, "         -s INT    number of symbols to process at a time [%ld]\n", (long)block_size);
 			fprintf(stderr, "\n");
 			return 1;
@@ -336,12 +334,15 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 				s = realloc(s, max);
 			}
 			seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
-			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
-			l += seq->seq.l + 1;
-			if (!no_reverse) {
-				seq_revcomp6(seq->seq.l, (uint8_t*)seq->seq.s);
-				memcpy(s + l, seq->seq.s, seq->seq.l + 1);
-				l += seq->seq.l + 1;
+			for (j = k = 0; j <= seq->seq.l; ++j) {
+				if (seq->seq.s[j] == 0) {
+					memcpy(s + l, seq->seq.s + k, j - k + 1);
+					l += j - k + 1;
+					seq_revcomp6(j - k, (uint8_t*)seq->seq.s + k);
+					memcpy(s + l, seq->seq.s + k, j - k + 1);
+					l += j - k + 1;
+					k = j + 1;
+				}
 			}
 			sum_l += (seq->seq.l + 1) * 2;
 		}
