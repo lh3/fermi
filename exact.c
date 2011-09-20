@@ -120,11 +120,10 @@ int fm6_unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s)
 	kv_init(a[0]); kv_init(a[1]); curr = &a[0]; prev = &a[1];
 
 	// backward search for overlapping reads
-	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, s->l - beg - 1, 0, curr);
-	if (curr->n == 0) return -1; // no overlapping reads
-	for (j = 0; j < curr->n; ++j) curr->a[j].info += beg;
-	ret = curr->a[0].info;
-	swap = curr; curr = prev; prev = swap;
+	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, s->l - beg - 1, 0, prev);
+	if (prev->n == 0) return -1; // no overlapping reads
+	for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
+	ret = prev->a[0].info;
 	// test if s[beg..s->l] contained in another read
 	fm6_extend(e, &ik, ok, 1);
 	if (ik.x[2] != ok[0].x[2]) return -2; // the sequence is left contained
@@ -158,14 +157,14 @@ int fm6_unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s)
 	for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
 
 	// forward search for reads overlapping the extension read
-	fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, ret - beg, 1, prev);
+	fm6_overlap_intv(e, s->l, (uint8_t*)s->s, min, ret, 1, prev);
 	printf("ret=%d, len=%d, prev->n=%d\n", (int)ret, (int)s->l, (int)prev->n);
 	// backward search for backward branching test
 	for (i = ret - 1; i >= 0 && prev->n; --i) {
 		c = s->s[i];
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fm6_extend(e, &prev->a[j], ok, 1);
-			if (ok[c].x[2] + ok[0].x[2] != ik.x[2]) { // branching
+			if (ok[c].x[2] + ok[0].x[2] != prev->a[j].x[2]) { // branching
 				s->l = old_l;
 				return -4; // backward branching
 			}
