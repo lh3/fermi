@@ -78,20 +78,6 @@ extern "C" {
 	 */
 	int fm6_extend(const struct __rld_t *e, const fmintv_t *ik, fmintv_t ok[6], int is_back);
 
-	/**
-	 * Find the exact match in the left-to-right direction.
-	 *
-	 * Matching continues if sequences in the index have minimum {min} exact matches.
-	 *
-	 * @param e    DNA FM-Index
-	 * @param min  minimum end-to-end overlaps between sequences in the index
-	 * @param len  length of the input string (DNA sequence)
-	 * @param seq  input string
-	 *
-	 * @return     length of the maximal match
-	 */
-	int fm6_search_overlap(const struct __rld_t *e, int min, int len, const uint8_t *seq, int is_back);
-
 	int fm6_smem1(const struct __rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem);
 	int fm6_smem(const struct __rld_t *e, int len, const uint8_t *q, fmintv_v *mem);
 	int fm6_write_smem(const struct __rld_t *e, const fmintv_t *a, kstring_t *s);
