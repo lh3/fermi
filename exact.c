@@ -158,17 +158,19 @@ int fm6_unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s)
 	for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
 
 	// forward search for reads overlapping the extension read
-	fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, ret - beg, 1, curr);
-	printf("ret=%d, len=%d\n", (int)ret, (int)s->l);
+	fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, ret - beg, 1, prev);
+	printf("ret=%d, len=%d, prev->n=%d\n", (int)ret, (int)s->l, (int)prev->n);
 	// backward search for backward branching test
-	for (i = ret - 1; i >= 0; --i) {
+	for (i = ret - 1; i >= 0 && prev->n; --i) {
 		c = s->s[i];
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
-			fm6_extend(e, &ik, ok, 1);
+			fm6_extend(e, &prev->a[j], ok, 1);
 			if (ok[c].x[2] + ok[0].x[2] != ik.x[2]) { // branching
 				s->l = old_l;
 				return -4; // backward branching
 			}
+			if (ok[c].x[2] && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2]))
+				kv_push(fmintv_t, *curr, ok[c]);
 		}
 		swap = curr; curr = prev; prev = swap;
 	}
@@ -186,7 +188,7 @@ void fm6_extend_further1(const rld_t *e, uint64_t x)
 	s[1].l = s[1].m = 0; s[1].s = 0;
 	fm_retrieve(e, x, &s[0]); seq_reverse(s[0].l, (uint8_t*)s[0].s);
 	for (i = 0; i < s[0].l; ++i) putchar("$ACGTN"[(int)s[0].s[i]]); putchar('\n');
-	fm6_unambi_nei_for(e, 10, 0, &s[0]);
+	printf("*** ret=%d\n", fm6_unambi_nei_for(e, 10, 0, &s[0]));
 }
 
 /***************************
