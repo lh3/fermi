@@ -14,6 +14,11 @@ typedef struct {
 	uint64_t info;
 } fmintv_t;
 
+typedef struct {
+	int min_match, max_match, drop_width;
+	float drop_ratio;
+} fmjopt_t;
+
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
 struct __rld_t; // defined in rld.h
 
@@ -27,6 +32,7 @@ typedef struct __kstring_t { // implemented in kstring.h
 
 // complement of a nucleotide
 #define fm6_comp(a) ((a) >= 1 && (a) <= 4? 5 - (a) : (a))
+#define fm6_set_intv(e, c, ik) ((ik).x[0] = (e)->cnt[(int)(c)], (ik).x[2] = (e)->cnt[(int)(c)+1] - (e)->cnt[(int)(c)], (ik).x[1] = (e)->cnt[fm6_comp(c)], (ik).info = 0)
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,10 +63,10 @@ extern "C" {
 	 * @param x  string to retrieve (x >= 0)
 	 * @param s  output string
 	 */
-	void fm_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
+	int64_t fm_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
 
 	/** Similar to {@link #fm_retrieve()} but working for DNA FM-Index only */
-	void fm6_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
+	int64_t fm6_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
 
 	/**
 	 * Extend a string in either forward or backward direction

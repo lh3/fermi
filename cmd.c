@@ -181,6 +181,7 @@ int main_exact(int argc, char *argv[])
 
 	a.m = a.n = 0; a.a = 0;
 	str.m = str.l = 0; str.s = 0;
+	fm6_extend_further1(e, 0);
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
 		fm6_smem(e, seq->seq.l, (uint8_t*)seq->seq.s, &a);
