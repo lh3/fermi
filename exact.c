@@ -114,7 +114,7 @@ fmintv_t fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, 
 int fm6_unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s)
 {
 	int i, j, c, old_l = s->l, ret;
-	fmintv_t ik, ok[6], last;
+	fmintv_t ik, ok[6];
 	fmintv_v a[2], *curr, *prev, *swap;
 
 	kv_init(a[0]); kv_init(a[1]); curr = &a[0]; prev = &a[1];
@@ -133,8 +133,7 @@ int fm6_unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s)
 	// forward search for forward branching test and for the longest read
 	while (prev->n) {
 		int c0 = -1;
-		curr->n = 0;
-		for (j = 0; j < prev->n; ++j) {
+		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
 			fm6_extend(e, p, ok, 0);
 			if (ok[0].x[2]) {
@@ -153,32 +152,25 @@ int fm6_unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s)
 			}
 		}
 		if (j < prev->n) break;
-		kputc(c0, s);
+		kputc(fm6_comp(c0), s);
 		swap = curr; curr = prev; prev = swap;
 	}
 	for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
 
 	// forward search for reads overlapping the extension read
-	fm6_set_intv(e, s->s[ret], ik);
-	last = ik;
-	for (i = ret + 1; i < s->l; ++i) {
-		c = fm6_comp(s->s[i]);
-		fm6_extend(e, &ik, ok, 0);
-		if (ok[0].x[2]) last = ik, last.info = i - 1;
-		ik = ok[c];
-	}
-	printf("ret=%d, len=%d, last.info=%d\n", (int)ret, (int)s->l, (int)last.info);
+	fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, ret - beg, 1, curr);
+	printf("ret=%d, len=%d\n", (int)ret, (int)s->l);
 	// backward search for backward branching test
-	for (i = ret - 1, ik = last; i >= 0; --i) {
+	for (i = ret - 1; i >= 0; --i) {
 		c = s->s[i];
-		fm6_extend(e, &ik, ok, 1);
-		for (c = 1; c < 6; ++c)
-			if (ok[c].x[2]) break;
-		if (ok[c].x[2] + ok[0].x[2] != ik.x[2]) { // branching
-			s->l = old_l;
-			return -4; // backward branching
+		for (j = 0, curr->n = 0; j < prev->n; ++j) {
+			fm6_extend(e, &ik, ok, 1);
+			if (ok[c].x[2] + ok[0].x[2] != ik.x[2]) { // branching
+				s->l = old_l;
+				return -4; // backward branching
+			}
 		}
-		ik = ok[c];
+		swap = curr; curr = prev; prev = swap;
 	}
 	printf("final: ret=%d, len=%d\n", (int)ret, (int)s->l);
 	return ret;
