@@ -88,13 +88,13 @@ static inline void reverse_fmivec(fmintv_v *p)
 	}
 }
 
-void fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p)
+fmintv_t fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p)
 { // requirement: seq[j] matches the end of a read
 	int c, depth, dir, end;
 	fmintv_t ik, ok[6];
 	p->n = 0;
 	dir = at5? 1 : -1; // at5 is true iff we start from the 5'-end of a read
-	end = at5? len - 1 : 0;
+	end = at5? len : -1;
 	c = seq[j];
 	fm6_set_intv(e, c, ik);
 	for (depth = 1, j += dir; j != end; j += dir, ++depth) {
@@ -108,48 +108,59 @@ void fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int 
 		ik = ok[c];
 	}
 	reverse_fmivec(p); // reverse the array such that the smallest interval comes first
+	return ik;
 }
 
 int fm6_unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s)
 {
-	int i, c, old_l = s->l, depth, ret;
+	int i, j, c, old_l = s->l, ret;
 	fmintv_t ik, ok[6], last;
+	fmintv_v a[2], *curr, *prev, *swap;
 
-	// backward search for reads with the largest overlap
-	fm6_set_intv(e, s->s[s->l - 1], ik);
-	last = ik; last.info = (uint64_t)-1;
-	for (depth = 1, i = s->l - 2; i >= beg; --i, ++depth) {
-		c = s->s[i];
-		fm6_extend(e, &ik, ok, 1);
-		if (ok[c].x[2] == 0) break; // cannot be extended
-		if (depth >= min && ok[0].x[2])
-			last = ik, last.info = i + 1;
-		ik = ok[c];
-	}
-	if (last.info == (uint64_t)-1) return -1; // no overlapping reads
+	kv_init(a[0]); kv_init(a[1]); curr = &a[0]; prev = &a[1];
+
+	// backward search for overlapping reads
+	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, s->l - beg - 1, 0, curr);
+	if (curr->n == 0) return -1; // no overlapping reads
+	for (j = 0; j < curr->n; ++j) curr->a[j].info += beg;
+	ret = curr->a[0].info;
+	swap = curr; curr = prev; prev = swap;
 	// test if s[beg..s->l] contained in another read
 	fm6_extend(e, &ik, ok, 1);
 	if (ik.x[2] != ok[0].x[2]) return -2; // the sequence is left contained
 	fm6_extend(e, &ik, ok, 0);
 	if (ik.x[2] != ok[0].x[2]) return -2; // the sequence is right contained
 	// forward search for forward branching test and for the longest read
-	for (ik = last;;) {
-		fm6_extend(e, &ik, ok, 0);
-		if (ok[0].x[2]) { // a contained match; mark it and continue
+	while (prev->n) {
+		int c0 = -1;
+		curr->n = 0;
+		for (j = 0; j < prev->n; ++j) {
+			fmintv_t *p = &prev->a[j];
+			fm6_extend(e, p, ok, 0);
+			if (ok[0].x[2]) {
+				if ((int)p->info == ret && ok[0].x[2] == p->x[2]) break;
+				// then there are contained matches
+			}
+			if (c0 == -1) {
+				for (c = 1; c < 6; ++c) if (ok[c].x[2]) break;
+				if (c == 6) continue;
+				c0 = c;
+			}
+			if (ok[c0].x[2] + ok[0].x[2] < p->x[2]) return -3;
+			if (ok[c0].x[2] && (curr->n == 0 || ok[c0].x[2] != curr->a[curr->n-1].x[2])) {
+				ok[c0].info = p->info;
+				kv_push(fmintv_t, *curr, ok[c0]);
+			}
 		}
-		if (ok[0].x[2] != ik.x[2]) {
-			for (c = 1; c < 6; ++c)
-				if (ok[c].x[2]) break;
-			if (ok[c].x[2] + ok[0].x[2] != ik.x[2]) return -3; // forward branching
-			ik = ok[c];
-			kputc(fm6_comp(c), s);
-		} else break;
+		if (j < prev->n) break;
+		kputc(c0, s);
+		swap = curr; curr = prev; prev = swap;
 	}
-	ret = last.info;
 	for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
 
 	// forward search for reads overlapping the extension read
 	fm6_set_intv(e, s->s[ret], ik);
+	last = ik;
 	for (i = ret + 1; i < s->l; ++i) {
 		c = fm6_comp(s->s[i]);
 		fm6_extend(e, &ik, ok, 0);
@@ -183,7 +194,7 @@ void fm6_extend_further1(const rld_t *e, uint64_t x)
 	s[1].l = s[1].m = 0; s[1].s = 0;
 	fm_retrieve(e, x, &s[0]); seq_reverse(s[0].l, (uint8_t*)s[0].s);
 	for (i = 0; i < s[0].l; ++i) putchar("$ACGTN"[(int)s[0].s[i]]); putchar('\n');
-	fm6_unambi_nei_for(e, 12, 0, &s[0]);
+	fm6_unambi_nei_for(e, 10, 0, &s[0]);
 }
 
 /***************************
