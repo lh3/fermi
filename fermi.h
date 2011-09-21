@@ -2,6 +2,7 @@
 #define FERMI_H
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #define FERMI_VERSION "0.0-dev (r235)"
 
