@@ -9,6 +9,7 @@ int main_exact(int argc, char *argv[]);
 int main_merge(int argc, char *argv[]);
 int main_build(int argc, char *argv[]);
 int main_strlen(int argc, char *argv[]);
+int main_join(int argc, char *argv[]);
 
 double rssmem();
 double cputime();
@@ -29,9 +30,10 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Command: strlen    Total number of symbols to index\n");
 		fprintf(stderr, "         build     Generate FM-Index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
-		fprintf(stderr, "         merge     Merge two FM-Indexes\n");
+		fprintf(stderr, "         merge     Merge multiple FM-Indexes\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
 		fprintf(stderr, "         exact     Find exact matches\n");
+		fprintf(stderr, "         join      Unambiguously join overlaps\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -41,6 +43,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "exact") == 0) ret = main_exact(argc-1, argv+1);
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
 	else if (strcmp(argv[1], "strlen") == 0) ret = main_strlen(argc-1, argv+1);
+	else if (strcmp(argv[1], "join") == 0) ret = main_join(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;

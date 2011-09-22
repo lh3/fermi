@@ -94,6 +94,8 @@ extern "C" {
 	 */
 	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
+	int fm6_unambi_join(const struct __rld_t *e, int min, int n_threads);
+
 #ifdef __cplusplus
 }
 #endif

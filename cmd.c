@@ -157,6 +157,27 @@ int main_unpack(int argc, char *argv[])
 	return 0;
 }
 
+int main_join(int argc, char *argv[])
+{
+	int c, min = 50, use_mmap = 0, n_threads = 1;
+	rld_t *e;
+	while ((c = getopt(argc, argv, "Mm:t:")) >= 0) {
+		switch (c) {
+			case 'm': min = atoi(optarg); break;
+			case 'M': use_mmap = 1; break;
+			case 't': n_threads = atoi(optarg); break;
+		}
+	}
+	if (optind + 1 > argc) {
+		fprintf(stderr, "Usage: fermi join [-M] [-m minLen=%d] [-t nThreads=1] <idxbase.bwt>\n", min);
+		return 1;
+	}
+	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
+	fm6_unambi_join(e, min, n_threads);
+	rld_destroy(e);
+	return 0;
+}
+
 int main_exact(int argc, char *argv[])
 {
 	int c, i, use_mmap = 0;
@@ -181,7 +202,6 @@ int main_exact(int argc, char *argv[])
 
 	a.m = a.n = 0; a.a = 0;
 	str.m = str.l = 0; str.s = 0;
-	fm6_extend_further1(e, 0);
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
 		fm6_smem(e, seq->seq.l, (uint8_t*)seq->seq.s, &a);

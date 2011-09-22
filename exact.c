@@ -32,7 +32,7 @@ int64_t fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 		if (c) {
 			k = e->cnt[c] + ok[c] - 1;
 			kputc(c, s);
-		} else return ok[0];
+		} else return ok[0] - 1;
 	}
 }
 
