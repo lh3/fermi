@@ -43,14 +43,15 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	if (prev->n > 0) {
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 		ret = prev->a[0].info; // the position with largest overlap
-	} else ret = -1; // read is too short
-	// test if s[beg..s->l-1] contained in another read
-	fm6_extend(e, &ik, ok, 1); assert(ok[0].x[2]);
-	if (ik.x[2] != ok[0].x[2]) ret = -2; // the sequence is left contained
-	ik = ok[0];
-	fm6_extend(e, &ik, ok, 0); assert(ok[0].x[2]);
-	if (ik.x[2] != ok[0].x[2]) ret = -3; // the sequence is right contained
-	set_bits(bits, ok); // mark the read(s) has been used
+	} else ret = s->l - beg <= min? -1 : -6; // -1: too short; -6: no overlaps
+	if (beg == 0) { // test if s[beg..s->l-1] contained in another read
+		fm6_extend(e, &ik, ok, 1); assert(ok[0].x[2]);
+		if (ik.x[2] != ok[0].x[2]) ret = -2; // the sequence is left contained
+		ik = ok[0];
+		fm6_extend(e, &ik, ok, 0); assert(ok[0].x[2]);
+		if (ik.x[2] != ok[0].x[2]) ret = -3; // the sequence is right contained
+		set_bits(bits, ok); // mark the read(s) has been used
+	}
 	if (ret < 0) return ret;
 	// forward search for the forward branching test
 	while (prev->n) {
@@ -83,7 +84,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	fm6_overlap_intv(e, s->l, (uint8_t*)s->s, min, ret, 1, prev);
 	//printf("ret=%d, len=%d, prev->n=%d, %d\n", (int)ret, (int)s->l, (int)prev->n, min);
 	// backward search for backward branching test
-	for (i = ret - 1; i >= 0 && prev->n; --i) {
+	for (i = ret - 1; i >= beg && prev->n; --i) {
 		c = s->s[i];
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fm6_extend(e, &prev->a[j], ok, 1);
