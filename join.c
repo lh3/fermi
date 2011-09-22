@@ -120,7 +120,7 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
 		while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits)) >= 0);
-		if (beg <= -4) { // stop due to branching
+		if (beg <= -4) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
 			while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits)) >= 0);
