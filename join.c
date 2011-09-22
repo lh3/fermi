@@ -40,7 +40,6 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	curr->n = prev->n = 0;
 	// backward search for overlapping reads
 	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, s->l - beg - 1, 0, prev);
-	assert(prev->n || (int)s->l < min);
 	if (prev->n > 0) {
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 		ret = prev->a[0].info; // the position with largest overlap
@@ -78,11 +77,11 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 		kputc(fm6_comp(c0), s);
 		swap = curr; curr = prev; prev = swap;
 	}
-	for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
+	//for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
 
 	// forward search for reads overlapping the extension read from the 5'-end
 	fm6_overlap_intv(e, s->l, (uint8_t*)s->s, min, ret, 1, prev);
-	printf("ret=%d, len=%d, prev->n=%d\n", (int)ret, (int)s->l, (int)prev->n);
+	//printf("ret=%d, len=%d, prev->n=%d, %d\n", (int)ret, (int)s->l, (int)prev->n, min);
 	// backward search for backward branching test
 	for (i = ret - 1; i >= 0 && prev->n; --i) {
 		c = s->s[i];
@@ -98,7 +97,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 		}
 		swap = curr; curr = prev; prev = swap;
 	}
-	printf("final: ret=%d, len=%d\n", (int)ret, (int)s->l);
+	//printf("final: ret=%d, len=%d\n", (int)ret, (int)s->l);
 	return ret;
 }
 
@@ -113,7 +112,7 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 	kv_init(a[0]); kv_init(a[1]);
 	s.l = s.m = 0; s.s = 0;
 	out.l = out.m = 0; out.s = 0;
-	for (x = start; x < e->mcnt[1]; x += step) {
+	for (x = start<<1; x < e->mcnt[1]; x += step<<1) {
 		int i, beg = 0, ori_len;
 		k = fm_retrieve(e, x, &s);
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
@@ -131,7 +130,7 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 		kputc('\n', &out);
 		if (__sync_bool_compare_and_swap(&g_print_lock, 0, 1)) {
 			fputs(out.s, fp);
-			out.l = 0;
+			out.l = 0; out.s[0] = 0;
 			__sync_bool_compare_and_swap(&g_print_lock, 1, 0);
 		}
 	}
@@ -171,6 +170,7 @@ int fm6_unambi_join(const rld_t *e, int min, int n_threads)
 	for (j = 0; j < n_threads; ++j) {
 		worker_t *ww = w + j;
 		ww->e = e;
+		ww->min = min;
 		ww->step = n_threads;
 		ww->start = j;
 		ww->bits = bits;
