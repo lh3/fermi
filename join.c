@@ -41,6 +41,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	curr->n = prev->n = 0;
 	// backward search for overlapping reads
 	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, s->l - beg - 1, 0, prev);
+	for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
 	if (prev->n > 0) {
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 		ret = prev->a[0].info; // the position with largest overlap
@@ -79,8 +80,8 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 			for (c0 = -1, max = max2 = 0, c = 1; c < 6; ++c)
 				if (w[c] > max) max2 = max, max = w[c], c0 = c;
 				else if (w[c] > max2) max2 = w[c];
-			return -4;
-			//if ((double)max2 / max > 0.1 || max2 > 3) return -4;
+			//return -4;
+			if ((double)max2 / (max + max2) > 1./3 || max2 > 3) return -7;
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
 					curr->a[i++] = curr->a[j];
@@ -105,7 +106,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 			if (ok[0].x[2]) set_bits(bits, ok);
 			if (ok[c].x[2] + ok[0].x[2] != prev->a[j].x[2]) { // branching
 				s->l = old_l;
-				return -5; // backward branching
+				return -8; // backward branching
 			}
 			if (ok[c].x[2]) kv_push(fmintv_t, *curr, ok[c]);
 		}
@@ -127,18 +128,18 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 	s.l = s.m = 0; s.s = 0;
 	out.l = out.m = 0; out.s = 0;
 	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
-		int i, beg = 0, ori_len;
+		int i, beg = 0, ori_len, ret1;
 		k = fm_retrieve(e, x, &s);
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
 		while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits)) >= 0);
-		if (beg <= -4) { // stop due to branching or no overlaps
+		if ((ret1 = beg) <= -4) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
 			while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits)) >= 0);
 		}
-		kputc('>', &out); kputl((long)x, &out); kputc('\n', &out);
+		kputc('>', &out); kputl((long)x, &out); kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
 			kputc("$ACGTN"[(int)s.s[i]], &out);
 		kputc('\n', &out);
