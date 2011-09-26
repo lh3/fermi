@@ -55,8 +55,8 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	}
 	if (ret < 0) return ret;
 	// forward search for the forward branching test
-	while (prev->n) {
-		int c0, n_c = 0;
+	for (;;) {
+		int c0, n_c = 0, max, max2;
 		memset(w, 0, 48);
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
@@ -73,15 +73,21 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 					kv_push(fmintv_t, *curr, ok[c]);
 				}
 		}
+		if (curr->n == 0) break; // cannot be extended
 		if (j < prev->n) break; // found the only neighbor
-		if (n_c > 1) return -4;
-		for (c0 = 1; c0 < 6; ++c0)
-			if (w[c0]) break;
 		if (n_c > 1) {
+			for (c0 = -1, max = max2 = 0, c = 1; c < 6; ++c)
+				if (w[c] > max) max2 = max, max = w[c], c0 = c;
+				else if (w[c] > max2) max2 = w[c];
+			return -4;
+			//if ((double)max2 / max > 0.1 || max2 > 3) return -4;
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
 					curr->a[i++] = curr->a[j];
 			curr->n = i;
+		} else {
+			for (c0 = 1; c0 < 6; ++c0)
+				if (w[c0]) break;
 		}
 		kputc(fm6_comp(c0), s);
 		swap = curr; curr = prev; prev = swap;
@@ -120,7 +126,7 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 	kv_init(a[0]); kv_init(a[1]);
 	s.l = s.m = 0; s.s = 0;
 	out.l = out.m = 0; out.s = 0;
-	for (x = start<<1; x < e->mcnt[1]; x += step<<1) {
+	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
 		int i, beg = 0, ori_len;
 		k = fm_retrieve(e, x, &s);
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
