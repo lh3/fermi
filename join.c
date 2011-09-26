@@ -7,7 +7,7 @@
 #include "kstring.h"
 #include "utils.h"
 
-static uint64_t g_cnt;
+static uint64_t g_cnt, g_tot;
 static int g_print_lock;
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
@@ -18,6 +18,7 @@ static inline void set_bit(uint64_t *bits, uint64_t x)
 	if ((y & z) == 0) {
 		__sync_add_and_fetch(&g_cnt, 1);
 	}
+	++g_tot;
 }
 
 static inline void set_bits(uint64_t *bits, const fmintv_t *p)
@@ -41,7 +42,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	curr->n = prev->n = 0;
 	// backward search for overlapping reads
 	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, s->l - beg - 1, 0, prev);
-	for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
+	//for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
 	if (prev->n > 0) {
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 		ret = prev->a[0].info; // the position with largest overlap
@@ -57,7 +58,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	if (ret < 0) return ret;
 	// forward search for the forward branching test
 	for (;;) {
-		int c0, n_c = 0, max, max2;
+		int c0, n_c = 0;
 		memset(w, 0, 48);
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
@@ -77,11 +78,13 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 		if (curr->n == 0) break; // cannot be extended
 		if (j < prev->n) break; // found the only neighbor
 		if (n_c > 1) {
-			for (c0 = -1, max = max2 = 0, c = 1; c < 6; ++c)
-				if (w[c] > max) max2 = max, max = w[c], c0 = c;
-				else if (w[c] > max2) max2 = w[c];
-			//return -4;
-			if ((double)max2 / (max + max2) > 1./3 || max2 > 3) return -7;
+			uint64_t max, sum;
+			for (c0 = -1, max = sum = 0, c = 1; c < 6; ++c) {
+				sum += w[c];
+				if (w[c] > max) max = w[c], c0 = c;
+			}
+			//return -7;
+			if ((double)max / sum < 0.8 || sum - max > 2) return -7;
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
 					curr->a[i++] = curr->a[j];
@@ -100,15 +103,43 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	//printf("ret=%d, len=%d, prev->n=%d, %d\n", (int)ret, (int)s->l, (int)prev->n, min);
 	// backward search for backward branching test
 	for (i = ret - 1; i >= beg && prev->n; --i) {
-		c = s->s[i];
+		int c00 = s->s[i], c0, n_c = 0;
+		memset(w, 0, 48);
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
-			fm6_extend(e, &prev->a[j], ok, 1);
+			fmintv_t *p = &prev->a[j];
+			fm6_extend(e, p, ok, 1);
 			if (ok[0].x[2]) set_bits(bits, ok);
-			if (ok[c].x[2] + ok[0].x[2] != prev->a[j].x[2]) { // branching
-				s->l = old_l;
-				return -8; // backward branching
+			for (c = 1; c < 6; ++c)
+				if (ok[c].x[2]) {
+					if (w[c] == 0) ++n_c; // n_c keeps the number of non-zero elements in w[]
+					w[c] += ok[c].x[2];
+					ok[c].info = (p->info&0xffffffffU) | (uint64_t)c<<32;
+					kv_push(fmintv_t, *curr, ok[c]);
+				}
+		}
+		if (n_c > 1) {
+			uint64_t max, sum;
+			for (c0 = -1, max = sum = 0, c = 1; c < 6; ++c) {
+				sum += w[c];
+				if (w[c] > max) max = w[c], c0 = c;
 			}
-			if (ok[c].x[2]) kv_push(fmintv_t, *curr, ok[c]);
+			if ((double)max / sum < 0.8 || sum - max > 2) { // ambiguous; stop extension
+				s->l = old_l;
+				return -8;
+			} else if (c0 != c00) { // the best extension is different the current consensus
+				if (beg == 0 && 0) {
+					memmove(s->s, s->s + ret, s->l - ret);
+					s->l -= ret;
+					return 0;
+				} else {
+					s->l = old_l;
+					return -9;
+				}
+			}
+			for (i = j = 0; j < curr->n; ++j)
+				if ((int)(curr->a[j].info>>32) == c0)
+					curr->a[i++] = curr->a[j];
+			curr->n = i;
 		}
 		swap = curr; curr = prev; prev = swap;
 	}
@@ -134,7 +165,7 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
 		while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits)) >= 0);
-		if ((ret1 = beg) <= -4) { // stop due to branching or no overlaps
+		if ((ret1 = beg) <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
 			while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits)) >= 0);
@@ -193,5 +224,6 @@ int fm6_unambi_join(const rld_t *e, int min, int n_threads)
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(w); free(tid); free(bits);
+	fprintf(stderr, "%lld, %lld\n", g_cnt, g_tot);
 	return 0;
 }
