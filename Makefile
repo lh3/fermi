@@ -1,5 +1,5 @@
 CC=			gcc
-CFLAGS=		-g -Wall #-O2
+CFLAGS=		-g -Wall -O2
 DFLAGS=		-D_DNA_ONLY #-D_USE_RLE6 #-DNDEBUG
 OBJS=		utils.o seq.o ksa.o ksa64.o saux.o rld.o exact.o join.o merge.o build.o cmd.o
 PROG=		fermi

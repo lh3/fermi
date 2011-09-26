@@ -88,7 +88,6 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 				sum += w[c];
 				if (w[c] > max) max = w[c], c0 = c;
 			}
-			//return -7;
 			if ((double)max / sum < 0.8 || sum - max > 2) return -7;
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
@@ -129,18 +128,9 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 				sum += w[c];
 				if (w[c] > max) max = w[c], c0 = c;
 			}
-			if ((double)max / sum < 0.8 || sum - max > 2) { // ambiguous; stop extension
+			if ((double)max / sum < 0.8 || sum - max > 2 || c0 != c00) { // ambiguous; stop extension
 				s->l = old_l;
-				return -8;
-			} else if (c0 != c00) { // the best extension is different the current consensus
-				if (beg == 0 && 0) {
-					memmove(s->s, s->s + ret, s->l - ret);
-					s->l -= ret;
-					return 0;
-				} else {
-					s->l = old_l;
-					return -9;
-				}
+				return c0 != c00? -9 : -8;
 			}
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
