@@ -56,7 +56,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	if (ret < 0) return ret;
 	// forward search for the forward branching test
 	while (prev->n) {
-		int c0 = -1, n_c = 0;
+		int c0, n_c = 0;
 		memset(w, 0, 48);
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
@@ -77,10 +77,12 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 		if (n_c > 1) return -4;
 		for (c0 = 1; c0 < 6; ++c0)
 			if (w[c0]) break;
-		for (i = j = 0; j < curr->n; ++j)
-			if ((int)(curr->a[j].info>>32) == c0 && (i == 0 || ok[c0].x[2] != curr->a[i-1].x[2]))
-				curr->a[i++] = curr->a[j];
-		curr->n = i;
+		if (n_c > 1) {
+			for (i = j = 0; j < curr->n; ++j)
+				if ((int)(curr->a[j].info>>32) == c0)
+					curr->a[i++] = curr->a[j];
+			curr->n = i;
+		}
 		kputc(fm6_comp(c0), s);
 		swap = curr; curr = prev; prev = swap;
 	}
@@ -99,8 +101,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 				s->l = old_l;
 				return -5; // backward branching
 			}
-			if (ok[c].x[2] && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2]))
-				kv_push(fmintv_t, *curr, ok[c]);
+			if (ok[c].x[2]) kv_push(fmintv_t, *curr, ok[c]);
 		}
 		swap = curr; curr = prev; prev = swap;
 	}
