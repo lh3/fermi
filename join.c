@@ -36,6 +36,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	int i, j, c, old_l = s->l, ret;
 	fmintv_t ik, ok[6];
 	fmintv_v *swap;
+	uint64_t w[6];
 
 	curr->n = prev->n = 0;
 	// backward search for overlapping reads
@@ -55,26 +56,31 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	if (ret < 0) return ret;
 	// forward search for the forward branching test
 	while (prev->n) {
-		int c0 = -1;
+		int c0 = -1, n_c = 0;
+		memset(w, 0, 48);
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
 			fm6_extend(e, p, ok, 0);
-			if (ok[0].x[2]) {
-				set_bits(bits, ok);
-				if ((int)p->info == ret && ok[0].x[2] == p->x[2]) break;
+			if (ok[0].x[2]) { // some reads end here
+				set_bits(bits, ok); // mark the reads used
+				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) break;
 			}
-			if (c0 == -1) {
-				for (c = 1; c < 6; ++c) if (ok[c].x[2]) break;
-				if (c == 6) continue;
-				c0 = c;
-			}
-			if (ok[c0].x[2] + ok[0].x[2] < p->x[2]) return -4;
-			if (ok[c0].x[2] && (curr->n == 0 || ok[c0].x[2] != curr->a[curr->n-1].x[2])) {
-				ok[c0].info = p->info;
-				kv_push(fmintv_t, *curr, ok[c0]);
-			}
+			for (c = 1; c < 6; ++c)
+				if (ok[c].x[2]) {
+					if (w[c] == 0) ++n_c; // n_c keeps the number of non-zero elements in w[]
+					w[c] += ok[c].x[2];
+					ok[c].info = (p->info&0xffffffffU) | (uint64_t)c<<32;
+					kv_push(fmintv_t, *curr, ok[c]);
+				}
 		}
-		if (j < prev->n) break;
+		if (j < prev->n) break; // found the only neighbor
+		if (n_c > 1) return -4;
+		for (c0 = 1; c0 < 6; ++c0)
+			if (w[c0]) break;
+		for (i = j = 0; j < curr->n; ++j)
+			if ((int)(curr->a[j].info>>32) == c0 && (i == 0 || ok[c0].x[2] != curr->a[i-1].x[2]))
+				curr->a[i++] = curr->a[j];
+		curr->n = i;
 		kputc(fm6_comp(c0), s);
 		swap = curr; curr = prev; prev = swap;
 	}

@@ -37,7 +37,7 @@ int64_t fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 }
 
 int fm6_extend(const rld_t *e, const fmintv_t *ik, fmintv_t ok[6], int is_back)
-{
+{ // FIXME: this can be accelerated a little by using rld_rank1a() when ik.x[2]==1
 	uint64_t tk[6], tl[6];
 	int i;
 	rld_rank2a(e, ik->x[!is_back] - 1, ik->x[!is_back] - 1 + ik->x[2], tk, tl);
