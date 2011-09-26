@@ -18,7 +18,7 @@ static inline void set_bit(uint64_t *bits, uint64_t x)
 	if ((y & z) == 0) {
 		__sync_add_and_fetch(&g_cnt, 1);
 	}
-	++g_tot;
+	__sync_add_and_fetch(&g_tot, 1);
 }
 
 static inline void set_bits(uint64_t *bits, const fmintv_t *p)
@@ -31,7 +31,7 @@ static inline void set_bits(uint64_t *bits, const fmintv_t *p)
 }
 
 // requirement: s[beg..l-1] must be a full read
-static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits)
+static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first)
 {
 	extern fmintv_t fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p);
 	int i, j, c, old_l = s->l, ret;
@@ -47,7 +47,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 		ret = prev->a[0].info; // the position with largest overlap
 	} else ret = s->l - beg <= min? -1 : -6; // -1: too short; -6: no overlaps
-	if (beg == 0) { // test if s[beg..s->l-1] contained in another read
+	if (beg == 0 && first) { // test if s[beg..s->l-1] contained in another read
 		fm6_extend(e, &ik, ok, 1); assert(ok[0].x[2]);
 		if (ik.x[2] != ok[0].x[2]) ret = -2; // the sequence is left contained
 		ik = ok[0];
@@ -64,8 +64,13 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 			fmintv_t *p = &prev->a[j];
 			fm6_extend(e, p, ok, 0);
 			if (ok[0].x[2]) { // some reads end here
+				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) {
+					if (bits[ok[0].x[0]>>6]>>(ok[0].x[0]&0x3f)&1) ret = -10;
+					set_bits(bits, ok);
+					if (ret < 0) return ret;
+					break;
+				}
 				set_bits(bits, ok); // mark the reads used
-				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) break;
 			}
 			for (c = 1; c < 6; ++c)
 				if (ok[c].x[2]) {
@@ -119,6 +124,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 		}
 		if (n_c > 1) {
 			uint64_t max, sum;
+			int i;
 			for (c0 = -1, max = sum = 0, c = 1; c < 6; ++c) {
 				sum += w[c];
 				if (w[c] > max) max = w[c], c0 = c;
@@ -159,16 +165,17 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 	s.l = s.m = 0; s.s = 0;
 	out.l = out.m = 0; out.s = 0;
 	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
+		//if (x == 7) break;
 		int i, beg = 0, ori_len, ret1;
 		k = fm_retrieve(e, x, &s);
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
-		while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits)) >= 0);
+		while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits, 1)) >= 0);
 		if ((ret1 = beg) <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
-			while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits)) >= 0);
+			while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits, 0)) >= 0);
 		}
 		kputc('>', &out); kputl((long)x, &out); kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
