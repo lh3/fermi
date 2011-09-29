@@ -5,8 +5,11 @@
 #include "fermi.h"
 #include "rld.h"
 #include "kvec.h"
+#include "kstring.h"
+#include "ksort.h"
+KSORT_INIT_GENERIC(uint32_t)
 
-#define B_SHIFT 14
+#define B_SHIFT 10
 #define B_MASK ((1U<<B_SHIFT)-1)
 
 typedef kvec_t(uint32_t) vec32_t;
@@ -60,7 +63,7 @@ static void save_fix(const rld_t *e, const fmintv_t *p, int b, errcorr_t *ec, fm
 		ik = kv_pop(*stack);
 		fm6_extend(e, &ik, ok, 1);
 		if (ok[0].x[2]) {
-			uint32_t x = (uint32_t)b<<30 | (ok[0].x[0] & B_MASK)<<16 | ik.info;
+			uint32_t x = (uint32_t)b<<16 | (ok[0].x[0] & B_MASK)<<18 | ik.info;
 			vec32_t *b = ec->b + (ok[0].x[0]>>B_SHIFT);
 			kv_push(uint32_t, *b, x);
 		}
@@ -73,9 +76,8 @@ static void save_fix(const rld_t *e, const fmintv_t *p, int b, errcorr_t *ec, fm
 	}
 }
 
-errcorr_t *fm6_ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq)
+static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq, errcorr_t *ec)
 {
-	errcorr_t *ec;
 	int64_t i;
 	double drop_ratio = 1. / opt->T + 1e-6;
 	fmintv_v stack;
@@ -83,10 +85,6 @@ errcorr_t *fm6_ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const u
 
 	assert(len > 0);
 	kv_init(stack);
-	ec = calloc(1, sizeof(errcorr_t));
-	ec->n = (e->mcnt[0] + B_MASK) >> B_SHIFT;
-	ec->b = calloc(ec->n, sizeof(vec32_t));
-
 	fm6_set_intv(e, seq[0], ik);
 	for (i = 1; i < len; ++i) {
 		fm6_extend(e, &ik, ok, 1);
@@ -111,7 +109,7 @@ errcorr_t *fm6_ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const u
 					if (ok[b].x[2] >= opt->T) break;
 				for (c = 1; c <= 4; ++c)
 					if (ok[c].x[2] && ok[c].x[2] < opt->T && ok[c].x[2] <= opt->t && (double)ok[c].x[2] / ok[b].x[2] <= drop_ratio)
-						save_fix(e, &ok[c], b, ec, &stack);
+						save_fix(e, &ok[c], b - 1, ec, &stack);
 			} else if (np == 2) { // FIXME: not implemented
 			}
 		} else {
@@ -125,14 +123,71 @@ errcorr_t *fm6_ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const u
 	}
 
 	free(stack.a);
-	return ec;
+}
+
+static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
+{
+	int min, max, mid, x = k&B_MASK;
+	vec32_t *p = &ec->b[k>>B_SHIFT];
+	min = 0; max = p->n - 1;
+	do { // binary search
+		mid = (min + max) / 2;
+		if (x > a->a[mid]) min = mid + 1;
+		else max = mid - 1;
+	} while (min < max && a->a[mid]>>18 != x);
+	for (min = mid - 1; min >= 0 && a->a[min]>>18 == x; --min)
+		kv_push(uint32_t, *a, a->a[min]);
+	for (max = mid; max < a->n && a->a[max]>>18 == x; ++max)
+		kv_push(uint32_t, *a, a->a[max]);
+}
+
+static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
+{
+	int64_t i, k;
+	int j;
+	kstring_t str, out;
+	vec32_t a;
+
+	kv_init(a);
+	str.s = out.s = 0; str.l = str.m = out.l = out.m = 0;
+	start = start >> 1 << 1;
+	for (i = start; i < e->mcnt[1]; i += step<<1) {
+		a.n = 0;
+		k = fm_retrieve(e, i + 1, &str);
+		ec_get_changes(ec, k, &a);
+		for (j = 0; j < a.n; ++j)
+			a.a[j] = (str.l - (a.a[j]&0xffff)) | ((3 - (a.a[j]>>16&3)) << 16);
+		k = fm_retrieve(e, i, &str);
+		ec_get_changes(ec, k, &a);
+		for (j = 0; j < a.n; ++j)
+			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
+		kputc('>', &out); kputl((long)i, &out); kputc('\n', &out);
+		ks_resize(&out, out.l + str.l + 1);
+		for (j = 0; j < str.l; ++j)
+			out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
+		out.s[out.l++] = '\n';
+		out.s[out.l] = 0;
+		{
+			fputs(out.s, stdout);
+			out.l = 0;
+		}
+	}
+	free(str.s); free(out.s);
 }
 
 int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 {
 	uint8_t c;
+	int64_t i;
+	errcorr_t *ec;
+	ec = calloc(1, sizeof(errcorr_t));
+	ec->n = (e->mcnt[0] + B_MASK) >> B_SHIFT;
+	ec->b = calloc(ec->n, sizeof(vec32_t));
 	fm_ec_genpar(e->mcnt[1]/2, (int)((double)e->mcnt[0] / e->mcnt[1] + 0.5), 30.0, 0.01);
 	for (c = 1; c <= 4; ++c)
-		fm6_ec_collect(e, opt, 1, &c);
+		ec_collect(e, opt, 1, &c, ec);
+	for (i = 0; i < ec->n; ++i)
+		ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
+	ec_fix(e, ec, 0, 1);
 	return 0;
 }
