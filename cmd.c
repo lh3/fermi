@@ -183,11 +183,12 @@ int main_correct(int argc, char *argv[])
 	rld_t *e;
 	fmecopt_t opt;
 	opt.T = 6; opt.t = 3; opt.depth = 33; opt.ext = 2;
-	while ((c = getopt(argc, argv, "Mt:d:")) >= 0) {
+	while ((c = getopt(argc, argv, "Mt:d:T:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
 			case 'd': opt.depth = atoi(optarg); break;
+			case 'T': opt.T = atoi(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
