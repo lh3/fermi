@@ -178,6 +178,29 @@ int main_join(int argc, char *argv[])
 	return 0;
 }
 
+int main_correct(int argc, char *argv[])
+{
+	int c, use_mmap = 0, n_threads = 1;
+	rld_t *e;
+	fmecopt_t opt;
+	opt.T = 6; opt.t = 3; opt.depth = 33; opt.ext = 2;
+	while ((c = getopt(argc, argv, "Mt:d:")) >= 0) {
+		switch (c) {
+			case 'M': use_mmap = 1; break;
+			case 't': n_threads = atoi(optarg); break;
+			case 'd': opt.depth = atoi(optarg); break;
+		}
+	}
+	if (optind + 1 > argc) {
+		fprintf(stderr, "Usage: fermi correct [-M] [-t nThreads=1] <idxbase.bwt>\n");
+		return 1;
+	}
+	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
+	fm6_ec_correct(e, &opt, n_threads);
+	rld_destroy(e);
+	return 0;
+}
+
 int main_exact(int argc, char *argv[])
 {
 	int c, i, use_mmap = 0;

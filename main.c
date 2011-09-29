@@ -10,6 +10,7 @@ int main_merge(int argc, char *argv[]);
 int main_build(int argc, char *argv[]);
 int main_strlen(int argc, char *argv[]);
 int main_join(int argc, char *argv[]);
+int main_correct(int argc, char *argv[]);
 
 double rssmem();
 double cputime();
@@ -44,6 +45,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
 	else if (strcmp(argv[1], "strlen") == 0) ret = main_strlen(argc-1, argv+1);
 	else if (strcmp(argv[1], "join") == 0) ret = main_join(argc-1, argv+1);
+	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;
