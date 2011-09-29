@@ -13,7 +13,6 @@ KSEQ_INIT(gzFile, gzread)
 
 int sais(const unsigned char *T, int *SA, int n, int k);
 int sais64(const unsigned char *T, int64_t *SA, int64_t n, int64_t k);
-int sa_check(const unsigned char *T, const int *SA, int n);
 
 void seq_char2nt6(int l, unsigned char *s);
 void seq_revcomp6(int l, unsigned char *s);
