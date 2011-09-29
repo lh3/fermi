@@ -12,6 +12,9 @@ KSORT_INIT_GENERIC(uint32_t)
 #define B_SHIFT 10
 #define B_MASK ((1U<<B_SHIFT)-1)
 
+#define MM_MAX 3
+#define MM_RATIO 0.1
+
 typedef kvec_t(uint32_t) vec32_t;
 
 typedef struct {
@@ -71,31 +74,45 @@ static void ec_retrieve(const rld_t *e, const fmintv_t *p, int T, kstring_t *s)
 	}
 }
 
-static void save_fix(const rld_t *e, const fmintv_t *p, int b, errcorr_t *ec, fmintv_v *stack)
+static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, errcorr_t *ec, fmintv_v *stack)
 {
-	int c;
+	int c, oldl = s->l;
 	fmintv_t ok[6], ik;
 	size_t start = stack->n;
 	ik = *p; ik.info = 0;
 	kv_push(fmintv_t, *stack, ik);
 	while (stack->n > start) {
 		ik = kv_pop(*stack);
+		s->l = oldl + (ik.info&0xffff);
+		kputc(ik.info>>16, s);
 		fm6_extend(e, &ik, ok, 1);
 		if (ok[0].x[2]) {
 			uint64_t k;
-			for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
-				uint32_t x = (uint32_t)b<<16 | (k & B_MASK)<<18 | ik.info;
-				vec32_t *b = ec->b + (k>>B_SHIFT);
-				kv_push(uint32_t, *b, x);
+			int i, mm, l = (int)(ik.info&0xffff) + 1;
+			if (l > oldl) l = oldl;
+			for (i = mm = 0; i < l; ++i)
+				if (s->s[i] != s->s[i + oldl]) ++mm;
+			//for(i=0;i<l;++i)putchar("$ACGTN"[(int)s->s[i]]);printf(" %d %d %d\n",oldl,(int)(ik.info&0xffff)+1,mm); for (i=0;i<l;++i)putchar(s->s[i+oldl]==s->s[i]?'.':"$ACGTN"[(int)s->s[i+oldl]]);putchar('\n');
+			if (mm < MM_MAX || (double)mm/l < MM_RATIO) {
+				for (i = 0; i < l; ++i)
+					if (s->s[i] != s->s[i + oldl]) { // an error
+						uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
+						for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
+							vec32_t *b = ec->b + (k>>B_SHIFT);
+							x |= (k & B_MASK)<<18;
+							kv_push(uint32_t, *b, x);
+						}
+					}
 			}
 		}
 		for (c = 1; c <= 5; ++c) {
 			if (ok[c].x[2]) {
-				ok[c].info = ik.info + 1;
+				ok[c].info = ((ik.info&0xffff) + 1) | c<<16;
 				kv_push(fmintv_t, *stack, ok[c]);
 			}
 		}
 	}
+	s->l = oldl; s->s[s->l] = 0;
 }
 
 static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq, errcorr_t *ec)
@@ -133,12 +150,11 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 					if (ok[b].x[2] >= opt->T) break;
 				str.l = 0; kputc(b, &str);
 				ec_retrieve(e, &ok[b], opt->T, &str);
-				{int l;for(l=0;l<str.l;++l)putchar("$ACGTN"[(int)str.s[l]]);putchar('\n');}
 				for (c = 1; c <= 4; ++c)
 					if (ok[c].x[2] && ok[c].x[2] < opt->T && ok[c].x[2] <= opt->t && (double)ok[c].x[2] / ok[b].x[2] <= drop_ratio)
-						save_fix(e, &ok[c], b - 1, ec, &stack);
+						ec_save_changes(e, &ok[c], &str, ec, &stack);
 			} else if (np == 2) { // FIXME: not implemented
-				fprintf(stderr, "!!!\n");
+				fprintf(stderr, "[E::%s] Not implemented!!!\n", __func__);
 			}
 		} else {
 			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases
