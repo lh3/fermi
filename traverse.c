@@ -19,6 +19,8 @@ typedef struct {
 	vec32_t *b;
 } errcorr_t;
 
+void seq_reverse(int l, unsigned char *s);
+
 static inline double genpar_aux(double x, int64_t k)
 { // compute 1-(1-x)^k, where x<<1 and k is not so large
 	int64_t i;
@@ -63,9 +65,12 @@ static void save_fix(const rld_t *e, const fmintv_t *p, int b, errcorr_t *ec, fm
 		ik = kv_pop(*stack);
 		fm6_extend(e, &ik, ok, 1);
 		if (ok[0].x[2]) {
-			uint32_t x = (uint32_t)b<<16 | (ok[0].x[0] & B_MASK)<<18 | ik.info;
-			vec32_t *b = ec->b + (ok[0].x[0]>>B_SHIFT);
-			kv_push(uint32_t, *b, x);
+			uint64_t k;
+			for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
+				uint32_t x = (uint32_t)b<<16 | (k & B_MASK)<<18 | ik.info;
+				vec32_t *b = ec->b + (k>>B_SHIFT);
+				kv_push(uint32_t, *b, x);
+			}
 		}
 		for (c = 1; c <= 5; ++c) {
 			if (ok[c].x[2]) {
@@ -129,16 +134,19 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 {
 	int min, max, mid, x = k&B_MASK;
 	vec32_t *p = &ec->b[k>>B_SHIFT];
+	if (p->n == 0) return;
 	min = 0; max = p->n - 1;
 	do { // binary search
 		mid = (min + max) / 2;
-		if (x > a->a[mid]) min = mid + 1;
+		if (x > p->a[mid]>>18) min = mid + 1;
 		else max = mid - 1;
-	} while (min < max && a->a[mid]>>18 != x);
-	for (min = mid - 1; min >= 0 && a->a[min]>>18 == x; --min)
-		kv_push(uint32_t, *a, a->a[min]);
-	for (max = mid; max < a->n && a->a[max]>>18 == x; ++max)
-		kv_push(uint32_t, *a, a->a[max]);
+	} while (min < max && p->a[mid]>>18 != x);
+	if (p->a[mid]>>18 == x) {
+		for (min = mid - 1; min >= 0 && p->a[min]>>18 == x; --min)
+			kv_push(uint32_t, *a, p->a[min]);
+		for (max = mid; max < p->n && p->a[max]>>18 == x; ++max)
+			kv_push(uint32_t, *a, p->a[max]);
+	}
 }
 
 static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
@@ -155,14 +163,15 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 		a.n = 0;
 		k = fm_retrieve(e, i + 1, &str);
 		ec_get_changes(ec, k, &a);
-		for (j = 0; j < a.n; ++j)
-			a.a[j] = (str.l - (a.a[j]&0xffff)) | ((3 - (a.a[j]>>16&3)) << 16);
+		for (j = 0; j < a.n; ++j) // lift to the forward strand
+			a.a[j] = (str.l - 1 - (a.a[j]&0xffff)) | ((3 - (a.a[j]>>16&3)) << 16);
 		k = fm_retrieve(e, i, &str);
+		seq_reverse(str.l, (uint8_t*)str.s);
 		ec_get_changes(ec, k, &a);
 		for (j = 0; j < a.n; ++j)
 			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
 		kputc('>', &out); kputl((long)i, &out); kputc('\n', &out);
-		ks_resize(&out, out.l + str.l + 1);
+		ks_resize(&out, out.l + str.l + 2);
 		for (j = 0; j < str.l; ++j)
 			out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
 		out.s[out.l++] = '\n';
