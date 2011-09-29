@@ -179,7 +179,7 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 		mid = (min + max) / 2;
 		if (x > p->a[mid]>>18) min = mid + 1;
 		else max = mid - 1;
-	} while (min < max && p->a[mid]>>18 != x);
+	} while (min <= max && p->a[mid]>>18 != x);
 	if (p->a[mid]>>18 == x) {
 		for (min = mid - 1; min >= 0 && p->a[min]>>18 == x; --min)
 			kv_push(uint32_t, *a, p->a[min]);
