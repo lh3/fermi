@@ -54,6 +54,23 @@ void fm_ec_genpar(int64_t n, int l, double cov, double p)
 	fprintf(stderr, "[M::%s] HiTEC parameters for n=%ld, l=%d and c=%.1f: w_M=%d, T(w_M)=%d\n", __func__, (long)n, l, cov, w, k);
 }
 
+static void ec_retrieve(const rld_t *e, const fmintv_t *p, int T, kstring_t *s)
+{ // get sequences descending from *p, up to bifurcation
+	fmintv_t ok[6], ik = *p;
+	for (;;) {
+		int c, x = 0;
+		fm6_extend(e, &ik, ok, 1);
+		for (c = 1; c <= 4; ++c)
+			if (ok[c].x[2] >= T) ++x;
+		if (x == 1) {
+			for (c = 1; c <= 4; ++c)
+				if (ok[c].x[2] >= T) break;
+			kputc(c, s);
+			ik = ok[c];
+		} else break;
+	}
+}
+
 static void save_fix(const rld_t *e, const fmintv_t *p, int b, errcorr_t *ec, fmintv_v *stack)
 {
 	int c;
@@ -85,11 +102,13 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 {
 	int64_t i;
 	double drop_ratio = 1. / opt->T + 1e-6;
+	kstring_t str;
 	fmintv_v stack;
 	fmintv_t ok[6], ik;
 
 	assert(len > 0);
 	kv_init(stack);
+	str.l = str.m = 0; str.s = 0;
 	fm6_set_intv(e, seq[0], ik);
 	for (i = 1; i < len; ++i) {
 		fm6_extend(e, &ik, ok, 1);
@@ -108,14 +127,18 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 				if (ok[c].x[2] >= opt->T) ++np;
 				else if (ok[c].x[2]) ++nn;
 			}
-			if (np == 1) {
+			if (np == 1 && nn) {
 				int b;
 				for (b = 1; b <= 4; ++b) // base to correct to
 					if (ok[b].x[2] >= opt->T) break;
+				str.l = 0; kputc(b, &str);
+				ec_retrieve(e, &ok[b], opt->T, &str);
+				{int l;for(l=0;l<str.l;++l)putchar("$ACGTN"[(int)str.s[l]]);putchar('\n');}
 				for (c = 1; c <= 4; ++c)
 					if (ok[c].x[2] && ok[c].x[2] < opt->T && ok[c].x[2] <= opt->t && (double)ok[c].x[2] / ok[b].x[2] <= drop_ratio)
 						save_fix(e, &ok[c], b - 1, ec, &stack);
 			} else if (np == 2) { // FIXME: not implemented
+				fprintf(stderr, "!!!\n");
 			}
 		} else {
 			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases
@@ -127,7 +150,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 		}
 	}
 
-	free(stack.a);
+	free(stack.a); free(str.s);
 }
 
 static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
