@@ -260,7 +260,8 @@ static rld_t *rld_restore_header(const char *fn, FILE **_fp)
 	uint64_t a[3];
 	int32_t i, x;
 
-	if ((*_fp = fp = fopen(fn, "rb")) == 0) return 0;
+	if (strcmp(fn, "-") == 0) *_fp = fp = stdin;
+	else if ((*_fp = fp = fopen(fn, "rb")) == 0) return 0;
 	fread(magic, 1, 4, fp);
 	if (strncmp(magic, "RLD\2", 4)) return 0;
 	fread(&x, 4, 1, fp);
