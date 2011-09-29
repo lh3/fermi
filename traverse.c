@@ -9,14 +9,11 @@
 #define B_SHIFT 14
 #define B_MASK ((1U<<B_SHIFT)-1)
 
-typedef struct {
-	int64_t n, m;
-	uint32_t *a;
-} ec_bucket_t;
+typedef kvec_t(uint32_t) vec32_t;
 
 typedef struct {
 	int64_t n;
-	ec_bucket_t *b;
+	vec32_t *b;
 } errcorr_t;
 
 static inline double genpar_aux(double x, int64_t k)
@@ -52,11 +49,35 @@ void fm_ec_genpar(int64_t n, int l, double cov, double p)
 	fprintf(stderr, "[M::%s] HiTEC parameters for n=%ld, l=%d and c=%.1f: w_M=%d, T(w_M)=%d\n", __func__, (long)n, l, cov, w, k);
 }
 
+static void save_fix(const rld_t *e, const fmintv_t *p, int b, errcorr_t *ec, fmintv_v *stack)
+{
+	int c;
+	fmintv_t ok[6], ik;
+	size_t start = stack->n;
+	ik = *p; ik.info = 0;
+	kv_push(fmintv_t, *stack, ik);
+	while (stack->n > start) {
+		ik = kv_pop(*stack);
+		fm6_extend(e, &ik, ok, 1);
+		if (ok[0].x[2]) {
+			uint32_t x = (uint32_t)b<<30 | (ok[0].x[0] & B_MASK)<<16 | ik.info;
+			vec32_t *b = ec->b + (ok[0].x[0]>>B_SHIFT);
+			kv_push(uint32_t, *b, x);
+		}
+		for (c = 1; c <= 5; ++c) {
+			if (ok[c].x[2]) {
+				ok[c].info = ik.info + 1;
+				kv_push(fmintv_t, *stack, ok[c]);
+			}
+		}
+	}
+}
+
 errcorr_t *fm6_ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq)
 {
 	errcorr_t *ec;
-	int64_t i, tot = 0, *cnt;
-	double drop_ratio = 1. / (opt->T + 1);
+	int64_t i;
+	double drop_ratio = 1. / opt->T + 1e-6;
 	fmintv_v stack;
 	fmintv_t ok[6], ik;
 
@@ -64,9 +85,7 @@ errcorr_t *fm6_ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const u
 	kv_init(stack);
 	ec = calloc(1, sizeof(errcorr_t));
 	ec->n = (e->mcnt[0] + B_MASK) >> B_SHIFT;
-	ec->b = calloc(ec->n, sizeof(ec_bucket_t));
-	cnt = alloca(8 * (opt->depth + 1));
-	memset(cnt, 0, 8 * (opt->depth + 1));
+	ec->b = calloc(ec->n, sizeof(vec32_t));
 
 	fm6_set_intv(e, seq[0], ik);
 	for (i = 1; i < len; ++i) {
@@ -80,9 +99,21 @@ errcorr_t *fm6_ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const u
 		int c;
 		ik = kv_pop(stack);
 		fm6_extend(e, &ik, ok, 1);
-		++cnt[ik.info];
-		++tot;
 		if (ik.info == opt->depth) {
+			int np = 0, nn = 0;
+			for (c = 1; c <= 4; ++c) {
+				if (ok[c].x[2] >= opt->T) ++np;
+				else if (ok[c].x[2]) ++nn;
+			}
+			if (np == 1) {
+				int b;
+				for (b = 1; b <= 4; ++b) // base to correct to
+					if (ok[b].x[2] >= opt->T) break;
+				for (c = 1; c <= 4; ++c)
+					if (ok[c].x[2] && ok[c].x[2] < opt->T && ok[c].x[2] <= opt->t && (double)ok[c].x[2] / ok[b].x[2] <= drop_ratio)
+						save_fix(e, &ok[c], b, ec, &stack);
+			} else if (np == 2) { // FIXME: not implemented
+			}
 		} else {
 			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases
 				if (ok[c].x[2] >= opt->T + 1) {
@@ -93,8 +124,6 @@ errcorr_t *fm6_ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const u
 		}
 	}
 
-//	for (i = 1; i <= opt->depth; ++i) fprintf(stderr, "%lld, %lld, %g\n", i, cnt[i], (double)cnt[i] / pow(4, i - len));
-	fprintf(stderr, "%lld\n", tot);
 	free(stack.a);
 	return ec;
 }
