@@ -179,23 +179,36 @@ int main_join(int argc, char *argv[])
 
 int main_correct(int argc, char *argv[])
 {
-	int c, use_mmap = 0, n_threads = 1;
+	int c, use_mmap = 0, n_threads = 1, _w, _T;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.T = 6; opt.t = 3; opt.depth = 33; opt.ext = 2;
-	while ((c = getopt(argc, argv, "Mt:d:T:")) >= 0) {
+	opt.cov = 30.0; opt.t = 3; opt.T = opt.w = 0; opt.err = 0.01;
+	while ((c = getopt(argc, argv, "Mt:k:T:c:m:e:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
+			case 'm': opt.t = atoi(optarg); break;
+			case 'c': opt.cov = atof(optarg); break;
+			case 'e': opt.err = atof(optarg); break;
 			case 't': n_threads = atoi(optarg); break;
-			case 'd': opt.depth = atoi(optarg); break;
+			case 'k': opt.w = atoi(optarg); break;
 			case 'T': opt.T = atoi(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
-		fprintf(stderr, "Usage: fermi correct [-M] [-t nThreads=1] <idxbase.bwt>\n");
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi correct [options] <reads.bwt>\n\n");
+		fprintf(stderr, "Options: -c FLOAT    expected coverage [%.1f]\n", opt.cov);
+		fprintf(stderr, "         -e FLOAT    expected per-base error rate [%.2f]\n", opt.err);
+		fprintf(stderr, "         -m INT      do not correct an error appearing INT times or more [%d]\n", opt.t);
+		fprintf(stderr, "         -k INT      k-mer length [inferred from -c/-e]\n");
+		fprintf(stderr, "         -T INT      threshold for a correct base [inferred from -c/-e]\n");
+		fprintf(stderr, "         -t INT      number of threads [%d]\n\n", n_threads);
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
+	fm_ec_genpar(e->mcnt[1]/2, (int)((double)e->mcnt[0] / e->mcnt[1] + 0.5), opt.cov, opt.err, &_w, &_T);
+	if (opt.w <= 0) opt.w = _w;
+	if (opt.T <= 0) opt.T = _T;
 	fm6_ec_correct(e, &opt, n_threads);
 	rld_destroy(e);
 	return 0;

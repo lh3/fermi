@@ -19,6 +19,7 @@ typedef kvec_t(uint32_t) vec32_t;
 
 typedef struct {
 	int64_t n;
+	uint8_t *lock;
 	vec32_t *b;
 } errcorr_t;
 
@@ -36,7 +37,7 @@ static inline double genpar_aux(double x, int64_t k)
 	return sum;
 }
 
-void fm_ec_genpar(int64_t n, int l, double cov, double p)
+void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T)
 {
 	int w, k;
 	int64_t L;
@@ -55,6 +56,7 @@ void fm_ec_genpar(int64_t n, int l, double cov, double p)
 		if (pow(qc, k) * pow(1 - qc, n - k) > pow(qe, k) * pow(1 - qe, n - k)) break;
 	k += 2;
 	fprintf(stderr, "[M::%s] HiTEC parameters for n=%ld, l=%d and c=%.1f: w_M=%d, T(w_M)=%d\n", __func__, (long)n, l, cov, w, k);
+	*_w = w; *_T = k;
 }
 
 static void ec_retrieve(const rld_t *e, const fmintv_t *p, int T, kstring_t *s)
@@ -99,8 +101,11 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 						uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
 						for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
 							vec32_t *b = ec->b + (k>>B_SHIFT);
+							uint8_t *lock = ec->lock + (k>>B_SHIFT);
 							x |= (k & B_MASK)<<18;
+							while (!__sync_bool_compare_and_swap(lock, 0, 1));
 							kv_push(uint32_t, *b, x);
+							__sync_bool_compare_and_swap(lock, 1, 0);
 						}
 					}
 			}
@@ -126,7 +131,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 	assert(len > 0);
 	kv_init(stack);
 	str.l = str.m = 0; str.s = 0;
-	fm6_set_intv(e, seq[0], ik);
+	fm6_set_intv(e, seq[0], ik); // to get the root of the subtree to be processed
 	for (i = 1; i < len; ++i) {
 		fm6_extend(e, &ik, ok, 1);
 		ik = ok[(int)seq[i]];
@@ -138,26 +143,23 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 		int c;
 		ik = kv_pop(stack);
 		fm6_extend(e, &ik, ok, 1);
-		if (ik.info == opt->depth) {
-			int np = 0, nn = 0;
+		if (ik.info == opt->w) { // then check and correct
+			int np = 0, nn = 0; // #good/bad branches
 			for (c = 1; c <= 4; ++c) {
 				if (ok[c].x[2] >= opt->T) ++np;
 				else if (ok[c].x[2]) ++nn;
 			}
-			if (np == 1 && nn) {
+			if (np == 1 && nn) { // has one good branch and at least one bad branch(es)
 				int b;
 				for (b = 1; b <= 4; ++b) // base to correct to
 					if (ok[b].x[2] >= opt->T) break;
-				str.l = 0; kputc(b, &str);
-				ec_retrieve(e, &ok[b], opt->T, &str);
-				for (c = 1; c <= 4; ++c)
+				str.l = 0; kputc(b, &str); ec_retrieve(e, &ok[b], opt->T, &str); // sequence on the good branch
+				for (c = 1; c <= 4; ++c) // to fix bad branch(es)
 					if (ok[c].x[2] && ok[c].x[2] < opt->T && ok[c].x[2] <= opt->t && (double)ok[c].x[2] / ok[b].x[2] <= drop_ratio)
 						ec_save_changes(e, &ok[c], &str, ec, &stack);
-			} else if (np == 2) { // FIXME: not implemented
-				fprintf(stderr, "[E::%s] Not implemented!!!\n", __func__);
-			}
+			} else if (np == 2); //	fprintf(stderr, "[E::%s] Not implemented!!!\n", __func__); // FIXME: perhaps this is necessary
 		} else {
-			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases
+			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases are skipped
 				if (ok[c].x[2] >= opt->T + 1) {
 					ok[c].info = ik.info + 1;
 					kv_push(fmintv_t, stack, ok[c]);
@@ -175,12 +177,12 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 	vec32_t *p = &ec->b[k>>B_SHIFT];
 	if (p->n == 0) return;
 	min = 0; max = p->n - 1;
-	do { // binary search
+	do { // binary search; linear search for small [min,max] should be faster, but the bottleneck should not be here
 		mid = (min + max) / 2;
 		if (x > p->a[mid]>>18) min = mid + 1;
 		else max = mid - 1;
 	} while (min <= max && p->a[mid]>>18 != x);
-	if (p->a[mid]>>18 == x) {
+	if (p->a[mid]>>18 == x) { // we need to correct this read
 		for (min = mid - 1; min >= 0 && p->a[min]>>18 == x; --min)
 			kv_push(uint32_t, *a, p->a[min]);
 		for (max = mid; max < p->n && p->a[max]>>18 == x; ++max)
@@ -207,7 +209,7 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 		k = fm_retrieve(e, i, &str);
 		seq_reverse(str.l, (uint8_t*)str.s);
 		ec_get_changes(ec, k, &a);
-		for (j = 0; j < a.n; ++j)
+		for (j = 0; j < a.n; ++j) // apply the changes
 			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
 		kputc('>', &out); kputl((long)i, &out); kputc('\n', &out);
 		ks_resize(&out, out.l + str.l + 2);
@@ -231,11 +233,13 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	ec = calloc(1, sizeof(errcorr_t));
 	ec->n = (e->mcnt[0] + B_MASK) >> B_SHIFT;
 	ec->b = calloc(ec->n, sizeof(vec32_t));
-	fm_ec_genpar(e->mcnt[1]/2, (int)((double)e->mcnt[0] / e->mcnt[1] + 0.5), 30.0, 0.01);
+	ec->lock = calloc(ec->n, 1);
 	for (c = 1; c <= 4; ++c)
 		ec_collect(e, opt, 1, &c, ec);
 	for (i = 0; i < ec->n; ++i)
 		ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
 	ec_fix(e, ec, 0, 1);
+	for (i = 0; i < ec->n; ++i) free(ec->b[i].a);
+	free(ec->b); free(ec->lock); free(ec);
 	return 0;
 }

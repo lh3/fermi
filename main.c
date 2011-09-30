@@ -34,6 +34,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         merge     Merge multiple FM-Indexes\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
 		fprintf(stderr, "         exact     Find exact matches\n");
+		fprintf(stderr, "         correct   Error correction\n");
 		fprintf(stderr, "         join      Unambiguously join overlaps\n");
 		fprintf(stderr, "\n");
 		return 1;

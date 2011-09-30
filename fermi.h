@@ -21,8 +21,8 @@ typedef struct {
 } fmjopt_t;
 
 typedef struct {
-	int T, t, depth, ext;
-	float cov;
+	int T, t, w;
+	float cov, err;
 } fmecopt_t;
 
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
@@ -101,6 +101,7 @@ extern "C" {
 
 	int fm6_unambi_join(const struct __rld_t *e, int min, int n_threads);
 
+	void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T);
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, int n_threads);
 
 #ifdef __cplusplus
