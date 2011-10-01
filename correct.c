@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
+#include <pthread.h>
 #include "fermi.h"
 #include "rld.h"
 #include "kvec.h"
@@ -13,7 +14,7 @@ KSORT_INIT_GENERIC(uint32_t)
 #define B_MASK ((1U<<B_SHIFT)-1)
 
 #define MM_MAX 3
-#define MM_RATIO 0.1
+#define MM_RATIO 0.2
 
 typedef kvec_t(uint32_t) vec32_t;
 
@@ -224,6 +225,17 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 	}
 	free(str.s); free(out.s);
 }
+
+#define MAX_DEPTH 3
+#define MAX_SEQS (1<<MAX_DEPTH*2)
+
+typedef struct {
+	const rld_t *e;
+	const fmecopt_t *opt;
+	errcorr_t *ec;
+	int n_seqs;
+	uint32_t seqs[MAX_SEQS];
+} worker1_t;
 
 int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 {
