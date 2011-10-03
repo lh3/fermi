@@ -24,6 +24,8 @@ typedef struct {
 	vec32_t *b;
 } errcorr_t;
 
+static int g_stdout_lock;
+
 void seq_reverse(int l, unsigned char *s);
 
 static inline double genpar_aux(double x, int64_t k)
@@ -226,7 +228,7 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 	free(str.s); free(out.s);
 }
 
-#define MAX_DEPTH 3
+#define MAX_DEPTH 4
 #define MAX_SEQS (1<<MAX_DEPTH*2)
 
 typedef struct {
@@ -237,20 +239,80 @@ typedef struct {
 	uint32_t seqs[MAX_SEQS];
 } worker1_t;
 
+static void *worker1(void *data)
+{
+	worker1_t *w = (worker1_t*)data;
+	int i, j;
+	for (i = 0; i < w->n_seqs; ++i) {
+		uint8_t seq[MAX_DEPTH];
+		for (j = 0; j < MAX_DEPTH; ++j)
+			seq[j] = (w->seqs[i]>>(j*2)&0x3) + 1;
+		ec_collect(w->e, w->opt, MAX_DEPTH, seq, w->ec);
+	}
+	return 0;
+}
+
+typedef struct {
+	const rld_t *e;
+	const errcorr_t *ec;
+	int start, step;
+} worker2_t;
+
+static void *worker2(void *data)
+{
+	worker2_t *w = (worker2_t*)data;
+	ec_fix(w->e, w->ec, w->start, w->step);
+	return 0;
+}
+
 int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 {
-	uint8_t c;
-	int64_t i;
+	int j;
+	int64_t i, avg_bucket_size;
 	errcorr_t *ec;
+	worker1_t *w1;
+	worker2_t *w2;
+	pthread_t *tid;
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+	// initialize "ec" and "tid"
 	ec = calloc(1, sizeof(errcorr_t));
 	ec->n = (e->mcnt[0] + B_MASK) >> B_SHIFT;
 	ec->b = calloc(ec->n, sizeof(vec32_t));
 	ec->lock = calloc(ec->n, 1);
-	for (c = 1; c <= 4; ++c)
-		ec_collect(e, opt, 1, &c, ec);
-	for (i = 0; i < ec->n; ++i)
-		ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
-	ec_fix(e, ec, 0, 1);
+	avg_bucket_size = (int64_t)((e->mcnt[0] - e->mcnt[1]) * opt->err / ec->n + .499);
+	for (i = 0; i < ec->n; ++i) // preallocate memory to reduce potential locking during memory allocation
+		kv_resize(uint32_t, ec->b[i], avg_bucket_size / 2);
+	if (n_threads > MAX_SEQS) n_threads = MAX_SEQS;
+	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
+
+	// initialize and launch worker1
+	w1 = calloc(n_threads, sizeof(worker1_t));
+	for (j = 0; j < n_threads; ++j)
+		w1[j].ec = ec, w1[j].e = e, w1[j].opt = opt;
+	for (i = 0, j = 0; i < MAX_SEQS; ++i) { // assign seqs
+		w1[j].seqs[w1[j].n_seqs++] = i;
+		if (++j == n_threads) j = 0;
+	}
+	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker1, w1 + j);
+	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
+	free(w1);
+
+	// sort the "ec" arrays for binary search; can be multi-threaded, but should be fast enough with a single thread
+	for (i = 0; i < ec->n; ++i) ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
+
+	// initialize and launch worker2
+	w2 = calloc(n_threads, sizeof(worker2_t));
+	for (j = 0; j < n_threads; ++j)
+		w2[j].e = e, w2[j].ec = ec, w2[j].step = n_threads, w2[j].start = j;
+	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
+	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
+	free(w2);
+
+	// free
+	free(tid);
 	for (i = 0; i < ec->n; ++i) free(ec->b[i].a);
 	free(ec->b); free(ec->lock); free(ec);
 	return 0;
