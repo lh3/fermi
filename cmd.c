@@ -200,7 +200,7 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "Usage:   fermi correct [options] <reads.bwt>\n\n");
 		fprintf(stderr, "Options: -c FLOAT    expected coverage [%.1f]\n", opt.cov);
 		fprintf(stderr, "         -e FLOAT    expected per-base error rate [%.2f]\n", opt.err);
-		fprintf(stderr, "         -m INT      do not correct an error appearing INT times or more [%d]\n", opt.t);
+		fprintf(stderr, "         -m INT      do not correct an error appearing more than INT times [%d]\n", opt.t);
 		fprintf(stderr, "         -k INT      k-mer length [inferred from -c/-e]\n");
 		fprintf(stderr, "         -T INT      threshold for a correct base [inferred from -c/-e]\n");
 		fprintf(stderr, "         -t INT      number of threads [%d]\n\n", n_threads);

@@ -221,6 +221,6 @@ int fm6_unambi_join(const rld_t *e, int min, int n_threads)
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(w); free(tid); free(bits);
-	fprintf(stderr, "%lld, %lld\n", g_cnt, g_tot);
+//	fprintf(stderr, "%lld, %lld\n", g_cnt, g_tot);
 	return 0;
 }
