@@ -183,7 +183,7 @@ int main_correct(int argc, char *argv[])
 	rld_t *e;
 	fmecopt_t opt;
 	opt.cov = 30.0; opt.t = 3; opt.T = opt.w = 0; opt.err = 0.01;
-	while ((c = getopt(argc, argv, "Mt:k:T:c:m:e:")) >= 0) {
+	while ((c = getopt(argc, argv, "Mt:k:T:c:m:e:v:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
 			case 'm': opt.t = atoi(optarg); break;
@@ -192,6 +192,7 @@ int main_correct(int argc, char *argv[])
 			case 't': n_threads = atoi(optarg); break;
 			case 'k': opt.w = atoi(optarg); break;
 			case 'T': opt.T = atoi(optarg); break;
+			case 'v': fm_verbose = atoi(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
@@ -206,7 +207,7 @@ int main_correct(int argc, char *argv[])
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	fm_ec_genpar(e->mcnt[1]/2, (int)((double)e->mcnt[0] / e->mcnt[1] + 0.5), opt.cov, opt.err, &_w, &_T);
+	fm_ec_genpar(e->mcnt[1]/2, (int)((double)e->mcnt[0] / e->mcnt[1] - 1 + 0.5), opt.cov, opt.err, &_w, &_T);
 	if (opt.w <= 0) opt.w = _w;
 	if (opt.T <= 0) opt.T = _T;
 	fm6_ec_correct(e, &opt, n_threads);

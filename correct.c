@@ -3,6 +3,7 @@
 #include <string.h>
 #include <math.h>
 #include <pthread.h>
+#include "utils.h"
 #include "fermi.h"
 #include "rld.h"
 #include "kvec.h"
@@ -25,6 +26,7 @@ typedef struct {
 } errcorr_t;
 
 static int g_stdout_lock;
+static double g_tr, g_tc;
 
 void seq_reverse(int l, unsigned char *s);
 
@@ -228,14 +230,14 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 	free(str.s); free(out.s);
 }
 
-#define MAX_DEPTH 4
+#define MAX_DEPTH 5
 #define MAX_SEQS (1<<MAX_DEPTH*2)
 
 typedef struct {
 	const rld_t *e;
 	const fmecopt_t *opt;
 	errcorr_t *ec;
-	int n_seqs;
+	int n_seqs, tid;
 	uint32_t seqs[MAX_SEQS];
 } worker1_t;
 
@@ -244,10 +246,15 @@ static void *worker1(void *data)
 	worker1_t *w = (worker1_t*)data;
 	int i, j;
 	for (i = 0; i < w->n_seqs; ++i) {
-		uint8_t seq[MAX_DEPTH];
+		uint8_t seq[MAX_DEPTH+1];
 		for (j = 0; j < MAX_DEPTH; ++j)
 			seq[j] = (w->seqs[i]>>(j*2)&0x3) + 1;
 		ec_collect(w->e, w->opt, MAX_DEPTH, seq, w->ec);
+		for (j = 0; j < MAX_DEPTH; ++j) seq[j] = "$ACGTN"[(int)seq[j]];
+		seq[MAX_DEPTH] = 0;
+		if (fm_verbose >= 4)
+			fprintf(stderr, "[M::%s@%d] collected errors for suffix '%s' (accumulative real time: %.3f; CPU: %.3f)\n",
+					__func__, w->tid, seq, realtime() - g_tr, cputime() - g_tc);
 	}
 	return 0;
 }
@@ -274,9 +281,11 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	worker2_t *w2;
 	pthread_t *tid;
 	pthread_attr_t attr;
-	pthread_attr_init(&attr);
-	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
+	if (opt->w <= MAX_DEPTH) {
+		fprintf(stderr, "[E::%s] excessively small `-w'. Please increase manually to at least %d.\n", __func__, MAX_DEPTH + 1);
+		return 1;
+	}
 	// initialize "ec" and "tid"
 	ec = calloc(1, sizeof(errcorr_t));
 	ec->n = (e->mcnt[0] + B_MASK) >> B_SHIFT;
@@ -287,11 +296,14 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 		kv_resize(uint32_t, ec->b[i], avg_bucket_size / 2);
 	if (n_threads > MAX_SEQS) n_threads = MAX_SEQS;
 	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
 	// initialize and launch worker1
+	g_tc = cputime(); g_tr = realtime();
 	w1 = calloc(n_threads, sizeof(worker1_t));
 	for (j = 0; j < n_threads; ++j)
-		w1[j].ec = ec, w1[j].e = e, w1[j].opt = opt;
+		w1[j].ec = ec, w1[j].e = e, w1[j].opt = opt, w1[j].tid = j;
 	for (i = 0, j = 0; i < MAX_SEQS; ++i) { // assign seqs
 		w1[j].seqs[w1[j].n_seqs++] = i;
 		if (++j == n_threads) j = 0;
@@ -301,14 +313,19 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	free(w1);
 	// sort the "ec" arrays for binary search; can be multi-threaded, but should be fast enough with a single thread
 	for (i = 0; i < ec->n; ++i) ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] collected errors in %.3f CPU seconds (%.3f wall clock)\n", __func__, cputime() - g_tc, realtime() - g_tr);
 
 	// initialize and launch worker2
+	g_tc = cputime(); g_tr = realtime();
 	w2 = calloc(n_threads, sizeof(worker2_t));
 	for (j = 0; j < n_threads; ++j)
 		w2[j].e = e, w2[j].ec = ec, w2[j].step = n_threads, w2[j].start = j;
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(w2);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] corrected errors in %.3f CPU seconds (%.3f wall clock)\n", __func__, cputime() - g_tc, realtime() - g_tr);
 
 	// free
 	free(tid);
