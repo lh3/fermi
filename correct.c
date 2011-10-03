@@ -202,8 +202,7 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 
 	kv_init(a);
 	str.s = out.s = 0; str.l = str.m = out.l = out.m = 0;
-	start = start >> 1 << 1;
-	for (i = start; i < e->mcnt[1]; i += step<<1) {
+	for (i = start<<1; i < e->mcnt[1]; i += step<<1) {
 		a.n = 0;
 		k = fm_retrieve(e, i + 1, &str);
 		ec_get_changes(ec, k, &a);
@@ -214,14 +213,15 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 		ec_get_changes(ec, k, &a);
 		for (j = 0; j < a.n; ++j) // apply the changes
 			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
-		kputc('>', &out); kputl((long)i, &out); kputc('\n', &out);
+		kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
 		ks_resize(&out, out.l + str.l + 2);
 		for (j = 0; j < str.l; ++j)
 			out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
 		out.s[out.l++] = '\n';
 		out.s[out.l] = 0;
-		{
+		if (__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1)) {
 			fputs(out.s, stdout);
+			__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
 			out.l = 0;
 		}
 	}
@@ -299,7 +299,6 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker1, w1 + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(w1);
-
 	// sort the "ec" arrays for binary search; can be multi-threaded, but should be fast enough with a single thread
 	for (i = 0; i < ec->n; ++i) ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
 
