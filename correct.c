@@ -100,19 +100,19 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 			for (i = mm = 0; i < l; ++i)
 				if (s->s[i] != s->s[i + oldl]) ++mm;
 			//for(i=0;i<l;++i)putchar("$ACGTN"[(int)s->s[i]]);printf(" %d %d %d\n",oldl,(int)(ik.info&0xffff)+1,mm); for (i=0;i<l;++i)putchar(s->s[i+oldl]==s->s[i]?'.':"$ACGTN"[(int)s->s[i+oldl]]);putchar('\n');
-			if (!is_aggressive && mm > MM_MAX && mm > MM_RATIO * l) l = 1; // only fix the first error
-			for (i = 0; i < l; ++i) {
-				if (s->s[i] != s->s[i + oldl]) { // an error
-					uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
-					for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
-						vec32_t *b = ec->b + (k>>B_SHIFT);
-						uint8_t *lock = ec->lock + (k>>B_SHIFT);
-						x |= (k & B_MASK)<<18;
-						while (!__sync_bool_compare_and_swap(lock, 0, 1));
-						kv_push(uint32_t, *b, x);
-						__sync_bool_compare_and_swap(lock, 1, 0);
+			if (is_aggressive || mm <= MM_MAX || mm <= MM_RATIO * l) {
+				for (i = 0; i < l; ++i)
+					if (s->s[i] != s->s[i + oldl]) { // an error
+						uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
+						for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
+							vec32_t *b = ec->b + (k>>B_SHIFT);
+							uint8_t *lock = ec->lock + (k>>B_SHIFT);
+							x |= (k & B_MASK)<<18;
+							while (!__sync_bool_compare_and_swap(lock, 0, 1));
+							kv_push(uint32_t, *b, x);
+							__sync_bool_compare_and_swap(lock, 1, 0);
+						}
 					}
-				}
 			}
 		}
 		for (c = 1; c <= 5; ++c) {
