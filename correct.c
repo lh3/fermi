@@ -184,6 +184,7 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 	min = 0; max = p->n - 1;
 	do { // binary search; linear search for small [min,max] should be faster, but the bottleneck should not be here
 		mid = (min + max) / 2;
+		assert(mid >= 0 && mid < p->n);
 		if (x > p->a[mid]>>18) min = mid + 1;
 		else max = mid - 1;
 	} while (min <= max && p->a[mid]>>18 != x);
@@ -213,8 +214,10 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 		k = fm_retrieve(e, i, &str);
 		seq_reverse(str.l, (uint8_t*)str.s);
 		ec_get_changes(ec, k, &a);
-		for (j = 0; j < a.n; ++j) // apply the changes
+		for (j = 0; j < a.n; ++j) { // apply the changes
 			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
+			assert((a.a[j]&0xffff) < str.l);
+		}
 		kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
 		ks_resize(&out, out.l + str.l + 2);
 		for (j = 0; j < str.l; ++j)
