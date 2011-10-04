@@ -81,7 +81,7 @@ static void ec_retrieve(const rld_t *e, const fmintv_t *p, int T, kstring_t *s)
 	}
 }
 
-static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, errcorr_t *ec, fmintv_v *stack)
+static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, errcorr_t *ec, fmintv_v *stack, int is_aggressive)
 {
 	int c, oldl = s->l;
 	fmintv_t ok[6], ik;
@@ -100,19 +100,19 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 			for (i = mm = 0; i < l; ++i)
 				if (s->s[i] != s->s[i + oldl]) ++mm;
 			//for(i=0;i<l;++i)putchar("$ACGTN"[(int)s->s[i]]);printf(" %d %d %d\n",oldl,(int)(ik.info&0xffff)+1,mm); for (i=0;i<l;++i)putchar(s->s[i+oldl]==s->s[i]?'.':"$ACGTN"[(int)s->s[i+oldl]]);putchar('\n');
-			if (mm < MM_MAX || (double)mm/l < MM_RATIO) {
-				for (i = 0; i < l; ++i)
-					if (s->s[i] != s->s[i + oldl]) { // an error
-						uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
-						for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
-							vec32_t *b = ec->b + (k>>B_SHIFT);
-							uint8_t *lock = ec->lock + (k>>B_SHIFT);
-							x |= (k & B_MASK)<<18;
-							while (!__sync_bool_compare_and_swap(lock, 0, 1));
-							kv_push(uint32_t, *b, x);
-							__sync_bool_compare_and_swap(lock, 1, 0);
-						}
+			if (!is_aggressive && mm > MM_MAX && mm > MM_RATIO * l) l = 1; // only fix the first error
+			for (i = 0; i < l; ++i) {
+				if (s->s[i] != s->s[i + oldl]) { // an error
+					uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
+					for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
+						vec32_t *b = ec->b + (k>>B_SHIFT);
+						uint8_t *lock = ec->lock + (k>>B_SHIFT);
+						x |= (k & B_MASK)<<18;
+						while (!__sync_bool_compare_and_swap(lock, 0, 1));
+						kv_push(uint32_t, *b, x);
+						__sync_bool_compare_and_swap(lock, 1, 0);
 					}
+				}
 			}
 		}
 		for (c = 1; c <= 5; ++c) {
@@ -161,7 +161,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 				str.l = 0; kputc(b, &str); ec_retrieve(e, &ok[b], opt->T, &str); // sequence on the good branch
 				for (c = 1; c <= 4; ++c) // to fix bad branch(es)
 					if (ok[c].x[2] && ok[c].x[2] < opt->T && ok[c].x[2] <= opt->t && (double)ok[c].x[2] / ok[b].x[2] <= drop_ratio)
-						ec_save_changes(e, &ok[c], &str, ec, &stack);
+						ec_save_changes(e, &ok[c], &str, ec, &stack, opt->is_aggressive);
 			} else if (np == 2); //	fprintf(stderr, "[E::%s] Not implemented!!!\n", __func__); // FIXME: perhaps this is necessary
 		} else {
 			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases are skipped

@@ -182,8 +182,8 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1, _w, _T;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.cov = 30.0; opt.t = 3; opt.T = opt.w = 0; opt.err = 0.01;
-	while ((c = getopt(argc, argv, "Mt:k:T:c:m:e:v:")) >= 0) {
+	opt.cov = 30.0; opt.t = 3; opt.T = opt.w = 0; opt.err = 0.01; opt.is_aggressive = 0;
+	while ((c = getopt(argc, argv, "aMt:k:T:c:m:e:v:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
 			case 'm': opt.t = atoi(optarg); break;
@@ -193,6 +193,7 @@ int main_correct(int argc, char *argv[])
 			case 'k': opt.w = atoi(optarg); break;
 			case 'T': opt.T = atoi(optarg); break;
 			case 'v': fm_verbose = atoi(optarg); break;
+			case 'a': opt.is_aggressive = 1; break;
 		}
 	}
 	if (optind + 1 > argc) {
@@ -203,7 +204,8 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "         -m INT      do not correct an error appearing more than INT times [%d]\n", opt.t);
 		fprintf(stderr, "         -k INT      k-mer length [inferred from -c/-e]\n");
 		fprintf(stderr, "         -T INT      threshold for a correct base [inferred from -c/-e]\n");
-		fprintf(stderr, "         -t INT      number of threads [%d]\n\n", n_threads);
+		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
+		fprintf(stderr, "         -a          aggressively fixing clustered errors\n\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);

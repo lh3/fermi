@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-dev (r275)"
+#define FERMI_VERSION "0.0-dev (r276)"
 
 #define FM_MASK30 0x3fffffff
 
@@ -21,7 +21,7 @@ typedef struct {
 } fmjopt_t;
 
 typedef struct {
-	int T, t, w;
+	int T, t, w, is_aggressive;
 	float cov, err;
 } fmecopt_t;
 
