@@ -197,14 +197,14 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 
 static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 {
-	int64_t i, k;
+	int64_t i, k, sum;
 	int j;
 	kstring_t str, out;
 	vec32_t a;
 
 	kv_init(a);
 	str.s = out.s = 0; str.l = str.m = out.l = out.m = 0;
-	for (i = start<<1; i < e->mcnt[1]; i += step<<1) {
+	for (i = start<<1, sum = 0; i < e->mcnt[1]; i += step<<1) {
 		a.n = 0;
 		k = fm_retrieve(e, i + 1, &str);
 		ec_get_changes(ec, k, &a);
@@ -226,8 +226,11 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 			__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
 			out.l = 0;
 		}
+		++sum;
+		if (fm_verbose >= 3 && sum % 1000000 == 0)
+			fprintf(stderr, "[M::%s@%d] processed %ld sequences\n", __func__, start, (long)sum);
 	}
-	free(str.s); free(out.s);
+	free(a.a); free(str.s); free(out.s);
 }
 
 #define MAX_DEPTH 5
@@ -275,7 +278,7 @@ static void *worker2(void *data)
 int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 {
 	int j;
-	int64_t i, avg_bucket_size;
+	int64_t i, avg_bucket_size, sum;
 	errcorr_t *ec;
 	worker1_t *w1;
 	worker2_t *w2;
@@ -312,9 +315,12 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(w1);
 	// sort the "ec" arrays for binary search; can be multi-threaded, but should be fast enough with a single thread
-	for (i = 0; i < ec->n; ++i) ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
+	for (i = 0, sum = 0; i < ec->n; ++i) {
+		ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
+		sum += ec->b[i].n;
+	}
 	if (fm_verbose >= 3)
-		fprintf(stderr, "[M::%s] collected errors in %.3f CPU seconds (%.3f wall clock)\n", __func__, cputime() - g_tc, realtime() - g_tr);
+		fprintf(stderr, "[M::%s] collected %ld errors in %.3f CPU seconds (%.3f wall clock)\n", __func__, (long)sum, cputime() - g_tc, realtime() - g_tr);
 
 	// initialize and launch worker2
 	g_tc = cputime(); g_tr = realtime();
