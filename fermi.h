@@ -21,7 +21,7 @@ typedef struct {
 } fmjopt_t;
 
 typedef struct {
-	int T, t, w, is_aggressive;
+	int T, t, w, max_pre_mm;
 	float cov, err;
 } fmecopt_t;
 

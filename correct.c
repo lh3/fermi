@@ -14,7 +14,6 @@ KSORT_INIT_GENERIC(uint32_t)
 #define B_SHIFT 10
 #define B_MASK ((1U<<B_SHIFT)-1)
 
-#define MM_MAX 3
 #define MM_RATIO 0.2
 
 typedef kvec_t(uint32_t) vec32_t;
@@ -81,7 +80,7 @@ static void ec_retrieve(const rld_t *e, const fmintv_t *p, int T, kstring_t *s)
 	}
 }
 
-static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, errcorr_t *ec, fmintv_v *stack, int is_aggressive)
+static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, errcorr_t *ec, fmintv_v *stack, int max_pre_mm)
 {
 	int c, oldl = s->l;
 	fmintv_t ok[6], ik;
@@ -100,7 +99,7 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 			for (i = mm = 0; i < l; ++i)
 				if (s->s[i] != s->s[i + oldl]) ++mm;
 			//for(i=0;i<l;++i)putchar("$ACGTN"[(int)s->s[i]]);printf(" %d %d %d\n",oldl,(int)(ik.info&0xffff)+1,mm); for (i=0;i<l;++i)putchar(s->s[i+oldl]==s->s[i]?'.':"$ACGTN"[(int)s->s[i+oldl]]);putchar('\n');
-			if (is_aggressive || mm <= MM_MAX || mm <= MM_RATIO * l) {
+			if (mm <= max_pre_mm || mm <= MM_RATIO * l) {
 				for (i = 0; i < l; ++i)
 					if (s->s[i] != s->s[i + oldl]) { // an error
 						uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
@@ -161,7 +160,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 				str.l = 0; kputc(b, &str); ec_retrieve(e, &ok[b], opt->T, &str); // sequence on the good branch
 				for (c = 1; c <= 4; ++c) // to fix bad branch(es)
 					if (ok[c].x[2] && ok[c].x[2] < opt->T && ok[c].x[2] <= opt->t && (double)ok[c].x[2] / ok[b].x[2] <= drop_ratio)
-						ec_save_changes(e, &ok[c], &str, ec, &stack, opt->is_aggressive);
+						ec_save_changes(e, &ok[c], &str, ec, &stack, opt->max_pre_mm);
 			} else if (np == 2); //	fprintf(stderr, "[E::%s] Not implemented!!!\n", __func__); // FIXME: perhaps this is necessary
 		} else {
 			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases are skipped

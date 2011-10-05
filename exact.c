@@ -31,6 +31,7 @@ int64_t fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 		int c = rld_rank1a(e, k, ok);
 		if (c) {
 			k = e->cnt[c] + ok[c] - 1;
+			assert(k < e->mcnt[0]);
 			kputc(c, s);
 		} else return ok[0] - 1;
 	}
