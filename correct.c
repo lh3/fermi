@@ -207,15 +207,17 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 	for (i = start<<1, sum = 0; i < e->mcnt[1]; i += step<<1) {
 		a.n = 0;
 		k = fm_retrieve(e, i + 1, &str);
+		assert(k >= 0 && k < e->mcnt[1]);
 		ec_get_changes(ec, k, &a);
 		for (j = 0; j < a.n; ++j) // lift to the forward strand
 			a.a[j] = (str.l - 1 - (a.a[j]&0xffff)) | ((3 - (a.a[j]>>16&3)) << 16);
 		k = fm_retrieve(e, i, &str);
-		seq_reverse(str.l, (uint8_t*)str.s);
+		assert(k >= 0 && k < e->mcnt[1]);
+		seq_reverse(str.l, (uint8_t*)str.s); // str.s is reversed (but not complemented)
 		ec_get_changes(ec, k, &a);
 		for (j = 0; j < a.n; ++j) { // apply the changes
-			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
 			assert((a.a[j]&0xffff) < str.l);
+			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
 		}
 		kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
 		ks_resize(&out, out.l + str.l + 2);
@@ -293,7 +295,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	}
 	// initialize "ec" and "tid"
 	ec = calloc(1, sizeof(errcorr_t));
-	ec->n = (e->mcnt[0] + B_MASK) >> B_SHIFT;
+	ec->n = (e->mcnt[1] + B_MASK) >> B_SHIFT;
 	ec->b = calloc(ec->n, sizeof(vec32_t));
 	ec->lock = calloc(ec->n, 1);
 	avg_bucket_size = (int64_t)((e->mcnt[0] - e->mcnt[1]) * opt->err / ec->n + .499);

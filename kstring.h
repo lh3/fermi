@@ -144,7 +144,7 @@ static inline int kputuw(unsigned c, kstring_t *s)
 
 static inline int kputl(long c, kstring_t *s)
 {
-	char buf[16];
+	char buf[32];
 	long l, x;
 	if (c == 0) return kputc('0', s);
 	for (l = 0, x = c < 0? -c : c; x > 0; x /= 10) buf[l++] = x%10 + '0';
