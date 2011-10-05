@@ -198,12 +198,12 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 
 static void ec_write(kstring_t *s, int force)
 {
-	if (force || s->l > MAX_OUT_BUF) {
+	if (force || s->l > MAX_OUT_BUF) { // then we lock stdout completely
 		while (__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1));
 		fputs(s->s, stdout);
 		__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
 		s->l = 0;
-	} else {
+	} else { // then we try to write stdout
 		if (__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1)) {
 			fputs(s->s, stdout);
 			__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
@@ -226,14 +226,19 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 		k = fm_retrieve(e, i + 1, &str);
 		assert(k >= 0 && k < e->mcnt[1]);
 		ec_get_changes(ec, k, &a);
-		for (j = 0; j < a.n; ++j) // lift to the forward strand
+		for (j = 0; j < a.n; ++j) { // lift to the forward strand
+			if ((a.a[j]&0xffff) >= str.l)
+				fprintf(stderr, "k=%ld, j=%d, pos=%d, str.l=%d", (long)k, j, a.a[j]&0xffff, str.l);
 			a.a[j] = (str.l - 1 - (a.a[j]&0xffff)) | ((3 - (a.a[j]>>16&3)) << 16);
+		}
 		k = fm_retrieve(e, i, &str);
 		assert(k >= 0 && k < e->mcnt[1]);
 		seq_reverse(str.l, (uint8_t*)str.s); // str.s is reversed (but not complemented)
 		ec_get_changes(ec, k, &a);
 		for (j = 0; j < a.n; ++j) { // apply the changes
-			assert((a.a[j]&0xffff) < str.l);
+			if ((a.a[j]&0xffff) >= str.l)
+				fprintf(stderr, "k=%ld, j=%d, pos=%d, str.l=%d", (long)k, j, a.a[j]&0xffff, str.l);
+			//assert((a.a[j]&0xffff) < str.l);
 			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
 		}
 		kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
