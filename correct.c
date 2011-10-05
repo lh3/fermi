@@ -15,6 +15,7 @@ KSORT_INIT_GENERIC(uint32_t)
 #define B_MASK ((1U<<B_SHIFT)-1)
 
 #define MM_RATIO 0.2
+#define MAX_OUT_BUF 0x10000
 
 typedef kvec_t(uint32_t) vec32_t;
 
@@ -195,6 +196,22 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 	}
 }
 
+static void ec_write(kstring_t *s, int force)
+{
+	if (force || s->l > MAX_OUT_BUF) {
+		while (__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1));
+		fputs(s->s, stdout);
+		__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
+		s->l = 0;
+	} else {
+		if (__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1)) {
+			fputs(s->s, stdout);
+			__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
+			s->l = 0;
+		}
+	}
+}
+
 static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 {
 	int64_t i, k, sum;
@@ -225,15 +242,12 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 			out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
 		out.s[out.l++] = '\n';
 		out.s[out.l] = 0;
-		if (__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1)) {
-			fputs(out.s, stdout);
-			__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
-			out.l = 0;
-		}
+		ec_write(&out, 0);
 		++sum;
 		if (fm_verbose >= 3 && sum % 1000000 == 0)
-			fprintf(stderr, "[M::%s@%d] processed %ld sequences\n", __func__, start, (long)sum);
+			fprintf(stderr, "[M::%s@%d] processed %ld sequences; %d\n", __func__, start, (long)sum, out.m);
 	}
+	ec_write(&out, 1);
 	free(a.a); free(str.s); free(out.s);
 }
 
