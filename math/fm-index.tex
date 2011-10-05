@@ -12,15 +12,18 @@
 \newtheorem{proposition}[thm]{Proposition}
 \firstpage{1}
 
-\title[Mathematical Notes on FM-index]{FM-index}
+\title[FM-index]{Mathematical Notes on FM-index}
 
 \author[Li]{Heng Li$^1$}
 
-\address{$^1$Broad Institute}
+\address{$^1$Broad Institute, 7 Cambridge Center, Cambridge, MA 02142}
 
 \maketitle
 
 \begin{methods}
+\section{METHODS}
+\subsection{Preliminaries}
+
 \begin{table}[!htb]
 \processtable{Notations}
 {\begin{tabular}{lp{7cm}}
@@ -43,6 +46,54 @@ $s(a,k)$ & $s(a,k)=i$ such that $r(a,i)=k$ and $r(a,i+1)=k+1$\\
 \botrule
 \end{tabular}}{}
 \end{table}
+
+\subsubsection{Strings}
+Let $\Sigma$ be a finite alphabet. Symbol `\$', which is called a
+\emph{sentinel}, is not present in $\Sigma$ and is lexicographically smaller
+than all symbols in $\Sigma$. Given a string $X=a_0a_1\ldots a_{n-1}$ over
+$\Sigma\cup\{\$\}$, let $X[i]=a_i$ be the symbol at position $i$ ($i=0,1,\ldots,n-1$),
+$X[i,j]=a_i\ldots a_j$ be a substring from position $i$ to $j$ inclusive, and
+$X_i=X[i,n-1]$ be the suffix starting from position $i$.  The length of a
+string $X$, denoted by $|X|$, equals the number of symbols in $X$.  In
+particular, a string that does not contain any symbols is called a \emph{null
+string} and is written as $\epsilon$. Obviously, $|\epsilon|=0$.
+
+\subsubsection{Sentinels}
+A string $X$ is said to be \emph{terminated} if its last symbol is a sentinel
+(i.e. $X[|X|-1]=\$$). Different from many other literatures, we allow a string
+to contain multiple sentinels and a sentinel to appear in the middle of the
+string. The lexicographical order of two sentinels is determined by their
+positions in the string. More exactly, suppose both $X[i]$ and $X[j]$ are
+sentinels.  $X[i]<X[j]$ stands if and only if $i<j$.
+
+\subsubsection{Suffix array (SA)}
+Suppose $X$ is a terminated string. We start from the \emph{inverse suffix
+array}, which is defined on $\{0,\ldots,|X|-1\}$ as
+\begin{equation}\label{eq:iS}
+S'(i)\triangleq|\{j:X_j<X_i\}|
+\end{equation}
+i.e. $S'(i)$ is the rank of suffix $X_i$.
+Obviously, $0\leq S'(i)\leq |X|-1$, and $S'(i)=S'(j)$ if and only if $i=j$.
+Thus $S'$ is in fact a permutation of integers $0,\ldots,|X|-1$ and invertible.
+The inverse of $S'$ is \emph{suffix array} $S$. In a suffix array $S$, $S(k)$
+is the position of the $k$-th ($k=0,\ldots,|X|-1$) smallest suffix.
+
+\subsubsection{Compressed suffix array (CSA)}
+The compressed suffix array (CSA) $\Psi$ is defined as
+\begin{equation}\label{eq:Psi}
+\Psi(k)\triangleq\left\{\begin{array}{ll}
+S'(S(k)-1) & \mbox{if $S(k)>0$}\\
+S'(|X|-1) & \mbox{otherwise}
+\end{array}\right.
+\end{equation}
+CSA $\Psi$ is also a permutation of integers $0,\ldots,|X|-1$ and thus invertible.
+We can prove that the inverse CSA $\Psi'$ satisfies that
+\begin{equation}\label{eq:iPsi}
+\Psi'(k)\triangleq\left\{\begin{array}{ll}
+S'(S(k)+1) & \mbox{if $S(k)\not=|X|-1$}\\
+S'(0) & \mbox{otherwise}
+\end{array}\right.
+\end{equation}
 
 %\begin{table}[!htb]
 %\processtable{Suffix array, BWT and CSA of $X=\mathtt{GTG\$}_1\mathtt{ATG\$}_2$}
@@ -150,22 +201,6 @@ r(a,R_U(W))&=&\big|\{l:X[l-1]=a\land S'(l)\le R_U(W)\}\big|\\
 &=&\big|\{l:X[l-1]=a\land X_{l-1}<aW\flat\}\big|+1\\
 \end{eqnarray*}
 The other equation can be proved.
-
-\raggedleft{\qedsymbol}
-\end{proof}
-
-\begin{proposition}[Prefix trimming]
-\begin{eqnarray*}
-R_L(W)&=&s(a,R_L(aW)-C(a))+1 \\
-R_U(W)&=&s(a,R_U(aW)-C(a)+1)
-\end{eqnarray*}
-\end{proposition}
-\begin{proof}
-If we note that
-$$
-s(a,r(a,i))=r(a,s(a,i))=i
-$$
-the two equations are easy to prove.
 
 \raggedleft{\qedsymbol}
 \end{proof}
