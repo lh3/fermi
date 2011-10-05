@@ -18,14 +18,15 @@ KSORT_INIT_GENERIC(uint32_t)
 #define MAX_OUT_BUF 0x10000
 
 typedef kvec_t(uint32_t) vec32_t;
+typedef volatile uint8_t fm_spinlock_t;
 
 typedef struct {
 	int64_t n;
-	uint8_t *lock;
+	fm_spinlock_t *lock;
 	vec32_t *b;
 } errcorr_t;
 
-static int g_stdout_lock;
+static volatile int g_stdout_lock;
 static double g_tr, g_tc;
 
 void seq_reverse(int l, unsigned char *s);
@@ -106,7 +107,7 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 						uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
 						for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
 							vec32_t *b = ec->b + (k>>B_SHIFT);
-							uint8_t *lock = ec->lock + (k>>B_SHIFT);
+							fm_spinlock_t *lock = ec->lock + (k>>B_SHIFT);
 							x |= (k & B_MASK)<<18;
 							while (!__sync_bool_compare_and_swap(lock, 0, 1));
 							kv_push(uint32_t, *b, x);
@@ -359,6 +360,6 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	// free
 	free(tid);
 	for (i = 0; i < ec->n; ++i) free(ec->b[i].a);
-	free(ec->b); free(ec->lock); free(ec);
+	free(ec->b); free((void*)ec->lock); free(ec);
 	return 0;
 }
