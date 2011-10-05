@@ -199,7 +199,7 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 static void ec_write(kstring_t *s, int force)
 {
 	if (force || s->l > MAX_OUT_BUF) { // then we lock stdout completely
-		while (__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1));
+		while (!__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1));
 		fputs(s->s, stdout);
 		__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
 		s->l = 0;
