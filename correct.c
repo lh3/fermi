@@ -15,7 +15,6 @@ KSORT_INIT_GENERIC(uint32_t)
 #define B_MASK ((1U<<B_SHIFT)-1)
 
 #define MM_RATIO 0.2
-#define MAX_OUT_BUF 0x10000
 
 typedef kvec_t(uint32_t) vec32_t;
 typedef volatile uint8_t fm_spinlock_t;
@@ -197,19 +196,18 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 	}
 }
 
-static void ec_write(kstring_t *s, int force)
+void fm_print_buffer(kstring_t *buf, volatile int *lock, int force)
 {
-	if (force || s->l > MAX_OUT_BUF) { // then we lock stdout completely
-		while (__sync_lock_test_and_set(&g_stdout_lock, 1));
-		fputs(s->s, stdout);
-		__sync_lock_release(&g_stdout_lock);
-		s->l = 0;
-	} else { // then we try to write stdout
-		if (s->l > MAX_OUT_BUF>>2 && __sync_bool_compare_and_swap(&g_stdout_lock, 0, 1)) {
-			fputs(s->s, stdout);
-			__sync_lock_release(&g_stdout_lock);
-			s->l = 0;
-		}
+	static const int MAX_OUT_BUF = 0x10000;
+	if (force || buf->l >= MAX_OUT_BUF) { // lock stdout and output
+		while (__sync_lock_test_and_set(lock, 1));
+		fputs(buf->s, stdout);
+		__sync_lock_release(lock);
+		buf->l = 0;
+	} else if (buf->l >= MAX_OUT_BUF>>2 && __sync_bool_compare_and_swap(lock, 0, 1)) {
+		fputs(buf->s, stdout);
+		__sync_lock_release(lock);
+		buf->l = 0;
 	}
 }
 
@@ -243,12 +241,12 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 			out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
 		out.s[out.l++] = '\n';
 		out.s[out.l] = 0;
-		ec_write(&out, 0);
+		fm_print_buffer(&out, &g_stdout_lock, 0);
 		++sum;
 		if (fm_verbose >= 3 && sum % 1000000 == 0)
 			fprintf(stderr, "[M::%s@%d] processed %ld sequences\n", __func__, start, (long)sum);
 	}
-	ec_write(&out, 1);
+	fm_print_buffer(&out, &g_stdout_lock, 1);
 	free(a.a); free(str.s); free(out.s);
 }
 

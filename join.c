@@ -7,18 +7,14 @@
 #include "kstring.h"
 #include "utils.h"
 
-static uint64_t g_cnt, g_tot;
-static int g_print_lock;
+static volatile int g_print_lock;
+void fm_print_buffer(kstring_t *buf, volatile int *lock, int force);
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
 	uint64_t *p = bits + (x>>6);
-	uint64_t z = 1LLU<<(x&0x3f), y;
-	y = __sync_fetch_and_or(p, z);
-	if ((y & z) == 0) {
-		__sync_add_and_fetch(&g_cnt, 1);
-	}
-	__sync_add_and_fetch(&g_tot, 1);
+	uint64_t z = 1LLU<<(x&0x3f);
+	__sync_fetch_and_or(p, z);
 }
 
 static inline void set_bits(uint64_t *bits, const fmintv_t *p)
@@ -194,15 +190,9 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 		for (i = 0; i < s.l; ++i)
 			kputc("$ACGTN"[(int)s.s[i]], &out);
 		kputc('\n', &out);
-		if (__sync_bool_compare_and_swap(&g_print_lock, 0, 1)) {
-			fputs(out.s, fp);
-			out.l = 0; out.s[0] = 0;
-			__sync_bool_compare_and_swap(&g_print_lock, 1, 0);
-		}
+		fm_print_buffer(&out, &g_print_lock, 0);
 	}
-	while (__sync_bool_compare_and_swap(&g_print_lock, 0, 1) == 0); // busy waiting
-	fputs(out.s, fp);
-	__sync_bool_compare_and_swap(&g_print_lock, 1, 0);
+	fm_print_buffer(&out, &g_print_lock, 1);
 	free(a[0].a); free(a[1].a);
 	free(s.s); free(out.s);
 }
@@ -244,6 +234,5 @@ int fm6_unambi_join(const rld_t *e, int min, int n_threads)
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(w); free(tid); free(bits);
-//	fprintf(stderr, "%lld, %lld\n", g_cnt, g_tot);
 	return 0;
 }
