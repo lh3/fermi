@@ -109,9 +109,9 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 							vec32_t *b = ec->b + (k>>B_SHIFT);
 							fm_spinlock_t *lock = ec->lock + (k>>B_SHIFT);
 							x |= (k & B_MASK)<<18;
-							while (!__sync_bool_compare_and_swap(lock, 0, 1));
+							while (__sync_lock_test_and_set(lock, 1));
 							kv_push(uint32_t, *b, x);
-							__sync_bool_compare_and_swap(lock, 1, 0);
+							__sync_lock_release(lock);
 						}
 					}
 			}
@@ -200,14 +200,14 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 static void ec_write(kstring_t *s, int force)
 {
 	if (force || s->l > MAX_OUT_BUF) { // then we lock stdout completely
-		while (!__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1));
+		while (__sync_lock_test_and_set(&g_stdout_lock, 1));
 		fputs(s->s, stdout);
-		__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
+		__sync_lock_release(&g_stdout_lock);
 		s->l = 0;
 	} else { // then we try to write stdout
-		if (__sync_bool_compare_and_swap(&g_stdout_lock, 0, 1)) {
+		if (s->l > MAX_OUT_BUF>>2 && __sync_bool_compare_and_swap(&g_stdout_lock, 0, 1)) {
 			fputs(s->s, stdout);
-			__sync_bool_compare_and_swap(&g_stdout_lock, 1, 0);
+			__sync_lock_release(&g_stdout_lock);
 			s->l = 0;
 		}
 	}
@@ -227,19 +227,14 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 		k = fm_retrieve(e, i + 1, &str);
 		assert(k >= 0 && k < e->mcnt[1]);
 		ec_get_changes(ec, k, &a);
-		for (j = 0; j < a.n; ++j) { // lift to the forward strand
-			if ((a.a[j]&0xffff) >= str.l)
-				fprintf(stderr, "k=%ld, j=%d, pos=%d, str.l=%d", (long)k, j, a.a[j]&0xffff, str.l);
+		for (j = 0; j < a.n; ++j) // lift to the forward strand
 			a.a[j] = (str.l - 1 - (a.a[j]&0xffff)) | ((3 - (a.a[j]>>16&3)) << 16);
-		}
 		k = fm_retrieve(e, i, &str);
 		assert(k >= 0 && k < e->mcnt[1]);
 		seq_reverse(str.l, (uint8_t*)str.s); // str.s is reversed (but not complemented)
 		ec_get_changes(ec, k, &a);
 		for (j = 0; j < a.n; ++j) { // apply the changes
-			if ((a.a[j]&0xffff) >= str.l)
-				fprintf(stderr, "k=%ld, j=%d, pos=%d, str.l=%d", (long)k, j, a.a[j]&0xffff, str.l);
-			//assert((a.a[j]&0xffff) < str.l);
+			assert((a.a[j]&0xffff) < str.l);
 			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
 		}
 		kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
@@ -251,7 +246,7 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
 		ec_write(&out, 0);
 		++sum;
 		if (fm_verbose >= 3 && sum % 1000000 == 0)
-			fprintf(stderr, "[M::%s@%d] processed %ld sequences; %d\n", __func__, start, (long)sum, out.m);
+			fprintf(stderr, "[M::%s@%d] processed %ld sequences\n", __func__, start, (long)sum);
 	}
 	ec_write(&out, 1);
 	free(a.a); free(str.s); free(out.s);

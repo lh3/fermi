@@ -30,10 +30,33 @@ static inline void set_bits(uint64_t *bits, const fmintv_t *p)
 	}
 }
 
+fmintv_t fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p)
+{ // requirement: seq[j] matches the end of a read
+	extern void fm_reverse_fmivec(fmintv_v *p);
+	int c, depth, dir, end;
+	fmintv_t ik, ok[6];
+	p->n = 0;
+	dir = at5? 1 : -1; // at5 is true iff we start from the 5'-end of a read
+	end = at5? len : -1;
+	c = seq[j];
+	fm6_set_intv(e, c, ik);
+	for (depth = 1, j += dir; j != end; j += dir, ++depth) {
+		c = at5? fm6_comp(seq[j]) : seq[j];
+		fm6_extend(e, &ik, ok, !at5);
+		if (!ok[c].x[2]) break; // cannot be extended
+		if (depth >= min && ok[0].x[2]) {
+			//ik.info = j - dir; kv_push(fmintv_t, *p, ik);
+			ok[0].info = j - dir; kv_push(fmintv_t, *p, ok[0]);
+		}
+		ik = ok[c];
+	}
+	fm_reverse_fmivec(p); // reverse the array such that the smallest interval comes first
+	return ik;
+}
+
 // requirement: s[beg..l-1] must be a full read
 static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first)
 {
-	extern fmintv_t fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p);
 	int i, j, c, old_l = s->l, ret;
 	fmintv_t ik, ok[6];
 	fmintv_v *swap;
