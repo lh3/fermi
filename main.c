@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 	if (ret == 0 && fm_verbose >= 3) {
-		fprintf(stderr, "[M::%s] Version: %s\n", FERMI_VERSION);
+		fprintf(stderr, "[M::%s] Version: %s\n", __func__, FERMI_VERSION);
 		fprintf(stderr, "[M::%s] CMD:", __func__);
 		for (i = 0; i < argc; ++i)
 			fprintf(stderr, " %s", argv[i]);
