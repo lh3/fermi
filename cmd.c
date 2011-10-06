@@ -395,18 +395,24 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 					if (isalpha(seq->seq.s[j]) && seq->qual.s[j] - 33 < min_q)
 						seq->seq.s[j] = 'N';
 			if (trim_end_N) {
-				int end = -1, start;
+				int end, start, ostart, oend = -1, min_l = seq->seq.l;
 				ks_resize(&str, seq->seq.m);
 				str.l = 0;
 				while (1) {
-					for (j = end + 1; j < seq->seq.l && (!isalpha(seq->seq.s[j]) || toupper(seq->seq.s[j]) == 'N'); ++j); // skip leading rubbish
-					if ((start = j) >= seq->seq.l) break; // end of sequence
-					for (j = start; isalpha(seq->seq.s[j]) && toupper(seq->seq.s[j]) != 'N'; ++j)
-						str.s[str.l++] = seq->seq.s[j];
+					for (j = oend + 1; j < seq->seq.l && !isalpha(seq->seq.s[j]); ++j); // skip leading rubbish
+					if ((ostart = j) >= seq->seq.l) break; // start of the sequence
+					for (j = ostart; toupper(seq->seq.s[j]) == 'N'; ++j); // skip leading N
+					start = j;
+					for (j = start; isalpha(seq->seq.s[j]); ++j); // find the end
+					oend = j;
+					for (j = oend - 1; j >= ostart && toupper(seq->seq.s[j]) == 'N'; --j); // skip trailing N
+					end = j + 1;
+					for (j = start; j < end; ++j) str.s[str.l++] = seq->seq.s[j]; // copy sequence; can be done in place actually
+					if (min_l < end - start) min_l = end - start;
 					str.s[str.l++] = '.';
 					str.s[str.l] = 0;
-					end = j;
 				}
+				if (min_l < 2) continue; // 1bp read? skip
 				str.s[str.l-1] = 0;
 				memcpy(seq->seq.s, str.s, str.l);
 				seq->seq.l = str.l - 1;
