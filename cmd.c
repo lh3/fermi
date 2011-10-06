@@ -161,10 +161,12 @@ int main_join(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	fmjopt_t opt;
 	rld_t *e;
-	opt.min_match = 50; opt.max_match = 50; opt.t = 3; opt.r = 0.2;
-	while ((c = getopt(argc, argv, "Ml:t:r:m:")) >= 0) {
+	opt.min_match = 30; opt.max_match = 50; opt.t = 3; opt.r = 0.2; opt.do_dedup = 1;
+	while ((c = getopt(argc, argv, "MDl:t:r:m:L:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_match = atoi(optarg); break;
+			case 'L': opt.max_match = atoi(optarg); break;
+			case 'D': opt.do_dedup = 0; break;
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
 			case 'r': opt.r = atof(optarg); break;
@@ -175,9 +177,12 @@ int main_join(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   fermi join [options] <reads.bwt>\n\n");
 		fprintf(stderr, "Options: -l INT      min match [%d]\n", opt.min_match);
+		fprintf(stderr, "         -L INT      max match [%d]\n", opt.max_match);
 		fprintf(stderr, "         -m INT      stop extension if a conflict appears more than INT times [%d]\n", opt.t);
 		fprintf(stderr, "         -r FLOAT    step extension if more than FLOAT fraction is conflictive [%.2f]\n", opt.r);
-		fprintf(stderr, "         -t INT      number of threads [1]\n\n");
+		fprintf(stderr, "         -t INT      number of threads [1]\n");
+		fprintf(stderr, "         -D          do NOT collapse reads with the same prefix/suffix\n");
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
@@ -191,7 +196,7 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1, _w, _T;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.cov = 30.0; opt.t = 3; opt.T = opt.w = 0; opt.err = 0.01; opt.max_pre_mm = 4;
+	opt.cov = 30.0; opt.t = 3; opt.T = opt.w = 0; opt.err = 0.01; opt.max_pre_mm = 8;
 	while ((c = getopt(argc, argv, "A:Mt:k:T:c:m:e:v:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;

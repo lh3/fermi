@@ -26,7 +26,7 @@ static inline void set_bits(uint64_t *bits, const fmintv_t *p)
 	}
 }
 
-fmintv_t fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p)
+static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p)
 { // requirement: seq[j] matches the end of a read
 	extern void fm_reverse_fmivec(fmintv_v *p);
 	int c, depth, dir, end;
@@ -60,7 +60,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 
 	curr->n = prev->n = 0;
 	// backward search for overlapping reads
-	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, opt->min_match, s->l - beg - 1, 0, prev);
+	ik = overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, opt->min_match, s->l - beg - 1, 0, prev);
 	//for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
 	if (prev->n > 0) {
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
@@ -94,20 +94,37 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 			for (c = 1; c < 6; ++c)
 				if (ok[c].x[2]) {
 					if (w[c] == 0) ++n_c; // n_c keeps the number of non-zero elements in w[]
-					w[c] += ok[c].x[2];
+					w[c] += opt->do_dedup? 1 : ok[c].x[2];
 					ok[c].info = (p->info&0xffffffffU) | (uint64_t)c<<32;
 					kv_push(fmintv_t, *curr, ok[c]);
 				}
 		}
 		if (curr->n == 0) break; // cannot be extended
 		if (j < prev->n) break; // found the only neighbor
-		if (n_c > 1) {
+		if (n_c > 1) { // two or more paths
 			uint64_t max, sum;
 			for (c0 = -1, max = sum = 0, c = 1; c < 6; ++c) {
 				sum += w[c];
 				if (w[c] > max) max = w[c], c0 = c;
 			}
-			if ((double)max / sum < 1. - opt->r || sum - max >= opt->t) return -7;
+			if ((double)max / sum < 1. - opt->r || sum - max >= opt->t) { // significant conflict
+				int c00 = c0;
+				memset(w, 0, 48);
+				for (j = 0; j < curr->n; ++j) { // count occurrences for hits longer than opt->max_match
+					if (old_l - (curr->a[j].info&0xffffffff) < opt->max_match) break;
+					w[curr->a[j].info>>32] += opt->do_dedup? 1 : curr->a[j].x[2];
+				}
+				for (c0 = -1, c = 1, sum = max = 0; c < 6; ++c) { // get the best base
+					sum += w[c];
+					if (w[c] > max) max = w[c], c0 = c;
+				}
+				if (sum == 0) c0 = c00;
+				for (; j < curr->n; ++j) // continue to count the best base
+					if (curr->a[j].info>>32 == c0)
+						sum += opt->do_dedup? 1 : curr->a[j].x[2], max += opt->do_dedup? 1 : curr->a[j].x[2];
+					else break;
+				if (sum == 0 || (double)max / sum < 1. - opt->r || sum - max >= opt->t) return -7;
+			}
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
 					curr->a[i++] = curr->a[j];
@@ -122,7 +139,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 	//for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
 
 	// forward search for reads overlapping the extension read from the 5'-end
-	fm6_overlap_intv(e, s->l, (uint8_t*)s->s, opt->min_match, ret, 1, prev);
+	overlap_intv(e, s->l, (uint8_t*)s->s, opt->max_match, ret, 1, prev);
 	//printf("ret=%d, len=%d, prev->n=%d, %d\n", (int)ret, (int)s->l, (int)prev->n, min);
 	// backward search for backward branching test
 	for (i = ret - 1; i >= beg && prev->n; --i) {
@@ -135,7 +152,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 			for (c = 1; c < 6; ++c)
 				if (ok[c].x[2]) {
 					if (w[c] == 0) ++n_c; // n_c keeps the number of non-zero elements in w[]
-					w[c] += ok[c].x[2];
+					w[c] += opt->do_dedup? 1 : ok[c].x[2];
 					ok[c].info = (p->info&0xffffffffU) | (uint64_t)c<<32;
 					kv_push(fmintv_t, *curr, ok[c]);
 				}
@@ -147,7 +164,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 				sum += w[c];
 				if (w[c] > max) max = w[c], c0 = c;
 			}
-			if ((double)max / sum < 0.8 || sum - max > 2 || c0 != c00) { // ambiguous; stop extension
+			if ((double)max / sum < 1. - opt->r || sum - max >= opt->t || c0 != c00) { // ambiguous; stop extension
 				s->l = old_l;
 				return c0 != c00? -9 : -8;
 			}

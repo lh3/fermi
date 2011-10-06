@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-dev (r288)"
+#define FERMI_VERSION "0.0-dev (r292)"
 
 #define FM_MASK30 0x3fffffff
 
@@ -16,7 +16,7 @@ typedef struct {
 } fmintv_t;
 
 typedef struct {
-	int min_match, max_match, t;
+	int min_match, max_match, t, do_dedup;
 	float r;
 } fmjopt_t;
 
