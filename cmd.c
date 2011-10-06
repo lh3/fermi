@@ -137,7 +137,7 @@ int main_unpack(int argc, char *argv[])
 	}
 	if (argc == optind) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi unpack [-M] [-i index] <idxbase.bwt>\n\n");
+		fprintf(stderr, "Usage:   fermi unpack [-M] [-i index] <seqs.bwt>\n\n");
 		fprintf(stderr, "Options: -i INT    index of the read to output, starting from 0 [null]\n");
 		fprintf(stderr, "         -M        load the FM-index as a memory mapped file\n\n");
 		return 1;
@@ -158,21 +158,30 @@ int main_unpack(int argc, char *argv[])
 
 int main_join(int argc, char *argv[])
 {
-	int c, min = 50, use_mmap = 0, n_threads = 1;
+	int c, use_mmap = 0, n_threads = 1;
+	fmjopt_t opt;
 	rld_t *e;
-	while ((c = getopt(argc, argv, "Mm:t:")) >= 0) {
+	opt.min_match = 50; opt.max_match = 50; opt.t = 3; opt.r = 0.2;
+	while ((c = getopt(argc, argv, "Ml:t:r:m:")) >= 0) {
 		switch (c) {
-			case 'm': min = atoi(optarg); break;
+			case 'l': opt.min_match = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
+			case 'r': opt.r = atof(optarg); break;
+			case 'm': opt.t = atoi(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
-		fprintf(stderr, "Usage: fermi join [-M] [-m minLen=%d] [-t nThreads=1] <idxbase.bwt>\n", min);
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi join [options] <reads.bwt>\n\n");
+		fprintf(stderr, "Options: -l INT      min match [%d]\n", opt.min_match);
+		fprintf(stderr, "         -m INT      stop extension if a conflict appears more than INT times [%d]\n", opt.t);
+		fprintf(stderr, "         -r FLOAT    step extension if more than FLOAT fraction is conflictive [%.2f]\n", opt.r);
+		fprintf(stderr, "         -t INT      number of threads [1]\n\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	fm6_unambi_join(e, min, n_threads);
+	fm6_unambi_join(e, &opt, n_threads);
 	rld_destroy(e);
 	return 0;
 }

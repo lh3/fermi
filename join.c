@@ -51,7 +51,7 @@ fmintv_t fm6_overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, 
 }
 
 // requirement: s[beg..l-1] must be a full read
-static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first)
+static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first)
 {
 	int i, j, c, old_l = s->l, ret;
 	fmintv_t ik, ok[6];
@@ -60,12 +60,12 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 
 	curr->n = prev->n = 0;
 	// backward search for overlapping reads
-	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min, s->l - beg - 1, 0, prev);
+	ik = fm6_overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, opt->min_match, s->l - beg - 1, 0, prev);
 	//for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
 	if (prev->n > 0) {
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 		ret = prev->a[0].info; // the position with largest overlap
-	} else ret = s->l - beg <= min? -1 : -6; // -1: too short; -6: no overlaps
+	} else ret = s->l - beg <= opt->min_match? -1 : -6; // -1: too short; -6: no overlaps
 	if (beg == 0 && first) { // test if s[beg..s->l-1] contained in another read
 		fm6_extend(e, &ik, ok, 1); assert(ok[0].x[2]);
 		if (ik.x[2] != ok[0].x[2]) ret = -2; // the sequence is left contained
@@ -107,7 +107,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 				sum += w[c];
 				if (w[c] > max) max = w[c], c0 = c;
 			}
-			if ((double)max / sum < 0.8 || sum - max > 2) return -7;
+			if ((double)max / sum < 1. - opt->r || sum - max > 2) return -7;
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
 					curr->a[i++] = curr->a[j];
@@ -122,7 +122,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	//for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
 
 	// forward search for reads overlapping the extension read from the 5'-end
-	fm6_overlap_intv(e, s->l, (uint8_t*)s->s, min, ret, 1, prev);
+	fm6_overlap_intv(e, s->l, (uint8_t*)s->s, opt->min_match, ret, 1, prev);
 	//printf("ret=%d, len=%d, prev->n=%d, %d\n", (int)ret, (int)s->l, (int)prev->n, min);
 	// backward search for backward branching test
 	for (i = ret - 1; i >= beg && prev->n; --i) {
@@ -162,7 +162,7 @@ static int unambi_nei_for(const rld_t *e, int min, int beg, kstring_t *s, fmintv
 	return ret;
 }
 
-static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, uint64_t *bits, FILE *fp)
+static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint64_t step, uint64_t *bits, FILE *fp)
 {
 	extern void seq_reverse(int l, unsigned char *s);
 	extern void seq_revcomp6(int l, unsigned char *s);
@@ -180,11 +180,11 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
-		while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits, 1)) >= 0);
+		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 1)) >= 0);
 		if ((ret1 = beg) <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
-			while ((beg = unambi_nei_for(e, min, beg, &s, &a[0], &a[1], bits, 0)) >= 0);
+			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0)) >= 0);
 		}
 		kputc('>', &out); kputl((long)x, &out); kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
@@ -198,19 +198,19 @@ static void neighbor1(const rld_t *e, int min, uint64_t start, uint64_t step, ui
 }
 
 typedef struct {
-	int min;
 	uint64_t start, step, *bits;
 	const rld_t *e;
+	const fmjopt_t *opt;
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	neighbor1(w->e, w->min, w->start, w->step, w->bits, stdout);
+	neighbor1(w->e, w->opt, w->start, w->step, w->bits, stdout);
 	return 0;
 }
 
-int fm6_unambi_join(const rld_t *e, int min, int n_threads)
+int fm6_unambi_join(const rld_t *e, const fmjopt_t *opt, int n_threads)
 {
 	uint64_t *bits;
 	pthread_t *tid;
@@ -226,7 +226,7 @@ int fm6_unambi_join(const rld_t *e, int min, int n_threads)
 	for (j = 0; j < n_threads; ++j) {
 		worker_t *ww = w + j;
 		ww->e = e;
-		ww->min = min;
+		ww->opt = opt;
 		ww->step = n_threads;
 		ww->start = j;
 		ww->bits = bits;
