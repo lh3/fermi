@@ -318,7 +318,7 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0;
+	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0, min_q = 0, trim_end_N = 1;
 	int64_t i, sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
@@ -327,7 +327,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "NPfb:o:i:s:")) >= 0) {
+		while ((c = getopt(argc, argv, "NPfb:o:i:s:q:T")) >= 0) {
 			switch (c) {
 				case 'i':
 					e = rld_restore(optarg);
@@ -336,12 +336,14 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 						return 1;
 					}
 					break;
+				case 'q': min_q = atoi(optarg); break;
 				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
 				case 'b': sbits = atoi(optarg); break;
 				case 'o': idxfn = strdup(optarg); break;
 				case 's': block_size = atol(optarg); break;
 				case 'N': inc_N = 1; break;
+				case 'T': trim_end_N = 0; break;
 			}
 		}
 		if (argc == optind) {
@@ -350,10 +352,12 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 			fprintf(stderr, "Options: -b INT    use a small marker per 2^(INT+3) bytes [%d]\n", sbits);
 			fprintf(stderr, "         -f        force to overwrite the output file (effective with -o)\n");
 			fprintf(stderr, "         -i FILE   append the FM-index to the existing FILE [null]\n");
-			fprintf(stderr, "         -N        do not discard sequences containing ambiguous bases\n");
+			fprintf(stderr, "         -N        do NOT discard sequences containing 'N' (after trimming)\n");
 			fprintf(stderr, "         -o FILE   output file name [null]\n");
 			fprintf(stderr, "         -P        output BWT to stdout; do not dump the FM-index\n");
+			fprintf(stderr, "         -q INT    convert base with base quality smaller than INT to 'N' [0]\n");
 			fprintf(stderr, "         -s INT    number of symbols to process at a time [%ld]\n", (long)block_size);
+			fprintf(stderr, "         -T        do NOT trim 'N' at 5'- or 3'-end\n");
 			fprintf(stderr, "\n");
 			return 1;
 		}
@@ -371,7 +375,10 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 	
 	{ // read sequences
 		kseq_t *seq;
+		kstring_t str;
 		gzFile fp;
+
+		str.l = str.m = 0; str.s = 0;
 		fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "r") : gzdopen(fileno(stdin), "r");
 		if (fp == 0) {
 			fprintf(stderr, "[E::%s] Fail to open the input file.\n", __func__);
@@ -383,6 +390,27 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		t = cputime();
 		while (kseq_read(seq) >= 0) {
 			int j, k;
+			if (min_q > 0 && seq->qual.l) // convert low-quality bases to 'N'
+				for (j = 0; j < seq->seq.l; ++j)
+					if (isalpha(seq->seq.s[j]) && seq->qual.s[j] - 33 < min_q)
+						seq->seq.s[j] = 'N';
+			if (trim_end_N) {
+				int end = -1, start;
+				ks_resize(&str, seq->seq.m);
+				str.l = 0;
+				while (1) {
+					for (j = end + 1; j < seq->seq.l && (!isalpha(seq->seq.s[j]) || toupper(seq->seq.s[j]) == 'N'); ++j); // skip leading rubbish
+					if ((start = j) >= seq->seq.l) break; // end of sequence
+					for (j = start; isalpha(seq->seq.s[j]) && toupper(seq->seq.s[j]) != 'N'; ++j)
+						str.s[str.l++] = seq->seq.s[j];
+					str.s[str.l++] = '.';
+					str.s[str.l] = 0;
+					end = j;
+				}
+				str.s[str.l-1] = 0;
+				memcpy(seq->seq.s, str.s, str.l);
+				seq->seq.l = str.l - 1;
+			}
 			if (!inc_N) { // skip reads containing 'N'
 				for (j = 0; j < seq->seq.l; ++j)
 					if (toupper(seq->seq.s[j]) == 'N') break;
@@ -422,6 +450,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		}
 		kseq_destroy(seq);
 		gzclose(fp);
+		free(str.s);
 		if (l) {
 			e = fm_build(e, asize, sbits, l, s);
 			fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
