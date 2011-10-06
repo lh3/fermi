@@ -408,7 +408,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 					for (j = oend - 1; j >= ostart && toupper(seq->seq.s[j]) == 'N'; --j); // skip trailing N
 					end = j + 1;
 					for (j = start; j < end; ++j) str.s[str.l++] = seq->seq.s[j]; // copy sequence; can be done in place actually
-					if (min_l < end - start) min_l = end - start;
+					if (min_l > end - start) min_l = end - start;
 					str.s[str.l++] = '.';
 					str.s[str.l] = 0;
 				}
