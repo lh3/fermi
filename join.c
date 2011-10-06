@@ -107,7 +107,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 				sum += w[c];
 				if (w[c] > max) max = w[c], c0 = c;
 			}
-			if ((double)max / sum < 1. - opt->r || sum - max > 2) return -7;
+			if ((double)max / sum < 1. - opt->r || sum - max >= opt->t) return -7;
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
 					curr->a[i++] = curr->a[j];
