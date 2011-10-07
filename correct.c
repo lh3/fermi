@@ -103,13 +103,13 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 			if (mm <= max_pre_mm || mm <= MM_RATIO * l) {
 				for (i = 0; i < l; ++i)
 					if (s->s[i] != s->s[i + oldl]) { // an error
-						uint32_t x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
+						uint32_t y, x = (uint32_t)(s->s[i] - 1)<<16 | ((ik.info&0xffff) - i);
 						for (k = ok[0].x[0]; k < ok[0].x[0] + ok[0].x[2]; ++k) {
 							vec32_t *b = ec->b + (k>>B_SHIFT);
 							fm_spinlock_t *lock = ec->lock + (k>>B_SHIFT);
-							x |= (k & B_MASK)<<18;
+							y = (k & B_MASK)<<18 | x;
 							while (__sync_lock_test_and_set(lock, 1));
-							kv_push(uint32_t, *b, x);
+							kv_push(uint32_t, *b, y);
 							__sync_lock_release(lock);
 						}
 					}
