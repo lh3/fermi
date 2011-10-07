@@ -205,8 +205,9 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 	s.l = s.m = 0; s.s = 0;
 	out.l = out.m = 0; out.s = 0;
 	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
-		int i, beg = 0, ori_len, ret1, cnt[2];
+		int i, beg = 0, ori_len, cnt[2], ret[2];
 		fmintv_t lk[2];
+
 		memset(lk, 0, sizeof(fmintv_t) * 2);
 		cnt[0] = cnt[1] = 0;
 		k = fm_retrieve(e, x, &s);
@@ -214,17 +215,20 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
 		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 1, &lk[0])) >= 0) ++cnt[0];
-		if ((ret1 = beg) <= -6) { // stop due to branching or no overlaps
+		ret[0] = ret[1] = beg;
+		if (ret[0] <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
 			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0, &lk[1])) >= 0) ++cnt[1];
+			ret[1] = beg;
 		} else if (!opt->keep_single) continue;
 		if (!opt->keep_single && cnt[0] == 0 && cnt[1] == 0) continue;
 		kputc('>', &out); kputl((long)x, &out);
-		kputc(' ', &out); kputc(g_stop_exp[-ret1], &out); kputc(':', &out); kputl((long)lk[0].x[0], &out); kputc(':', &out); kputl((long)lk[0].x[1], &out);
-		kputc(' ', &out); kputc(g_stop_exp[-beg],  &out); kputc(':', &out); kputl((long)lk[1].x[0], &out); kputc(':', &out); kputl((long)lk[1].x[1], &out);
-		kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc(' ', &out);
-		kputw(cnt[0], &out); kputc(' ', &out); kputw(cnt[1], &out); kputc('\n', &out);
+		for (i = 0; i < 2; ++i) {
+			kputc(' ', &out); kputc(g_stop_exp[-ret[i]], &out); kputc(lk[i].x[0] < lk[i].x[1]? '<' : '>', &out);
+			kputl((long)(lk[i].x[0] < lk[i].x[1]? lk[i].x[0] : lk[i].x[1]), &out);
+		}
+		kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
 			kputc("$ACGTN"[(int)s.s[i]], &out);
 		kputc('\n', &out);
