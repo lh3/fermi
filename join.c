@@ -86,7 +86,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) {
 					if (bits[ok[0].x[0]>>6]>>(ok[0].x[0]&0x3f)&1) ret = -10;
 					else set_bits(bits, ok);
-					if (ret < 0) return ret;
+					if (ret < 0) goto stop_return;
 					break;
 				}
 				set_bits(bits, ok); // mark the reads used
@@ -123,7 +123,10 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 					if (curr->a[j].info>>32 == c0)
 						sum += opt->do_dedup? 1 : curr->a[j].x[2], max += opt->do_dedup? 1 : curr->a[j].x[2];
 					else break;
-				if (sum == 0 || (double)max / sum < 1. - opt->r || sum - max >= opt->t) return -7;
+				if (sum == 0 || (double)max / sum < 1. - opt->r || sum - max >= opt->t) {
+					ret = -7;
+					goto stop_return;
+				}
 			}
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
@@ -166,8 +169,8 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 				if (w[c] > max) max = w[c], c0 = c;
 			}
 			if ((double)max / sum < 1. - opt->r || sum - max >= opt->t || c0 != c00) { // ambiguous; stop extension
-				s->l = old_l;
-				return c0 != c00? -9 : -8;
+				ret = c0 != c00? -9 : -8;
+				goto stop_return;
 			}
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
@@ -177,6 +180,10 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 		swap = curr; curr = prev; prev = swap;
 	}
 	//printf("final: ret=%d, len=%d\n", (int)ret, (int)s->l);
+	return ret;
+
+stop_return:
+	s->l = old_l; s->s[s->l] = 0;
 	return ret;
 }
 
@@ -203,6 +210,7 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 			seq_revcomp6(s.l, (uint8_t*)s.s);
 			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0)) >= 0) ++rght_cnt;
 		} else continue;
+		if (left_cnt == 0 && rght_cnt == 0) continue;
 		kputc('>', &out); kputl((long)x, &out); kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc(' ', &out);
 		kputw(left_cnt, &out); kputc(' ', &out); kputw(rght_cnt, &out); kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
