@@ -56,11 +56,11 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first, fmintv_t *lk)
 {
 	int i, j, c, old_l = s->l, ret;
-	fmintv_t ik, ok[6], tk;
+	fmintv_t ik, ok[6];
 	fmintv_v *swap;
 	uint64_t w[6];
 
-	curr->n = prev->n = 0; tk.x[0] = tk.x[1] = tk.x[2] = 0; tk.info = 0;
+	curr->n = prev->n = 0;
 	// backward search for overlapping reads
 	ik = overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, opt->min_match, s->l - beg - 1, 0, prev);
 	//for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
@@ -75,6 +75,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 		fm6_extend(e, &ik, ok, 0); assert(ok[0].x[2]);
 		if (ik.x[2] != ok[0].x[2]) ret = -3; // the sequence is right contained
 		set_bits(bits, ok); // mark the read(s) has been used
+		if (ret < 0) *lk = ok[0], lk->info = 0;
 	}
 	if (ret < 0) return ret;
 	// forward search for the forward branching test
@@ -86,11 +87,12 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 			fm6_extend(e, p, ok, 0);
 			if (ok[0].x[2]) { // some reads end here
 				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) {
+					*lk = ok[0]; lk->info = old_l - ret;
 					if (bits[ok[0].x[0]>>6]>>(ok[0].x[0]&0x3f)&1) {
-						ret = -10; *lk = ok[0];
+						ret = -10;
+						set_bits(bits, ok);
 						goto stop_return;
 					}
-					tk = ok[0];
 					break;
 				}
 				set_bits(bits, ok); // mark the reads used
@@ -182,10 +184,8 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 		}
 		swap = curr; curr = prev; prev = swap;
 	}
-	assert(tk.x[2]);
-	set_bits(bits, &tk);
-	*lk = tk;
-	//printf("final: ret=%d, len=%d\n", (int)ret, (int)s->l);
+	assert(lk->x[2]);
+	set_bits(bits, lk);
 	return ret;
 
 stop_return:
@@ -215,7 +215,7 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
 		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 1, &lk[0])) >= 0) ++cnt[0];
-		ret[0] = ret[1] = beg;
+		ret[0] = beg; ret[1] = 0;
 		if (ret[0] <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
@@ -227,6 +227,7 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 		for (i = 0; i < 2; ++i) {
 			kputc(' ', &out); kputc(g_stop_exp[-ret[i]], &out); kputc(lk[i].x[0] < lk[i].x[1]? '<' : '>', &out);
 			kputl((long)(lk[i].x[0] < lk[i].x[1]? lk[i].x[0] : lk[i].x[1]), &out);
+			kputc(':', &out); kputl(lk[i].info, &out);
 		}
 		kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
