@@ -63,7 +63,6 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 	curr->n = prev->n = 0;
 	// backward search for overlapping reads
 	ik = overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, opt->min_match, s->l - beg - 1, 0, prev);
-	//for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
 	if (prev->n > 0) {
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 		ret = prev->a[0].info; // the position with largest overlap
@@ -87,7 +86,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 			fm6_extend(e, p, ok, 0);
 			if (ok[0].x[2]) { // some reads end here
 				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) {
-					*lk = ok[0]; lk->info = old_l - ret;
+					*lk = ok[0]; lk->info = (uint64_t)(old_l - ret)<<32 | (s->l - old_l); // lk keeps the terminated node
 					if (bits[ok[0].x[0]>>6]>>(ok[0].x[0]&0x3f)&1) {
 						ret = -10;
 						set_bits(bits, ok);
@@ -145,11 +144,9 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 		kputc(fm6_comp(c0), s);
 		swap = curr; curr = prev; prev = swap;
 	}
-	//for (i = 0; i < s->l; ++i) putchar("$ACGTN"[(int)s->s[i]]); putchar('\n');
 
 	// forward search for reads overlapping the extension read from the 5'-end
 	overlap_intv(e, s->l, (uint8_t*)s->s, opt->max_match, ret, 1, prev);
-	//printf("ret=%d, len=%d, prev->n=%d, %d\n", (int)ret, (int)s->l, (int)prev->n, min);
 	// backward search for backward branching test
 	for (i = ret - 1; i >= beg && prev->n; --i) {
 		int c00 = s->s[i], c0, n_c = 0;
@@ -227,7 +224,7 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 		for (i = 0; i < 2; ++i) {
 			kputc(' ', &out); kputc(g_stop_exp[-ret[i]], &out); kputc(lk[i].x[0] < lk[i].x[1]? '<' : '>', &out);
 			kputl((long)(lk[i].x[0] < lk[i].x[1]? lk[i].x[0] : lk[i].x[1]), &out);
-			kputc(':', &out); kputl(lk[i].info, &out);
+			kputc(':', &out); kputl((long)(lk[i].info>>32), &out); kputc(':', &out); kputl((long)(lk[i].info<<32>>32), &out);
 		}
 		kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
