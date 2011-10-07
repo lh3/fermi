@@ -54,11 +54,11 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first)
 {
 	int i, j, c, old_l = s->l, ret;
-	fmintv_t ik, ok[6];
+	fmintv_t ik, ok[6], tk;
 	fmintv_v *swap;
 	uint64_t w[6];
 
-	curr->n = prev->n = 0;
+	curr->n = prev->n = 0; tk.x[0] = tk.x[1] = tk.x[2] = 0;
 	// backward search for overlapping reads
 	ik = overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, opt->min_match, s->l - beg - 1, 0, prev);
 	//for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
@@ -84,9 +84,11 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 			fm6_extend(e, p, ok, 0);
 			if (ok[0].x[2]) { // some reads end here
 				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) {
-					if (bits[ok[0].x[0]>>6]>>(ok[0].x[0]&0x3f)&1) ret = -10;
-					else set_bits(bits, ok);
-					if (ret < 0) goto stop_return;
+					if (bits[ok[0].x[0]>>6]>>(ok[0].x[0]&0x3f)&1) {
+						ret = -10;
+						goto stop_return;
+					}
+					tk = ok[0];
 					break;
 				}
 				set_bits(bits, ok); // mark the reads used
@@ -99,8 +101,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 					kv_push(fmintv_t, *curr, ok[c]);
 				}
 		}
-		if (curr->n == 0) break; // cannot be extended
-		if (j < prev->n) break; // found the only neighbor
+		if (j < prev->n || curr->n == 0) break; // found the only neighbor or cannot be extended
 		if (n_c > 1) { // two or more paths
 			uint64_t max, sum;
 			for (c0 = -1, max = sum = 0, c = 1; c < 6; ++c) {
@@ -179,6 +180,8 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 		}
 		swap = curr; curr = prev; prev = swap;
 	}
+	assert(tk.x[2]);
+	set_bits(bits, &tk);
 	//printf("final: ret=%d, len=%d\n", (int)ret, (int)s->l);
 	return ret;
 
@@ -209,8 +212,8 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
 			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0)) >= 0) ++rght_cnt;
-		} else continue;
-		if (left_cnt == 0 && rght_cnt == 0) continue;
+		} else if (!opt->keep_single) continue;
+		if (!opt->keep_single && left_cnt == 0 && rght_cnt == 0) continue;
 		kputc('>', &out); kputl((long)x, &out); kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc(' ', &out);
 		kputw(left_cnt, &out); kputc(' ', &out); kputw(rght_cnt, &out); kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)

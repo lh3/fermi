@@ -161,8 +161,8 @@ int main_join(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	fmjopt_t opt;
 	rld_t *e;
-	opt.min_match = 30; opt.max_match = 50; opt.t = 3; opt.r = 0.2; opt.do_dedup = 1;
-	while ((c = getopt(argc, argv, "MDl:t:r:m:L:")) >= 0) {
+	opt.min_match = 30; opt.max_match = 50; opt.t = 3; opt.r = 0.2; opt.do_dedup = 1; opt.keep_single = 0;
+	while ((c = getopt(argc, argv, "SMDl:t:r:m:L:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_match = atoi(optarg); break;
 			case 'L': opt.max_match = atoi(optarg); break;
@@ -170,6 +170,7 @@ int main_join(int argc, char *argv[])
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
 			case 'r': opt.r = atof(optarg); break;
+			case 'S': opt.keep_single = 1; break;
 			case 'm': opt.t = atoi(optarg); break;
 		}
 	}
@@ -182,6 +183,7 @@ int main_join(int argc, char *argv[])
 		fprintf(stderr, "         -r FLOAT    step extension if more than FLOAT fraction is conflictive [%.2f]\n", opt.r);
 		fprintf(stderr, "         -t INT      number of threads [1]\n");
 		fprintf(stderr, "         -D          do NOT collapse reads with the same prefix/suffix\n");
+		fprintf(stderr, "         -S          keep singletons\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}

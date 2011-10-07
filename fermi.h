@@ -16,7 +16,7 @@ typedef struct {
 } fmintv_t;
 
 typedef struct {
-	int min_match, max_match, t, do_dedup;
+	int min_match, max_match, t, do_dedup, keep_single;
 	float r;
 } fmjopt_t;
 
