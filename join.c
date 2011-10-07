@@ -192,18 +192,19 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 	out.l = out.m = 0; out.s = 0;
 	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
 		//if (x == 7) break;
-		int i, beg = 0, ori_len, ret1;
+		int i, beg = 0, ori_len, ret1, left_cnt = 0, rght_cnt = 0;
 		k = fm_retrieve(e, x, &s);
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
-		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 1)) >= 0);
+		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 1)) >= 0) ++left_cnt;
 		if ((ret1 = beg) <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
-			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0)) >= 0);
-		}
-		kputc('>', &out); kputl((long)x, &out); kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc('\n', &out);
+			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0)) >= 0) ++rght_cnt;
+		} else continue;
+		kputc('>', &out); kputl((long)x, &out); kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc(' ', &out);
+		kputw(left_cnt, &out); kputc(' ', &out); kputw(rght_cnt, &out); kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
 			kputc("$ACGTN"[(int)s.s[i]], &out);
 		kputc('\n', &out);
