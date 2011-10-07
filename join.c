@@ -85,7 +85,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 			if (ok[0].x[2]) { // some reads end here
 				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) {
 					if (bits[ok[0].x[0]>>6]>>(ok[0].x[0]&0x3f)&1) ret = -10;
-					set_bits(bits, ok);
+					else set_bits(bits, ok);
 					if (ret < 0) return ret;
 					break;
 				}
@@ -128,6 +128,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 			for (i = j = 0; j < curr->n; ++j)
 				if ((int)(curr->a[j].info>>32) == c0)
 					curr->a[i++] = curr->a[j];
+			ret = (int32_t)curr->a[0].info; // occasionally the nearest neighbour may be kicked out
 			curr->n = i;
 		} else {
 			for (c0 = 1; c0 < 6; ++c0)
@@ -191,7 +192,6 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 	s.l = s.m = 0; s.s = 0;
 	out.l = out.m = 0; out.s = 0;
 	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
-		//if (x == 7) break;
 		int i, beg = 0, ori_len, ret1, left_cnt = 0, rght_cnt = 0;
 		k = fm_retrieve(e, x, &s);
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
