@@ -10,6 +10,8 @@
 static volatile int g_print_lock;
 void fm_print_buffer(kstring_t *buf, volatile int *lock, int force);
 
+static const char *g_stop_exp = ".DDDDDUFBBR";
+
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
 	uint64_t *p = bits + (x>>6);
@@ -51,14 +53,14 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 }
 
 // requirement: s[beg..l-1] must be a full read
-static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first)
+static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first, fmintv_t *lk)
 {
 	int i, j, c, old_l = s->l, ret;
 	fmintv_t ik, ok[6], tk;
 	fmintv_v *swap;
 	uint64_t w[6];
 
-	curr->n = prev->n = 0; tk.x[0] = tk.x[1] = tk.x[2] = 0;
+	curr->n = prev->n = 0; tk.x[0] = tk.x[1] = tk.x[2] = 0; tk.info = 0;
 	// backward search for overlapping reads
 	ik = overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, opt->min_match, s->l - beg - 1, 0, prev);
 	//for (i = 0, c = 0; i < prev->n; ++i) c += prev->a[i].x[2]; fprintf(stderr, "Total: %d\n", c);
@@ -85,7 +87,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 			if (ok[0].x[2]) { // some reads end here
 				if ((int32_t)p->info == ret && ok[0].x[2] == p->x[2]) {
 					if (bits[ok[0].x[0]>>6]>>(ok[0].x[0]&0x3f)&1) {
-						ret = -10;
+						ret = -10; *lk = ok[0];
 						goto stop_return;
 					}
 					tk = ok[0];
@@ -182,6 +184,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 	}
 	assert(tk.x[2]);
 	set_bits(bits, &tk);
+	*lk = tk;
 	//printf("final: ret=%d, len=%d\n", (int)ret, (int)s->l);
 	return ret;
 
@@ -202,20 +205,26 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 	s.l = s.m = 0; s.s = 0;
 	out.l = out.m = 0; out.s = 0;
 	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
-		int i, beg = 0, ori_len, ret1, left_cnt = 0, rght_cnt = 0;
+		int i, beg = 0, ori_len, ret1, cnt[2];
+		fmintv_t lk[2];
+		memset(lk, 0, sizeof(fmintv_t) * 2);
+		cnt[0] = cnt[1] = 0;
 		k = fm_retrieve(e, x, &s);
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
-		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 1)) >= 0) ++left_cnt;
+		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 1, &lk[0])) >= 0) ++cnt[0];
 		if ((ret1 = beg) <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
-			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0)) >= 0) ++rght_cnt;
+			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0, &lk[1])) >= 0) ++cnt[1];
 		} else if (!opt->keep_single) continue;
-		if (!opt->keep_single && left_cnt == 0 && rght_cnt == 0) continue;
-		kputc('>', &out); kputl((long)x, &out); kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc(' ', &out);
-		kputw(left_cnt, &out); kputc(' ', &out); kputw(rght_cnt, &out); kputc('\n', &out);
+		if (!opt->keep_single && cnt[0] == 0 && cnt[1] == 0) continue;
+		kputc('>', &out); kputl((long)x, &out);
+		kputc(' ', &out); kputc(g_stop_exp[-ret1], &out); kputc(':', &out); kputl((long)lk[0].x[0], &out); kputc(':', &out); kputl((long)lk[0].x[1], &out);
+		kputc(' ', &out); kputc(g_stop_exp[-beg],  &out); kputc(':', &out); kputl((long)lk[1].x[0], &out); kputc(':', &out); kputl((long)lk[1].x[1], &out);
+		kputc(' ', &out); kputw(ret1, &out); kputw(beg, &out); kputc(' ', &out);
+		kputw(cnt[0], &out); kputc(' ', &out); kputw(cnt[1], &out); kputc('\n', &out);
 		for (i = 0; i < s.l; ++i)
 			kputc("$ACGTN"[(int)s.s[i]], &out);
 		kputc('\n', &out);
