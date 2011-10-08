@@ -191,57 +191,73 @@ stop_return:
 	return ret;
 }
 
-static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint64_t step, uint64_t *bits, uint64_t *term, FILE *fp)
+static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint64_t step, uint64_t *bits, uint64_t *term, fmgelem_v *elems)
 {
 	extern void seq_reverse(int l, unsigned char *s);
 	extern void seq_revcomp6(int l, unsigned char *s);
 	fmintv_v a[2];
-	kstring_t s, out;
+	kstring_t s, cov;
 	uint64_t x, k;
 
 	kv_init(a[0]); kv_init(a[1]);
-	s.l = s.m = 0; s.s = 0;
-	out.l = out.m = 0; out.s = 0;
+	s.l = s.m = cov.l = cov.m = 0; s.s = cov.s = 0;
 	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
-		int i, beg = 0, ori_len, cnt[2], ret[2];
+		int i, beg = 0, ori_len, ret[2];
+		fmgelem_t z;
 		fmintv_t lk[2];
 
 		memset(lk, 0, sizeof(fmintv_t) * 2);
-		cnt[0] = cnt[1] = 0;
 		k = fm_retrieve(e, x, &s);
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
-		ori_len = s.l;
-		seq_reverse(s.l, (uint8_t*)s.s);
-		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 1, &lk[0])) >= 0) ++cnt[0];
-		set_bit(term, lk[0].x[0]); set_bit(term, lk[0].x[1]);
-		ret[0] = beg; ret[1] = 0;
+		ks_resize(&cov, s.m);
+		for (i = 0; i < s.l; ++i) cov.s[i] = '"';
+		cov.l = s.l;
+		{
+			ori_len = s.l;
+			seq_reverse(s.l, (uint8_t*)s.s);
+			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 1, &lk[0])) >= 0) {
+				ks_resize(&cov, s.m);
+				for (i = cov.l; i < s.l; ++i) cov.s[i] = '!';
+				for (i = beg; i < s.l; ++i)
+					if (cov.s[i] != '~') ++cov.s[i];
+				cov.l = s.l;
+			}
+			set_bit(term, lk[0].x[0]); set_bit(term, lk[0].x[1]);
+			ret[0] = beg; ret[1] = 0;
+		}
 		if (ret[0] <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
-			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 0, &lk[1])) >= 0) ++cnt[1];
+			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 0, &lk[1])) >= 0) {
+				ks_resize(&cov, s.m);
+				for (i = cov.l; i < s.l; ++i) cov.s[i] = '!';
+				for (i = beg; i < s.l; ++i)
+					if (cov.s[i] != '~') ++cov.s[i];
+				cov.l = s.l;
+			}
 			set_bit(term, lk[1].x[0]); set_bit(term, lk[1].x[1]);
 			ret[1] = beg;
-		} else if (!opt->keep_single) continue;
-		if (!opt->keep_single && cnt[0] == 0 && cnt[1] == 0) continue;
-		kputc('>', &out); kputl((long)x, &out);
+		} else continue;
 		for (i = 0; i < 2; ++i) {
-			kputc(' ', &out); kputc(g_stop_exp[-ret[i]], &out); kputc(lk[i].x[0] < lk[i].x[1]? '<' : '>', &out);
-			kputl((long)(lk[i].x[0] < lk[i].x[1]? lk[i].x[0] : lk[i].x[1]), &out);
-			kputc(':', &out); kputl((long)(lk[i].info>>32), &out); kputc(':', &out); kputl((long)(lk[i].info<<32>>32), &out);
+			z.dir[i] = (lk[i].x[0] < lk[i].x[1])? '<' : '>';
+			z.type[i] = g_stop_exp[-ret[i]];
+			z.k[i] = lk[i].x[lk[i].x[0] < lk[i].x[1]? 0 : 1];
 		}
-		kputc('\n', &out);
-		for (i = 0; i < s.l; ++i)
-			kputc("$ACGTN"[(int)s.s[i]], &out);
-		kputc('\n', &out);
-		fm_print_buffer(&out, &g_print_lock, 0);
+		z.l = s.l;
+		z.seq = malloc(z.l); z.cov = malloc(z.l);
+		for (i = 0; i < s.l; ++i) {
+			z.seq[i] = s.s[i] - 1;
+			z.cov[i] = cov.s[i];
+		}
+		kv_push(fmgelem_t, *elems, z);
 	}
-	fm_print_buffer(&out, &g_print_lock, 1);
 	free(a[0].a); free(a[1].a);
-	free(s.s); free(out.s);
+	free(s.s); free(cov.s);
 }
 
 typedef struct {
 	uint64_t start, step, *bits, *term;
+	fmgelem_v elems;
 	const rld_t *e;
 	const fmjopt_t *opt;
 } worker_t;
@@ -249,17 +265,20 @@ typedef struct {
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	neighbor1(w->e, w->opt, w->start, w->step, w->bits, w->term, stdout);
+	neighbor1(w->e, w->opt, w->start, w->step, w->bits, w->term, &w->elems);
 	return 0;
 }
 
 int fm6_unambi_join(const rld_t *e, const fmjopt_t *opt, int n_threads)
 {
+	extern void bog_output(const fmgelem_v *elems);
 	uint64_t *bits, *term;
 	pthread_t *tid;
 	pthread_attr_t attr;
 	worker_t *w;
 	int j;
+	size_t i;
+	fmgelem_v elems;
 
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -275,9 +294,19 @@ int fm6_unambi_join(const rld_t *e, const fmjopt_t *opt, int n_threads)
 		ww->start = j;
 		ww->bits = bits;
 		ww->term = term;
+		kv_init(ww->elems);
 	}
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
-	free(w); free(tid); free(bits); free(term);
+	free(tid); free(bits); free(term);
+	elems = w[0].elems;
+	for (j = 1; j < n_threads; ++j) {
+		for (i = 0; i < w[j].elems.n; ++i)
+			kv_push(fmgelem_t, elems, w[j].elems.a[i]);
+		free(w[j].elems.a);
+	}
+	free(w);
+	bog_output(&elems);
+	free(elems.a);
 	return 0;
 }

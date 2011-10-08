@@ -25,7 +25,15 @@ typedef struct {
 	float cov, err;
 } fmecopt_t;
 
+typedef struct {
+	uint64_t k[2];
+	uint8_t type[2], dir[2];
+	int l;
+	char *seq, *cov;
+} fmgelem_t;
+
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
+typedef struct { size_t n, m; fmgelem_t *a; } fmgelem_v;
 struct __rld_t; // defined in rld.h
 
 #ifndef KSTRING_T
