@@ -10,7 +10,7 @@
 static volatile int g_print_lock;
 void fm_print_buffer(kstring_t *buf, volatile int *lock, int force);
 
-static const char *g_stop_exp = ".DDDDDUFBBR";
+static const char *g_stop_exp = ".DDDDDUFBBRT";
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
@@ -53,7 +53,7 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 }
 
 // requirement: s[beg..l-1] must be a full read
-static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, int first, fmintv_t *lk)
+static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, uint64_t *term, int first, fmintv_t *lk)
 {
 	int i, j, c, old_l = s->l, ret;
 	fmintv_t ik, ok[6];
@@ -183,6 +183,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 	}
 	assert(lk->x[2]);
 	set_bits(bits, lk);
+	if (term[lk->x[0]>>6]>>(lk->x[0]&0x3f)&1) return -11;
 	return ret;
 
 stop_return:
@@ -190,7 +191,7 @@ stop_return:
 	return ret;
 }
 
-static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint64_t step, uint64_t *bits, FILE *fp)
+static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint64_t step, uint64_t *bits, uint64_t *term, FILE *fp)
 {
 	extern void seq_reverse(int l, unsigned char *s);
 	extern void seq_revcomp6(int l, unsigned char *s);
@@ -211,12 +212,14 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
 		ori_len = s.l;
 		seq_reverse(s.l, (uint8_t*)s.s);
-		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 1, &lk[0])) >= 0) ++cnt[0];
+		while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 1, &lk[0])) >= 0) ++cnt[0];
+		set_bit(term, lk[0].x[0]); set_bit(term, lk[0].x[1]);
 		ret[0] = beg; ret[1] = 0;
 		if (ret[0] <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
-			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, 0, &lk[1])) >= 0) ++cnt[1];
+			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 0, &lk[1])) >= 0) ++cnt[1];
+			set_bit(term, lk[1].x[0]); set_bit(term, lk[1].x[1]);
 			ret[1] = beg;
 		} else if (!opt->keep_single) continue;
 		if (!opt->keep_single && cnt[0] == 0 && cnt[1] == 0) continue;
@@ -238,7 +241,7 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 }
 
 typedef struct {
-	uint64_t start, step, *bits;
+	uint64_t start, step, *bits, *term;
 	const rld_t *e;
 	const fmjopt_t *opt;
 } worker_t;
@@ -246,13 +249,13 @@ typedef struct {
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	neighbor1(w->e, w->opt, w->start, w->step, w->bits, stdout);
+	neighbor1(w->e, w->opt, w->start, w->step, w->bits, w->term, stdout);
 	return 0;
 }
 
 int fm6_unambi_join(const rld_t *e, const fmjopt_t *opt, int n_threads)
 {
-	uint64_t *bits;
+	uint64_t *bits, *term;
 	pthread_t *tid;
 	pthread_attr_t attr;
 	worker_t *w;
@@ -263,6 +266,7 @@ int fm6_unambi_join(const rld_t *e, const fmjopt_t *opt, int n_threads)
 	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
 	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
 	bits = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
+	term = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	for (j = 0; j < n_threads; ++j) {
 		worker_t *ww = w + j;
 		ww->e = e;
@@ -270,9 +274,10 @@ int fm6_unambi_join(const rld_t *e, const fmjopt_t *opt, int n_threads)
 		ww->step = n_threads;
 		ww->start = j;
 		ww->bits = bits;
+		ww->term = term;
 	}
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
-	free(w); free(tid); free(bits);
+	free(w); free(tid); free(bits); free(term);
 	return 0;
 }
