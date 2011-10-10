@@ -10,7 +10,7 @@
 static volatile int g_print_lock;
 void fm_print_buffer(kstring_t *buf, volatile int *lock, int force);
 
-static const char *g_stop_exp = ".DDDDDUFBBRT";
+static const char *g_stop_exp = "..DDDDUFBBRT";
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
@@ -53,28 +53,31 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 }
 
 // requirement: s[beg..l-1] must be a full read
-static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev, uint64_t *bits, uint64_t *term, int first, fmintv_t *lk)
+static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_t *s, fmintv_v *curr, fmintv_v *prev,
+						  uint64_t *bits, uint64_t *term, int first, fmintv_t *lk, fmintv_t *lk0)
 {
 	int i, j, c, old_l = s->l, ret;
 	fmintv_t ik, ok[6];
 	fmintv_v *swap;
 	uint64_t w[6];
 
+	assert(s->l > opt->min_match);
 	curr->n = prev->n = 0;
 	// backward search for overlapping reads
 	ik = overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, opt->min_match, s->l - beg - 1, 0, prev);
 	if (prev->n > 0) {
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 		ret = prev->a[0].info; // the position with largest overlap
-	} else ret = s->l - beg <= opt->min_match? -1 : -6; // -1: too short; -6: no overlaps
-	if (beg == 0 && first) { // test if s[beg..s->l-1] contained in another read
+	} else ret = -6; // -6: no overlaps
+	if (beg == 0 && first) { // the first time we call this function; test if s[0..s->l-1] contained in another read
 		fm6_extend(e, &ik, ok, 1); assert(ok[0].x[2]);
 		if (ik.x[2] != ok[0].x[2]) ret = -2; // the sequence is left contained
 		ik = ok[0];
 		fm6_extend(e, &ik, ok, 0); assert(ok[0].x[2]);
+		*lk0 = ok[0]; lk0->info = (uint64_t)old_l;
+		*lk = *lk0;
 		if (ik.x[2] != ok[0].x[2]) ret = -3; // the sequence is right contained
 		set_bits(bits, ok); // mark the read(s) has been used
-		if (ret < 0) *lk = ok[0], lk->info = 0;
 	}
 	if (ret < 0) return ret;
 	// forward search for the forward branching test
@@ -106,6 +109,8 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 		}
 		if (j < prev->n || curr->n == 0) break; // found the only neighbor or cannot be extended
 		if (n_c > 1) { // two or more paths
+			ret = -7; goto stop_return;
+			/*
 			uint64_t max, sum;
 			for (c0 = -1, max = sum = 0, c = 1; c < 6; ++c) {
 				sum += w[c];
@@ -137,6 +142,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 					curr->a[i++] = curr->a[j];
 			ret = (int32_t)curr->a[0].info; // occasionally the nearest neighbour may be kicked out
 			curr->n = i;
+			*/
 		} else {
 			for (c0 = 1; c0 < 6; ++c0)
 				if (w[c0]) break;
@@ -164,6 +170,8 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 				}
 		}
 		if (n_c > 1) {
+			ret = -8; goto stop_return;
+			/*
 			uint64_t max, sum;
 			int i;
 			for (c0 = -1, max = sum = 0, c = 1; c < 6; ++c) {
@@ -178,6 +186,7 @@ static int unambi_nei_for(const rld_t *e, const fmjopt_t *opt, int beg, kstring_
 				if ((int)(curr->a[j].info>>32) == c0)
 					curr->a[i++] = curr->a[j];
 			curr->n = i;
+			*/
 		}
 		swap = curr; curr = prev; prev = swap;
 	}
@@ -204,10 +213,11 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 	for (x = start<<1|1; x < e->mcnt[1]; x += step<<1) {
 		int i, beg = 0, ori_len, ret[2];
 		fmgelem_t z;
-		fmintv_t lk[2];
+		fmintv_t lk[2], lk0;
 
 		memset(lk, 0, sizeof(fmintv_t) * 2);
 		k = fm_retrieve(e, x, &s);
+		if (s.l <= opt->min_match) continue; // too short
 		if (bits[k>>6]>>(k&0x3f)&1) continue; // the read has been used
 		ks_resize(&cov, s.m);
 		for (i = 0; i < s.l; ++i) cov.s[i] = '"';
@@ -215,20 +225,22 @@ static void neighbor1(const rld_t *e, const fmjopt_t *opt, uint64_t start, uint6
 		{
 			ori_len = s.l;
 			seq_reverse(s.l, (uint8_t*)s.s);
-			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 1, &lk[0])) >= 0) {
+			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 1, &lk[0], &lk0)) >= 0) {
+				assert(beg);
 				ks_resize(&cov, s.m);
 				for (i = cov.l; i < s.l; ++i) cov.s[i] = '!';
 				for (i = beg; i < s.l; ++i)
 					if (cov.s[i] != '~') ++cov.s[i];
 				cov.l = s.l;
 			}
+			lk[1] = lk0; lk[1].x[0] = lk0.x[1]; lk[1].x[1] = lk0.x[0];
 			set_bit(term, lk[0].x[0]); set_bit(term, lk[0].x[1]);
 			ret[0] = beg; ret[1] = 0;
 		}
 		if (ret[0] <= -6) { // stop due to branching or no overlaps
 			beg = s.l - ori_len;
 			seq_revcomp6(s.l, (uint8_t*)s.s);
-			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 0, &lk[1])) >= 0) {
+			while ((beg = unambi_nei_for(e, opt, beg, &s, &a[0], &a[1], bits, term, 0, &lk[1], 0)) >= 0) {
 				ks_resize(&cov, s.m);
 				for (i = cov.l; i < s.l; ++i) cov.s[i] = '!';
 				for (i = beg; i < s.l; ++i)
@@ -272,6 +284,7 @@ static void *worker(void *data)
 int fm6_unambi_join(const rld_t *e, const fmjopt_t *opt, int n_threads)
 {
 	extern void bog_output(const fmgelem_v *elems);
+	extern void bog_clean(fmgelem_v *elems);
 	uint64_t *bits, *term;
 	pthread_t *tid;
 	pthread_attr_t attr;
@@ -306,6 +319,7 @@ int fm6_unambi_join(const rld_t *e, const fmjopt_t *opt, int n_threads)
 		free(w[j].elems.a);
 	}
 	free(w);
+	bog_clean(&elems);
 	bog_output(&elems);
 	free(elems.a);
 	return 0;

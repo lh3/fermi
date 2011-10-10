@@ -33,6 +33,7 @@ typedef struct {
 } fmgelem_t;
 
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
+typedef struct { size_t n, m; uint64_t *a; } fm64_v;
 typedef struct { size_t n, m; fmgelem_t *a; } fmgelem_v;
 struct __rld_t; // defined in rld.h
 
@@ -108,6 +109,7 @@ extern "C" {
 	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
 	int fm6_unambi_join(const struct __rld_t *e, const fmjopt_t *opt, int n_threads);
+	int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads);
 
 	void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T);
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, int n_threads);

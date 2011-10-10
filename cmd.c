@@ -193,6 +193,31 @@ int main_join(int argc, char *argv[])
 	return 0;
 }
 
+int main_unitig(int argc, char *argv[])
+{
+	int c, use_mmap = 0, n_threads = 1, min_match = 50;
+	rld_t *e;
+	while ((c = getopt(argc, argv, "SMDl:t:r:m:L:")) >= 0) {
+		switch (c) {
+			case 'l': min_match = atoi(optarg); break;
+			case 'M': use_mmap = 1; break;
+			case 't': n_threads = atoi(optarg); break;
+		}
+	}
+	if (optind + 1 > argc) {
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi unitig [options] <reads.bwt>\n\n");
+		fprintf(stderr, "Options: -l INT      min match [%d]\n", min_match);
+		fprintf(stderr, "         -t INT      number of threads [1]\n");
+		fprintf(stderr, "\n");
+		return 1;
+	}
+	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
+	fm6_unitig(e, min_match, n_threads);
+	rld_destroy(e);
+	return 0;
+}
+
 int main_correct(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1, _w, _T;
