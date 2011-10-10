@@ -22,9 +22,11 @@ void msg_print(const fmnode_v *nodes)
 			if (p->nei[j].n == 0) kputc('.', &out);
 		}
 		kputc('\n', &out);
-		ks_resize(&out, out.l + p->l + 1);
+		ks_resize(&out, out.l + p->l + 3);
 		for (j = 0; j < p->l; ++j) out.s[out.l++] = "ACGT"[(int)p->seq[j] - 1];
+		kputs("\n+", &out);
 		out.s[out.l] = 0;
 		puts(out.s);
+		puts(p->cov);
 	}
 }

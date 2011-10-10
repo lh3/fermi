@@ -122,7 +122,7 @@ static int extend_right(aux_t *a, int beg, kstring_t *s)
 			ks_introsort(infocmp, curr->n, curr->a);
 			last = curr->a[0].info >> 32;
 			a->cat.a[0] = 0;
-			for (j = 1, cat = 0; j < prev->n; ++j) {
+			for (j = 1, cat = 0; j < curr->n; ++j) {
 				if (curr->a[j].info>>32 != last)
 					last = curr->a[j].info>>32, cat = j, curr->a[j].info = (curr->a[j].info&0xffffffff) | (uint64_t)cat<<32;
 				a->cat.a[j] = cat;
@@ -154,9 +154,9 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	return 0;
 }
 
-static void unitig_unidir(aux_t *a, kstring_t *s, uint64_t k0, uint64_t *end)
+static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
-	int beg = 0, rbeg, old_l = s->l;
+	int i, beg = beg0, rbeg, old_l = s->l;
 	while ((rbeg = extend_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k = a->nei.a[0].x[0];
 		if (a->nei.n > 1) break; // forward bifurcation
@@ -169,29 +169,40 @@ static void unitig_unidir(aux_t *a, kstring_t *s, uint64_t k0, uint64_t *end)
 		}
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0]); // successful extension
-		beg = rbeg; old_l = s->l; a->a[0].n = 0; // prepare for the next round of loop
+		if (cov->m < s->m) ks_resize(cov, s->m);
+		cov->l = s->l; cov->s[cov->l] = 0;
+		for (i = rbeg; i < old_l; ++i) // update the coverage string
+			if (cov->s[i] != '~') ++cov->s[i];
+		for (i = old_l; i < s->l; ++i) cov->s[i] = '"';
+		beg = rbeg; old_l = s->l; a->a[0].n = a->a[1].n = 0; // prepare for the next round of loop
 	}
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, uint64_t end[2], fm64_v nei[2])
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm64_v nei[2])
 {
 	extern void seq_revcomp6(int l, unsigned char *s);
 	extern void seq_reverse(int l, unsigned char *s);
+	fmintv_t intv0;
+	int seed_len;
 	int64_t k;
 	size_t i;
-	fmintv_t intv0;
 
 	nei[0].n = nei[1].n = 0;
 	k = fm_retrieve(a->e, seed, s);
+	seed_len = s->l;
 	seq_reverse(s->l, (uint8_t*)s->s);
 	if (s->l <= a->min_match) return -1; // too short
 	if (a->used[k>>6]>>(k&0x3f)&1) return -2; // used
 	if (test_contained_right(a, s, &intv0) < 0) return -3; // contained; "used" is set here
+	if (cov->m < s->m) ks_resize(cov, s->m);
+	cov->l = s->l; cov->s[cov->l] = 0;
+	for (i = 0; i < cov->l; ++i) cov->s[i] = '"'; // initialize the coverage string
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
-	unitig_unidir(a, s, intv0.x[0], &end[0]);
+	unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
 	for (i = 0; i < a->nei.n; ++i) kv_push(uint64_t, nei[0], a->nei.a[i].x[0]);
 	seq_revcomp6(s->l, (uint8_t*)s->s);
-	unitig_unidir(a, s, intv0.x[1], &end[1]);
+	a->a[0].n = a->a[1].n = a->nei.n = 0;
+	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	for (i = 0; i < a->nei.n; ++i) kv_push(uint64_t, nei[1], a->nei.a[i].x[0]);
 	return 0;
 }
@@ -201,16 +212,16 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t st
 	uint64_t i, end[2];
 	int j;
 	aux_t a;
-	kstring_t str;
+	kstring_t str, cov;
 	fm64_v nei[2];
 
-	str.l = str.m = 0; str.s = 0;
+	str.l = str.m = cov.l = cov.m = 0; str.s = cov.s = 0;
 	a.e = e; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
 	kv_init(nei[0]); kv_init(nei[1]);
 	for (i = start<<1|1; i < e->mcnt[1]; i += step<<1) {
 		for (j = 0; j < 4; j += step) {
-			if (unitig1(&a, i + j, &str, end, nei) >= 0) {
+			if (unitig1(&a, i + j, &str, &cov, end, nei) >= 0) {
 				fmnode_t *p;
 				kv_pushp(fmnode_t, *nodes, &p);
 				p->k[0] = end[0]; kv_init(p->nei[0]); kv_copy(uint64_t, p->nei[0], nei[0]);
@@ -218,6 +229,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t st
 				p->l = str.l;
 				p->seq = calloc(p->l, 1);
 				memcpy(p->seq, str.s, p->l);
+				p->cov = strdup(cov.s);
 			}
 		}
 	}
