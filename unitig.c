@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <pthread.h>
+#include <string.h>
 #include "fermi.h"
 #include "rld.h"
 #include "kvec.h"
@@ -82,12 +83,12 @@ static int extend_right(aux_t *a, int beg, kstring_t *s)
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
 	fmintv_t ok[6];
 
+	curr->n = a->nei.n = 0;
 	if (prev->n == 0) { // when extend_right() is called for the seed, prev is filled by test_contained_right()
 		overlap_intv(a->e, s->l - beg, (uint8_t*)s->s + beg, a->min_match, s->l - beg - 1, 0, prev);
 		if (prev->n == 0) return -1; // no overlap
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 	}
-	curr->n = a->nei.n = 0;
 	kv_resize(int, a->cat, prev->m);
 	for (j = 0; j < prev->n; ++j) a->cat.a[j] = 0; // only one interval; all point to 0
 	rbeg = prev->a[0].info&0xffffffffU; // read start
@@ -195,44 +196,57 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, uint64_t end[2], fm64_v
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t step, uint64_t *used, uint64_t *bend)
+static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t step, uint64_t *used, uint64_t *bend, fmnode_v *nodes)
 {
 	uint64_t i, end[2];
 	int j;
 	aux_t a;
 	kstring_t str;
 	fm64_v nei[2];
+
+	str.l = str.m = 0; str.s = 0;
 	a.e = e; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
 	kv_init(nei[0]); kv_init(nei[1]);
 	for (i = start<<1|1; i < e->mcnt[1]; i += step<<1) {
 		for (j = 0; j < 4; j += step) {
-			if (unitig1(&a, i + j, &str, end, nei) >= 0)
-				fprintf(stderr, "%d\n", str.l);
+			if (unitig1(&a, i + j, &str, end, nei) >= 0) {
+				fmnode_t *p;
+				kv_pushp(fmnode_t, *nodes, &p);
+				p->k[0] = end[0]; kv_init(p->nei[0]); kv_copy(uint64_t, p->nei[0], nei[0]);
+				p->k[1] = end[1]; kv_init(p->nei[1]); kv_copy(uint64_t, p->nei[1], nei[1]);
+				p->l = str.l;
+				p->seq = calloc(p->l, 1);
+				memcpy(p->seq, str.s, p->l);
+			}
 		}
 	}
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
+	free(nei[0].a); free(nei[1].a);
 }
 
 typedef struct {
 	uint64_t start, step, *used, *bend;
 	const rld_t *e;
 	int min_match;
+	fmnode_v nodes;
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	unitig_core(w->e, w->min_match, w->start, w->step, w->used, w->bend);
+	unitig_core(w->e, w->min_match, w->start, w->step, w->used, w->bend, &w->nodes);
 	return 0;
 }
 
 int fm6_unitig(const rld_t *e, int min_match, int n_threads)
 {
+	extern void msg_print(const fmnode_v *nodes);
 	uint64_t *used, *bend;
 	pthread_t *tid;
 	pthread_attr_t attr;
 	worker_t *w;
+	fmnode_v nodes;
 	int j;
 
 	pthread_attr_init(&attr);
@@ -249,10 +263,21 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads)
 		ww->start = j;
 		ww->used = used;
 		ww->bend = bend;
+		kv_init(ww->nodes);
 	}
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(tid); free(used); free(bend);
+	kv_init(nodes);
+	if (n_threads > 1) {
+		size_t i;
+		for (j = 0; j < n_threads; ++j) {
+			for (i = 0; i < w[j].nodes.n; ++i)
+				kv_push(fmnode_t, nodes, w[j].nodes.a[i]);
+			free(w[j].nodes.a);
+		}
+	} else nodes = w[0].nodes;
+	msg_print(&nodes);
 	free(w);
 	return 0;
 }

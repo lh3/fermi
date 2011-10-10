@@ -37,6 +37,15 @@ typedef struct { size_t n, m; uint64_t *a; } fm64_v;
 typedef struct { size_t n, m; fmgelem_t *a; } fmgelem_v;
 struct __rld_t; // defined in rld.h
 
+typedef struct {
+	uint64_t k[2];
+	fm64_v nei[2];
+	int l;
+	char *seq, *cov;
+} fmnode_t;
+
+typedef struct { size_t n, m; fmnode_t *a; } fmnode_v;
+
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
 typedef struct __kstring_t { // implemented in kstring.h
