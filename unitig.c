@@ -116,7 +116,8 @@ static int extend_right(aux_t *a, int beg, kstring_t *s)
 		if (curr->n == 0) break;
 		{ // update category
 			uint32_t last, cat;
-			kputc(curr->a[0].info>>32&0xf, s);
+			c = curr->a[0].info>>32&0xf;
+			kputc(fm6_comp(c), s);
 			ks_introsort(infocmp, curr->n, curr->a);
 			last = curr->a[0].info >> 32;
 			a->cat.a[0] = 0;
@@ -142,27 +143,29 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	for (i = rbeg - 1; i >= beg; --i) {
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
-			fm6_extend(a->e, p, ok, 0);
+			fm6_extend(a->e, p, ok, 1);
 			if (ok[0].x[2]) set_bits(a->used, ok); // some reads end here; they must be contained in a longer read
-			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) break; // backward bifurcation
+			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) return -1; // backward bifurcation
 			kv_push(fmintv_t, *curr, ok[(int)s->s[i]]);
 		}
-		if (j != prev->n) break;
 		swap = curr; curr = prev; prev = swap;
 	}
-	return i != beg? -1 : 0;
+	return 0;
 }
 
-static void unitig_unidir(aux_t *a, kstring_t *s, uint64_t *end)
-{
+static void unitig_unidir(aux_t *a, kstring_t *s, uint64_t k0, uint64_t *end)
+{ // FIXME: be careful of self-loop like a>>a or a><a
 	int beg = 0, rbeg, old_l = s->l;
 	while ((rbeg = extend_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
-		if (a->nei.n > 1) return; // forward bifurcation
-		if (check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
+		uint64_t k = a->nei.a[0].x[0];
+		if (a->nei.n > 1) break; // forward bifurcation
+		if (k == k0) break; // a loop like a>>b>>c>>a
+		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
+		if ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
 			s->l = old_l; s->s[old_l] = 0; // revert to the sequence before extension
-			set_bit(a->bend, a->nei.a[0].x[0]);
+			set_bit(a->bend, k);
 			return;
-		} // FIXME: test if there is a loop
+		}
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0]); // successful extension
 		beg = rbeg; old_l = s->l; a->a[0].n = 0; // prepare for the next round of loop
@@ -184,10 +187,10 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, uint64_t end[2], fm64_v
 	if (a->used[k>>6]>>(k&0x3f)&1) return -2; // used
 	if (test_contained_right(a, s, &intv0) < 0) return -3; // contained; "used" is set here
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
-	unitig_unidir(a, s, &end[0]);
+	unitig_unidir(a, s, intv0.x[0], &end[0]);
 	for (i = 0; i < a->nei.n; ++i) kv_push(uint64_t, nei[0], a->nei.a[i].x[0]);
 	seq_revcomp6(s->l, (uint8_t*)s->s);
-	unitig_unidir(a, s, &end[1]);
+	unitig_unidir(a, s, intv0.x[1], &end[1]);
 	for (i = 0; i < a->nei.n; ++i) kv_push(uint64_t, nei[1], a->nei.a[i].x[0]);
 	return 0;
 }
@@ -204,7 +207,8 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t st
 	kv_init(nei[0]); kv_init(nei[1]);
 	for (i = start<<1|1; i < e->mcnt[1]; i += step<<1) {
 		for (j = 0; j < 4; j += step) {
-			unitig1(&a, i + j, &str, end, nei);
+			if (unitig1(&a, i + j, &str, end, nei) >= 0)
+				fprintf(stderr, "%d\n", str.l);
 		}
 	}
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
