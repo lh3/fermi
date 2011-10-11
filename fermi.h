@@ -26,6 +26,10 @@ typedef struct {
 } fmecopt_t;
 
 typedef struct {
+	uint64_t x, y;
+} fm128_t;
+
+typedef struct {
 	uint64_t k[2];
 	uint8_t type[2], dir[2];
 	int l;
@@ -34,12 +38,13 @@ typedef struct {
 
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
 typedef struct { size_t n, m; uint64_t *a; } fm64_v;
+typedef struct { size_t n, m; fm128_t  *a; } fm128_v;
 typedef struct { size_t n, m; fmgelem_t *a; } fmgelem_v;
 struct __rld_t; // defined in rld.h
 
 typedef struct {
 	uint64_t k[2];
-	fm64_v nei[2];
+	fm128_v nei[2];
 	int l;
 	char *seq, *cov;
 } fmnode_t;

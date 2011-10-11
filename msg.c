@@ -17,7 +17,9 @@ void msg_print(const fmnode_v *nodes)
 			kputl(p->k[j], &out); kputc('>', &out);
 			for (k = 0; k < p->nei[j].n; ++k) {
 				if (k) kputc(',', &out);
-				kputl(p->nei[j].a[k], &out);
+				kputl(p->nei[j].a[k].x, &out); kputc(':', &out);
+				kputw((int32_t)p->nei[j].a[k].y, &out); kputc(':', &out);
+				kputw((int32_t)(p->nei[j].a[k].y>>32), &out);
 			}
 			if (p->nei[j].n == 0) kputc('.', &out);
 		}

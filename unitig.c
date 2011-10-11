@@ -77,14 +77,14 @@ static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
 	return ret;
 }
 
-static int extend_right(aux_t *a, int beg, kstring_t *s)
+static int try_right(aux_t *a, int beg, kstring_t *s)
 {
 	int ori_l = s->l, j, i, c, rbeg;
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
 	fmintv_t ok[6];
 
 	curr->n = a->nei.n = 0;
-	if (prev->n == 0) { // when extend_right() is called for the seed, prev is filled by test_contained_right()
+	if (prev->n == 0) { // when try_right() is called for the seed, prev is filled by test_contained_right()
 		overlap_intv(a->e, s->l - beg, (uint8_t*)s->s + beg, a->min_match, s->l - beg - 1, 0, prev);
 		if (prev->n == 0) return -1; // no overlap
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
@@ -92,31 +92,33 @@ static int extend_right(aux_t *a, int beg, kstring_t *s)
 	kv_resize(int, a->cat, prev->m);
 	for (j = 0; j < prev->n; ++j) a->cat.a[j] = 0; // only one interval; all point to 0
 	rbeg = prev->a[0].info&0xffffffffU; // read start
-	for (;;) {
+	while (prev->n) {
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
 			if (a->cat.a[j] < 0) continue;
 			fm6_extend(a->e, p, ok, 0);
 			if (ok[0].x[2]) { // some reads end here
+				// if there are no contained reads, we do not need the following "if()"
 				if ((int32_t)p->info == (int32_t)prev->a[a->cat.a[j]].info && ok[0].x[2] == p->x[2]) { // found the neighbor
-					ok[0].info = s->l - ori_l;
+					int cat = a->cat.a[j];
+					assert(j == 0 || a->cat.a[j] > a->cat.a[j-1]);
+					ok[0].info = ori_l - (p->info&0xffffffffU);
+					for (i = j; i < prev->n && a->cat.a[i] == cat; ++i) {
+						ok[0].info += prev->a[i].x[2]<<32; // get the "width"
+						a->cat.a[i] = -1; // mask out other intervals of the same category
+					}
 					kv_push(fmintv_t, a->nei, ok[0]); // keep in the neighbor vector
-					// mask out other intervals of the same cat(egory)
-					for (i = j + 1; i < prev->n && a->cat.a[i] == a->cat.a[j]; ++i) a->cat.a[i] = -1;
-					for (i = j - 1; i >= 0      && a->cat.a[i] == a->cat.a[j]; --i) a->cat.a[i] = -1; // FIXME: is this loop necessary?
-					a->cat.a[j] = -1;
 					continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
 				}
 				set_bits(a->used, ok); // the read is contained in another read; mark it as used
-			}
+			} // ~if(ok[0].x[2])
 			for (c = 1; c < 5; ++c) // collect extensible intervals
 				if (ok[c].x[2]) {
 					ok[c].info = (p->info&0xfffffff0ffffffffLLU) | (uint64_t)c<<32;
 					kv_push(fmintv_t, *curr, ok[c]);
 				}
-		}
-		if (curr->n == 0) break;
-		{ // update category
+		} // ~for(j)
+		if (curr->n) { // update category
 			uint32_t last, cat;
 			kv_resize(int, a->cat, curr->m);
 			c = curr->a[0].info>>32&0xf;
@@ -124,14 +126,14 @@ static int extend_right(aux_t *a, int beg, kstring_t *s)
 			ks_introsort(infocmp, curr->n, curr->a);
 			last = curr->a[0].info >> 32;
 			a->cat.a[0] = 0;
-			for (j = 1, cat = 0; j < curr->n; ++j) {
+			for (j = 1, cat = 0; j < curr->n; ++j) { // this loop recalculate cat
 				if (curr->a[j].info>>32 != last) last = curr->a[j].info>>32, cat = j;
 				a->cat.a[j] = cat;
 				curr->a[j].info = (curr->a[j].info&0xffffffff) | (uint64_t)cat<<36;
 			}
 		}
-		swap = curr; curr = prev; prev = swap;
-	}
+		swap = curr; curr = prev; prev = swap; // swap curr and prev
+	} // ~while(prev->n)
 	if (a->nei.n > 1) s->l = ori_l, s->s[s->l] = 0;
 	return rbeg;
 }
@@ -152,14 +154,14 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 			kv_push(fmintv_t, *curr, ok[(int)s->s[i]]);
 		}
 		swap = curr; curr = prev; prev = swap;
-	}
+	} // ~for(i)
 	return 0;
 }
 
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
 	int i, beg = beg0, rbeg, old_l = s->l;
-	while ((rbeg = extend_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
+	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k = a->nei.a[0].x[0];
 		if (a->nei.n > 1) break; // forward bifurcation
 		if (k == k0) break; // a loop like a>>b>>c>>a
@@ -180,32 +182,44 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 	}
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm64_v nei[2])
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2])
 {
 	extern void seq_revcomp6(int l, unsigned char *s);
 	extern void seq_reverse(int l, unsigned char *s);
 	fmintv_t intv0;
 	int seed_len;
+	fm128_t z;
 	int64_t k;
 	size_t i;
 
 	nei[0].n = nei[1].n = 0;
+	// retrieve the sequence pointed by seed
 	k = fm_retrieve(a->e, seed, s);
-	seed_len = s->l;
 	seq_reverse(s->l, (uint8_t*)s->s);
+	seed_len = s->l;
+	// check length, containment and if used before
 	if (s->l <= a->min_match) return -1; // too short
 	if (a->used[k>>6]>>(k&0x3f)&1) return -2; // used
 	if (test_contained_right(a, s, &intv0) < 0) return -3; // contained; "used" is set here
+	// initialize the coverage string
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
-	for (i = 0; i < cov->l; ++i) cov->s[i] = '"'; // initialize the coverage string
+	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
+	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
-	for (i = 0; i < a->nei.n; ++i) kv_push(uint64_t, nei[0], a->nei.a[i].x[0]);
-	seq_revcomp6(s->l, (uint8_t*)s->s);
+	for (i = 0; i < a->nei.n; ++i) {
+		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
+		kv_push(fm128_t, nei[0], z);
+	}
+	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
+	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
 	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
-	for (i = 0; i < a->nei.n; ++i) kv_push(uint64_t, nei[1], a->nei.a[i].x[0]);
+	for (i = 0; i < a->nei.n; ++i) {
+		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
+		kv_push(fm128_t, nei[1], z);
+	}
 	return 0;
 }
 
@@ -215,19 +229,22 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t st
 	int j;
 	aux_t a;
 	kstring_t str, cov;
-	fm64_v nei[2];
+	fm128_v nei[2];
 
+	assert(step >= 2 && (step&1) == 0); // there are requirements about step
+	// initialize aux_t and all the vectors
 	str.l = str.m = cov.l = cov.m = 0; str.s = cov.s = 0;
 	a.e = e; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
 	kv_init(nei[0]); kv_init(nei[1]);
+	// the core loop
 	for (i = start<<1|1; i < e->mcnt[1]; i += step<<1) {
-		for (j = 0; j < 4; j += step) {
-			if (unitig1(&a, i + j, &str, &cov, end, nei) >= 0) {
+		for (j = 0; j < step<<1; j += 2) { // "+=2" because forward and reverse sequences come in adjacent pairs
+			if (unitig1(&a, i + j, &str, &cov, end, nei) >= 0) { // then we keep the unitig
 				fmnode_t *p;
 				kv_pushp(fmnode_t, *nodes, &p);
-				p->k[0] = end[0]; kv_init(p->nei[0]); kv_copy(uint64_t, p->nei[0], nei[0]);
-				p->k[1] = end[1]; kv_init(p->nei[1]); kv_copy(uint64_t, p->nei[1], nei[1]);
+				p->k[0] = end[0]; kv_init(p->nei[0]); kv_copy(fm128_t, p->nei[0], nei[0]);
+				p->k[1] = end[1]; kv_init(p->nei[1]); kv_copy(fm128_t, p->nei[1], nei[1]);
 				p->l = str.l;
 				p->seq = calloc(p->l, 1);
 				memcpy(p->seq, str.s, p->l);
