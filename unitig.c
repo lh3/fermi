@@ -103,6 +103,7 @@ static int extend_right(aux_t *a, int beg, kstring_t *s)
 					kv_push(fmintv_t, a->nei, ok[0]); // keep in the neighbor vector
 					// mask out other intervals of the same cat(egory)
 					for (i = j + 1; i < prev->n && a->cat.a[i] == a->cat.a[j]; ++i) a->cat.a[i] = -1;
+					for (i = j - 1; i >= 0      && a->cat.a[i] == a->cat.a[j]; --i) a->cat.a[i] = -1; // FIXME: is this loop necessary?
 					a->cat.a[j] = -1;
 					continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
 				}
@@ -124,9 +125,9 @@ static int extend_right(aux_t *a, int beg, kstring_t *s)
 			last = curr->a[0].info >> 32;
 			a->cat.a[0] = 0;
 			for (j = 1, cat = 0; j < curr->n; ++j) {
-				if (curr->a[j].info>>32 != last)
-					last = curr->a[j].info>>32, cat = j, curr->a[j].info = (curr->a[j].info&0xffffffff) | (uint64_t)cat<<32;
+				if (curr->a[j].info>>32 != last) last = curr->a[j].info>>32, cat = j;
 				a->cat.a[j] = cat;
+				curr->a[j].info = (curr->a[j].info&0xffffffff) | (uint64_t)cat<<36;
 			}
 		}
 		swap = curr; curr = prev; prev = swap;
