@@ -507,3 +507,20 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 	free(s); free(idxfn);
 	return 0;
 }
+
+int main_clean(int argc, char *argv[])
+{
+	extern fmnode_v *msg_read(const char *fn);
+	extern void msg_print(const fmnode_v *nodes);
+	fmnode_v *nodes;
+	int c;
+	while ((c = getopt(argc, argv, "")) >= 0) {
+	}
+	if (argc == optind) {
+		fprintf(stderr, "Usage: fermi clean <in.msg>\n");
+		return 1;
+	}
+	nodes = msg_read(argv[optind]);
+	msg_print(nodes);
+	return 0;
+}

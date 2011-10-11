@@ -46,6 +46,7 @@ typedef struct {
 	uint64_t k[2];
 	fm128_v nei[2];
 	int l;
+	float avg_cov;
 	char *seq, *cov;
 } fmnode_t;
 
