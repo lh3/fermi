@@ -108,7 +108,7 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 							vec32_t *b = ec->b + (k>>B_SHIFT);
 							fm_spinlock_t *lock = ec->lock + (k>>B_SHIFT);
 							y = (k & B_MASK)<<18 | x;
-							while (__sync_lock_test_and_set(lock, 1));
+							while (__sync_lock_test_and_set(lock, 1)); // a spinlock
 							kv_push(uint32_t, *b, y);
 							__sync_lock_release(lock);
 						}
@@ -197,7 +197,10 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 }
 
 void fm_print_buffer(kstring_t *buf, volatile int *lock, int force)
-{
+{ // note that according to the POSIX thread specification, fputs() is thread safe.
+	fputs(buf->s, stdout); // NB: this segfaults when buf->s == 0
+	buf->s[0] = 0; buf->l = 0;
+	/*
 	static const int MAX_OUT_BUF = 0x10000;
 	if (force || buf->l >= MAX_OUT_BUF) { // lock stdout and output
 		while (__sync_lock_test_and_set(lock, 1));
@@ -209,6 +212,7 @@ void fm_print_buffer(kstring_t *buf, volatile int *lock, int force)
 		__sync_lock_release(lock);
 		buf->l = 0;
 	}
+	*/
 }
 
 static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)

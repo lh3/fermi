@@ -12,6 +12,8 @@
 #include "ksort.h"
 KSORT_INIT(infocmp, fmintv_t, info_lt)
 
+static volatile int g_out_lock;
+
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
 	uint64_t *p = bits + (x>>6);
@@ -227,92 +229,88 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t step, uint64_t *used, uint64_t *bend, fmnode_v *nodes)
+static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited)
 {
-	uint64_t i, end[2];
-	int j;
+	extern void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
+	extern void fm_print_buffer(kstring_t *buf, volatile int *lock, int force);
+	uint64_t i;
+	int max_l = 0;
 	aux_t a;
-	kstring_t str, cov;
-	fm128_v nei[2];
+	kstring_t str, cov, out;
+	fmnode_t z;
 
-	assert(step >= 2 && (step&1) == 0); // there are requirements about step
+	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
-	str.l = str.m = cov.l = cov.m = 0; str.s = cov.s = 0;
+	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
-	kv_init(nei[0]); kv_init(nei[1]);
+	kv_init(z.nei[0]); kv_init(z.nei[1]);
 	// the core loop
-	for (i = start<<1|1; i < e->mcnt[1]; i += step<<1) {
-		for (j = 0; j < step<<1; j += 2) { // "+=2" because forward and reverse sequences come in adjacent pairs
-			if (unitig1(&a, i + j, &str, &cov, end, nei) >= 0) { // then we keep the unitig
-				fmnode_t *p;
-				kv_pushp(fmnode_t, *nodes, &p);
-				p->k[0] = end[0]; kv_init(p->nei[0]); kv_copy(fm128_t, p->nei[0], nei[0]);
-				p->k[1] = end[1]; kv_init(p->nei[1]); kv_copy(fm128_t, p->nei[1], nei[1]);
-				p->l = str.l;
-				p->seq = calloc(p->l, 1);
-				memcpy(p->seq, str.s, p->l);
-				p->cov = strdup(cov.s);
+	for (i = start; i < end; i += 2) {
+		if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
+			uint64_t *p, x;
+			p = visited + (z.k[0]>>6); x = 1LLU<<(z.k[0]&0x3f);
+			if (__sync_fetch_and_or(p, x)&x) continue; // FIXME: is it always working?
+			p = visited + (z.k[1]>>6); x = 1LLU<<(z.k[1]&0x3f);
+			if (__sync_fetch_and_or(p, x)&x) continue;
+			z.l = str.l;
+			if (max_l < str.m) {
+				max_l = str.m;
+				z.seq = realloc(z.seq, max_l);
+				z.cov = realloc(z.cov, max_l);
 			}
+			memcpy(z.seq, str.s, z.l);
+			memcpy(z.cov, cov.s, z.l + 1);
+			msg_write_node(&z, i, &out);
+			fm_print_buffer(&out, &g_out_lock, 0);
 		}
 	}
+	fm_print_buffer(&out, &g_out_lock, 1);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
-	free(nei[0].a); free(nei[1].a);
+	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
+	free(str.s); free(cov.s); free(out.s);
 }
 
 typedef struct {
-	uint64_t start, step, *used, *bend;
+	uint64_t start, end, *used, *bend, *visited;
 	const rld_t *e;
 	int min_match;
-	fmnode_v nodes;
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	unitig_core(w->e, w->min_match, w->start, w->step, w->used, w->bend, &w->nodes);
+	unitig_core(w->e, w->min_match, w->start, w->end, w->used, w->bend, w->visited);
 	return 0;
 }
 
 int fm6_unitig(const rld_t *e, int min_match, int n_threads)
 {
-	extern void msg_print(const fmnode_v *nodes);
-	uint64_t *used, *bend;
+	uint64_t *used, *bend, *visited, rest = e->mcnt[1];
 	pthread_t *tid;
 	pthread_attr_t attr;
 	worker_t *w;
-	fmnode_v nodes;
 	int j;
 
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
 	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
-	used  = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
-	bend = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
+	used    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
+	bend    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
+	visited = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
+	assert(e->mcnt[1] >= n_threads * 2);
 	for (j = 0; j < n_threads; ++j) {
 		worker_t *ww = w + j;
 		ww->e = e;
 		ww->min_match = min_match;
-		ww->step = n_threads * 2;
-		ww->start = j;
-		ww->used = used;
-		ww->bend = bend;
-		kv_init(ww->nodes);
+		ww->start = (e->mcnt[1] - rest) / 2 * 2;
+		ww->end = ww->start + rest / (n_threads - j) / 2 * 2;
+		rest -= ww->end - ww->start;
+		ww->used = used; ww->bend = bend; ww->visited = visited;
 	}
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
-	free(tid); free(used); free(bend);
-	kv_init(nodes);
-	if (n_threads > 1) {
-		size_t i;
-		for (j = 0; j < n_threads; ++j) {
-			for (i = 0; i < w[j].nodes.n; ++i)
-				kv_push(fmnode_t, nodes, w[j].nodes.a[i]);
-			free(w[j].nodes.a);
-		}
-	} else nodes = w[0].nodes;
-	msg_print(&nodes);
-	free(w);
+	free(tid); free(used); free(bend); free(visited); free(w);
 	return 0;
 }

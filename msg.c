@@ -7,7 +7,7 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 	int j, k;
 	kputc('@', out); kputl(id, out);
 	for (j = 0; j < 2; ++j) {
-		kputc(' ', out);
+		kputc('\t', out);
 		kputl(p->k[j], out); kputc('>', out);
 		for (k = 0; k < p->nei[j].n; ++k) {
 			if (k) kputc(',', out);
