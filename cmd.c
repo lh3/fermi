@@ -41,20 +41,22 @@ int main_chkbwt(int argc, char *argv[])
 {
 	rld_t *e;
 	rlditr_t itr;
-	int i, j, l, c = 0, plain = 0, use_mmap = 0;
+	int i, j, l, c = 0, plain = 1, use_mmap = 0, check_rank = 0;
 	uint64_t *cnt, *rank, sum = 0;
 	double t;
-	while ((c = getopt(argc, argv, "PM")) >= 0) {
+	while ((c = getopt(argc, argv, "PMr")) >= 0) {
 		switch (c) {
-			case 'P': plain = 1; break;
+			case 'P': plain = 0; break;
+			case 'r': check_rank = 1; break;
 			case 'M': use_mmap = 1; break;
 		}
 	}
 	if (argc == optind) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi chkbwt [-MP] <idxbase.bwt>\n\n");
+		fprintf(stderr, "Usage:   fermi chkbwt [-MPrR] <idxbase.bwt>\n\n");
 		fprintf(stderr, "Options: -M        load the FM-index as a memory mapped file\n");
-		fprintf(stderr, "         -P        print the BWT to the stdout\n\n");
+		fprintf(stderr, "         -r        check rank\n");
+		fprintf(stderr, "         -P        do not print the BWT to the stdout\n\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
@@ -78,27 +80,31 @@ int main_chkbwt(int argc, char *argv[])
 			fprintf(stderr, "[E::%s] Symbol `%d' is not in the alphabet.\n", __func__, c);
 			exit(1); // memory leak
 		}
-		for (i = 0; i < l; ++i) {
-			++cnt[c];
-			rld_rank1a(e, sum, rank);
-			for (j = 0; j < e->asize; ++j) {
-				if (cnt[j] != rank[j]) {
-					fprintf(stderr, "[E::%s] rank(%d,%lld)=%lld != %lld\n", __func__,
-							j, (unsigned long long)sum, (unsigned long long)rank[j], (unsigned long long)cnt[j]);
-					exit(1); // memory leak
+		if (check_rank) {
+			for (i = 0; i < l; ++i) {
+				++cnt[c];
+				rld_rank1a(e, sum, rank);
+				for (j = 0; j < e->asize; ++j) {
+					if (cnt[j] != rank[j]) {
+						fprintf(stderr, "[E::%s] rank(%d,%lld)=%lld != %lld\n", __func__,
+								j, (unsigned long long)sum, (unsigned long long)rank[j], (unsigned long long)cnt[j]);
+						exit(1); // memory leak
+					}
 				}
+				++sum;
+				if (sum%10000000 == 0)
+					fprintf(stderr, "[M::%s] Checked %lld symbols.\n", __func__, (unsigned long long)sum);
 			}
-			++sum;
-			if (sum%10000000 == 0)
-				fprintf(stderr, "[M::%s] Checked %lld symbols.\n", __func__, (unsigned long long)sum);
 		}
 		if (plain) for (i = 0; i < l; ++i) putchar("$ACGTN"[c]);
 	}
-	fprintf(stderr, "[M::%s] Checked the rank function in %.3lf seconds.\n", __func__, cputime() - t);
-	for (j = 0; j < e->asize; ++j) {
-		if (cnt[j] != e->mcnt[j+1]) {
-			fprintf(stderr, "[E::%s] Different counts for symbol %d: %lld != %lld\n", __func__, j,
-					(unsigned long long)cnt[j], (unsigned long long)e->mcnt[j+1]);
+	if (check_rank) {
+		fprintf(stderr, "[M::%s] Checked the rank function in %.3lf seconds.\n", __func__, cputime() - t);
+		for (j = 0; j < e->asize; ++j) {
+			if (cnt[j] != e->mcnt[j+1]) {
+				fprintf(stderr, "[E::%s] Different counts for symbol %d: %lld != %lld\n", __func__, j,
+						(unsigned long long)cnt[j], (unsigned long long)e->mcnt[j+1]);
+			}
 		}
 	}
 	if (plain) putchar('\n');
@@ -109,10 +115,11 @@ int main_chkbwt(int argc, char *argv[])
 static void print_i(const rld_t *e, uint64_t i, kstring_t *s)
 {
 	int j;
-	fm_retrieve(e, i, s);
+	uint64_t k;
+	k = fm_retrieve(e, i, s);
 	for (j = s->l - 1; j >= 0; --j)
 		putchar("$ACGTN"[(int)s->s[j]]);
-	putchar('\n');
+	printf("\t%ld\n", (long)k);
 }
 
 int main_unpack(int argc, char *argv[])
