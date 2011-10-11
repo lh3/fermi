@@ -163,7 +163,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
-	int i, beg = beg0, rbeg, old_l = s->l;
+	int i, beg = beg0, rbeg, ori_l = s->l;
 	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k = a->nei.a[0].x[0];
 		if (a->nei.n > 1) { // forward bifurcation
@@ -173,7 +173,6 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
 		if ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
-			s->l = cov->l = old_l; s->s[old_l] = cov->s[old_l] = 0; // revert to the sequence before extension
 			set_bit(a->bend, k);
 			break;
 		}
@@ -181,11 +180,12 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		set_bits(a->used, &a->nei.a[0]); // successful extension
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
-		for (i = rbeg; i < old_l; ++i) // update the coverage string
+		for (i = rbeg; i < ori_l; ++i) // update the coverage string
 			if (cov->s[i] != '~') ++cov->s[i];
-		for (i = old_l; i < s->l; ++i) cov->s[i] = '"';
-		beg = rbeg; old_l = s->l; a->a[0].n = a->a[1].n = 0; // prepare for the next round of loop
+		for (i = ori_l; i < s->l; ++i) cov->s[i] = '"';
+		beg = rbeg; ori_l = s->l; a->a[0].n = a->a[1].n = 0; // prepare for the next round of loop
 	}
+	cov->l = s->l = ori_l; s->s[ori_l] = cov->s[ori_l] = 0;
 }
 
 static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2])
