@@ -126,6 +126,7 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 			ks_introsort(infocmp, curr->n, curr->a);
 			last = curr->a[0].info >> 32;
 			a->cat.a[0] = 0;
+			curr->a[0].info &= 0xffffffff;
 			for (j = 1, cat = 0; j < curr->n; ++j) { // this loop recalculate cat
 				if (curr->a[j].info>>32 != last) last = curr->a[j].info>>32, cat = j;
 				a->cat.a[j] = cat;
