@@ -521,6 +521,7 @@ int main_clean(int argc, char *argv[])
 		return 1;
 	}
 	nodes = msg_read(argv[optind]);
+	msg_rmtip(nodes, 2.0, 102);
 	msg_print(nodes);
 	return 0;
 }
