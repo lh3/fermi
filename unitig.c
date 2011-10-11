@@ -173,9 +173,9 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
 		if ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
-			s->l = old_l; s->s[old_l] = 0; // revert to the sequence before extension
+			s->l = cov->l = old_l; s->s[old_l] = cov->s[old_l] = 0; // revert to the sequence before extension
 			set_bit(a->bend, k);
-			return;
+			break;
 		}
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0]); // successful extension
@@ -249,11 +249,10 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	// the core loop
 	for (i = start; i < end; i += 2) {
 		if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
-			uint64_t *p, x;
-			p = visited + (z.k[0]>>6); x = 1LLU<<(z.k[0]&0x3f);
-			if (__sync_fetch_and_or(p, x)&x) continue; // FIXME: is it always working?
-			p = visited + (z.k[1]>>6); x = 1LLU<<(z.k[1]&0x3f);
-			if (__sync_fetch_and_or(p, x)&x) continue;
+			uint64_t *p[2], x[2];
+			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
+			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
+			if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue; // NOT always working
 			z.l = str.l;
 			if (max_l < str.m) {
 				max_l = str.m;
