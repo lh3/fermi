@@ -117,6 +117,7 @@ static int extend_right(aux_t *a, int beg, kstring_t *s)
 		if (curr->n == 0) break;
 		{ // update category
 			uint32_t last, cat;
+			kv_resize(int, a->cat, curr->m);
 			c = curr->a[0].info>>32&0xf;
 			kputc(fm6_comp(c), s);
 			ks_introsort(infocmp, curr->n, curr->a);
