@@ -95,9 +95,6 @@ extern "C" {
 	 */
 	int64_t fm_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
 
-	/** Similar to {@link #fm_retrieve()} but working for DNA FM-Index only */
-	int64_t fm6_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
-
 	/**
 	 * Extend a string in either forward or backward direction
 	 *

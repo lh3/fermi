@@ -29,10 +29,9 @@ int64_t fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 	s->l = 0;
 	while (1) {
 		int c = rld_rank1a(e, k, ok);
-		if (c) {
-			k = e->cnt[c] + ok[c] - 1;
-			kputc(c, s);
-		} else return ok[0] - 1;
+		k = e->cnt[c] + ok[c] - 1;
+		if (c == 0) return k;
+		kputc(c, s);
 	}
 }
 
@@ -54,21 +53,33 @@ int fm6_extend(const rld_t *e, const fmintv_t *ik, fmintv_t ok[6], int is_back)
 	return 0;
 }
 
-int64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
+uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, int *contained)
 {
-	fmintv_t ok[6], ik;
-	s->l = 0;
-	ik.x[0] = ik.x[1] = x; ik.x[2] = 1;
+	uint64_t k = x, ok[6];
+	fmintv_t ok2[6];
+	s->l = 0; *contained = 0;
 	while (1) {
-		int c;
-		fm6_extend(e, &ik, ok, 1);
-		if (!ok[0].x[2]) {
-			for (c = 1; c < 6; ++c)
-				if (ok[c].x[2]) break;
-			ik = ok[c];
-			kputc(c, s);
-		} else return ok[0].x[0];
+		int c = rld_rank1a(e, k, ok);
+		k = e->cnt[c] + ok[c] - 1;
+		if (c == 0) break;
+		if (s->l > 0) {
+			if (k2->x[2] == 1) k2->x[0] = k;
+			else {
+				fm6_extend(e, k2, ok2, 1);
+				*k2 = ok2[c];
+			}
+		} else fm6_set_intv(e, c, *k2);
+		kputc(c, s);
 	}
+	if (k2->x[2] != 1) {
+		fm6_extend(e, k2, ok2, 1);
+		if (ok2[0].x[2] != k2->x[2]) *contained |= 1; // left contained
+		*k2 = ok2[0];
+	} else k2->x[0] = k;
+	fm6_extend(e, k2, ok2, 0);
+	if (ok2[0].x[2] != k2->x[2]) *contained |= 2; // right contained
+	*k2 = ok2[0];
+	return k;
 }
 
 void fm_reverse_fmivec(fmintv_v *p)
