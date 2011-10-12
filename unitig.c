@@ -247,7 +247,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	kv_init(z.nei[0]); kv_init(z.nei[1]);
 	z.seq = z.cov = 0;
 	// the core loop
-	for (i = start; i < end; i += 2) {
+	for (i = start|1; i < end; i += 2) {
 		if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
 			uint64_t *p[2], x[2];
 			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);

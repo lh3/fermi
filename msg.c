@@ -10,7 +10,7 @@
 KSEQ_INIT(gzFile, gzread)
 
 #include "khash.h"
-KHASH_MAP_INIT_INT64(64, fm64_v)
+KHASH_MAP_INIT_INT64(64, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
@@ -99,33 +99,49 @@ fmnode_v *msg_read(const char *fn)
 	return nodes;
 }
 
-static inline void put(hash64_t *h, uint64_t key, uint64_t v)
-{
-	int ret;
-	khint_t k;
-	k = kh_put(64, h, key, &ret);
-	if (ret) kv_init(kh_val(h, k));
-	kv_push(uint64_t, kh_val(h, k), v);
-}
-
-hash64_t *msg_hash(const fmnode_v *nodes)
+static hash64_t *build_hash(const fmnode_v *nodes)
 {
 	size_t i;
-	int j, k;
+	int j, ret;
 	hash64_t *h;
 	h = kh_init(64);
 	for (i = 0; i < nodes->n; ++i) {
 		const fmnode_t *p = &nodes->a[i];
 		if (p->l < 0) continue;
 		for (j = 0; j < 2; ++j) {
-			put(h, p->k[j], (uint64_t)i<<2 | 0<<1 | j);
-			for (k = 0; k < p->nei[j].n; ++k)
-				put(h, p->nei[j].a[k].x, (uint64_t)i<<2 | 1<<1 | j);
+			khint_t k = kh_put(64, h, p->k[j], &ret);
+			if (ret == 0) {
+				if (fm_verbose >= 2)
+					fprintf(stderr, "[W::%s] tip %ld is duplicated.\n", __func__, (long)p->k[j]);
+				kh_val(h, k) = (uint64_t)-1;
+			} else kh_val(h, k) = i<<1|j;
 		}
 	}
 	return h;
 }
 
+static void amend(fmnode_v *nodes, hash64_t *h)
+{
+	size_t i;
+	int j, l, b;
+	khint_t k;
+	for (i = 0; i < nodes->n; ++i) {
+		fmnode_t *q, *p = &nodes->a[i];
+		for (j = 0; j < 2; ++j) {
+			for (l = 0; l < p->nei[j].n; ++l) {
+				uint64_t x = p->nei[j].a[l].x;
+				k = kh_get(64, h, x);
+				if (k == kh_end(h)) {
+					if (fm_verbose >= 2) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
+					continue;
+				}
+				q = &nodes->a[kh_val(h, k)>>1];
+			}
+		}
+	}
+}
+
+/*
 static int rmnode(fmnode_v *nodes, hash64_t *h, uint64_t k0)
 {
 	khint_t k;
@@ -152,18 +168,63 @@ static void rmtip_core(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 	int j;
 	for (i = 0; i < nodes->n; ++i) {
 		fmnode_t *p = &nodes->a[i];
-		if (p->k[0] == 992352 || p->k[1] == 992352) {
-			fprintf(stderr, "here\n");
-		}
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
 		if (p->avg_cov < min_cov || p->l < min_len) p->l = -1;
 		for (j = 0; j < 2; ++j) rmnode(nodes, h, p->k[j]);
 	}
 }
 
-void msg_rmtip(fmnode_v *nodes, float min_cov, int min_len)
+#define __swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))
+
+static void flip(fmnode_t *p)
+{
+	extern void seq_reverse(int l, unsigned char *s);
+	extern void seq_revcomp6(int l, unsigned char *s);
+	fm128_v t;
+	seq_revcomp6(p->l, (uint8_t*)p->seq);
+	seq_reverse(p->l, (uint8_t*)p->cov);
+	__swap(p->k[0], p->k[1]);
+	t = p->nei[0]; p->nei[0] = p->nei[1]; p->nei[1] = t;
+}
+
+static int merge_node(fmnode_v *nodes, hash64_t *h, uint64_t key0, uint64_t key1, int len)
+{
+	int j;
+	fmnode_t *p[2];
+	fm64_v *q[2];
+	khint_t k[2];
+	uint32_t key[2];
+	key[0] = key0; key[1] = key1;
+	for (j = 0; j < 2; ++j) {
+		k[j] = kh_get(64, h, key[j]);
+		if (k[j] == kh_end(h)) return -1; // cannot find in the hash table
+		q[j] = &kh_val(h, k[j]);
+		if (q[j]->n != 2) return -1; // not exactly two nodes
+		if (((q[j]->a[0] ^ q[j]->a[1]) & 2) == 0) return -1; // not a start and an end
+		if (q[j]->a[0]&2) __swap(q[j]->a[0], q[j]->a[1]);
+		p[j] = &nodes->a[q[j]->a[0]>>2];
+	}
+	if (q[0]->a[0]>>2 != q[1]->a[1]>>2 || q[0]->a[1]>>2 != q[1]->a[0]>>2) return -1;
+	if (!(q[0]->a[0]&1)) flip(p[0]);
+	if (q[0]->a[1]&1) flip(p[1]);
+	return 0;
+}
+
+static void clean_core(fmnode_v *nodes, hash64_t *h)
+{
+	size_t i;
+	for (i = 0; i < nodes->n; ++i) {
+		fmnode_t *p = &nodes->a[i];
+		if (p->nei[0].n == 1) merge_node(nodes, h, p->k[0], p->nei[0].a[0].x, (uint32_t)p->nei[0].a[0].y);
+		if (p->nei[1].n == 1) merge_node(nodes, h, p->k[1], p->nei[1].a[0].x, (uint32_t)p->nei[1].a[0].y);
+	}
+}
+*/
+void msg_clean(fmnode_v *nodes, float min_cov, int min_len)
 {
 	hash64_t *h;
-	h = msg_hash(nodes);
-	rmtip_core(nodes, h, min_cov, min_len);
+	h = build_hash(nodes);
+	amend(nodes, h);
+//	rmtip_core(nodes, h, min_cov, min_len);
+//	clean_core(nodes, h);
 }
