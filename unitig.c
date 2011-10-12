@@ -101,7 +101,7 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 			fm6_extend(a->e, p, ok, 0);
 			if (ok[0].x[2]) { // some reads end here
 				// if there are no contained reads, we do not need the following "if()"
-				if ((int32_t)p->info == (int32_t)prev->a[a->cat.a[j]].info && ok[0].x[2] == p->x[2]) { // found the neighbor
+				if ((int32_t)p->info == (int32_t)prev->a[a->cat.a[j]].info && ok[0].x[2] == p->x[2] && s->l != ori_l) { // found the neighbor
 					int cat = a->cat.a[j];
 					assert(j == 0 || a->cat.a[j] > a->cat.a[j-1]);
 					ok[0].info = ori_l - (p->info&0xffffffffU);
