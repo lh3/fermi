@@ -120,6 +120,7 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 					} else set_bits(a->used, &ok0); // the read is contained in another read; mark it as used
 				}
 			} // ~if(ok[0].x[2])
+			if (a->cat.a[j] < 0) continue; // no need to proceed if we have finished this path
 			for (c = 1; c < 5; ++c) // collect extensible intervals
 				if (ok[c].x[2]) {
 					fm6_extend0(a->e, &ok[c], &ok0, 1);
