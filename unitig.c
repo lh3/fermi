@@ -93,13 +93,13 @@ static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
 	return ret;
 }
 
-static int try_right(aux_t *a, int beg, kstring_t *s, int *left_fork)
+static int try_right(aux_t *a, int beg, kstring_t *s)
 {
 	int ori_l = s->l, j, i, c, rbeg;
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
 	fmintv_t ok[6], ok0;
 
-	curr->n = a->nei.n = 0; *left_fork = 0;
+	curr->n = a->nei.n = 0;
 	if (prev->n == 0) { // when try_right() is called for the seed, prev is filled by test_contained_right()
 		overlap_intv(a->e, s->l - beg, (uint8_t*)s->s + beg, a->min_match, s->l - beg - 1, 0, prev, 0);
 		if (prev->n == 0) return -1; // no overlap
@@ -114,26 +114,28 @@ static int try_right(aux_t *a, int beg, kstring_t *s, int *left_fork)
 			if (a->cat.a[j] < 0) continue;
 			fm6_extend(a->e, p, ok, 0); // forward extension
 			if (ok[0].x[2] && ori_l != s->l) { // some (partial) reads end here
-				fmintv_t ok2[6];
-				fm6_extend(a->e, &ok[0], ok2, 1); // backward extension to look for sentinels
-				if (ok2[0].x[2]) { // the match is bounded by sentinels - a full-length match
-					if (ok[0].x[2] == p->x[2] && p->x[2] == ok2[0].x[2]) { // never consider a read contained in another read
+				fm6_extend0(a->e, &ok[0], &ok0, 1); // backward extension to look for sentinels
+				if (ok0.x[2]) { // the match is bounded by sentinels - a full-length match
+					if (ok[0].x[2] == p->x[2] && p->x[2] == ok0.x[2]) { // never consider a read contained in another read
 						int cat = a->cat.a[j];
 						assert(j == 0 || a->cat.a[j] > a->cat.a[j-1]);
-						ok2[0].info = ori_l - (p->info&0xffffffffU);
+						ok0.info = ori_l - (p->info&0xffffffffU);
 						for (i = j; i < prev->n && a->cat.a[i] == cat; ++i) {
-							ok2[0].info += prev->a[i].x[2]<<32; // get the "width"
+							ok0.info += prev->a[i].x[2]<<32; // get the "width"
 							a->cat.a[i] = -1; // mask out other intervals of the same category
 						}
-						kv_push(fmintv_t, a->nei, ok2[0]); // keep in the neighbor vector
+						kv_push(fmintv_t, a->nei, ok0); // keep in the neighbor vector
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
-					} else set_bits(a->used, &ok2[0]); // the read is contained in another read; mark it as used
-				} else *left_fork = 1;
+					} else set_bits(a->used, &ok0); // the read is contained in another read; mark it as used
+				}
 			} // ~if(ok[0].x[2])
 			for (c = 1; c < 5; ++c) // collect extensible intervals
 				if (ok[c].x[2]) {
-					ok[c].info = (p->info&0xfffffff0ffffffffLLU) | (uint64_t)c<<32;
-					kv_push(fmintv_t, *curr, ok[c]);
+					fm6_extend0(a->e, &ok[c], &ok0, 1);
+					if (ok0.x[2]) { // do not extend intervals whose left end is not bounded by a sentinel
+						ok[c].info = (p->info&0xfffffff0ffffffffLLU) | (uint64_t)c<<32;
+						kv_push(fmintv_t, *curr, ok[c]);
+					}
 				}
 		} // ~for(j)
 		if (curr->n) { // update category
@@ -179,22 +181,16 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
-	int i, beg = beg0, rbeg, ori_l = s->l, left_fork;
-	if (*end == 1743) {
-		fprintf(stderr, "\n");
-	}
-	while ((rbeg = try_right(a, beg, s, &left_fork)) >= 0) { // loop if there is at least one overlap
+	int i, beg = beg0, rbeg, ori_l = s->l;
+	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k = a->nei.a[0].x[0];
-		if (*end == 1743 || *end == 5171) {
-			fprintf(stderr, "\n");
-		}
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
 			break;
 		}
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
-		if ((0&&left_fork) || (a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
+		if ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
 			set_bit(a->bend, k);
 			break;
 		}
