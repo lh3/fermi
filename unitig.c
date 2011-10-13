@@ -30,7 +30,7 @@ static inline void set_bits(uint64_t *bits, const fmintv_t *p)
 	}
 }
 
-static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p)
+static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p, int inc_sentinel)
 { // requirement: seq[j] matches the end of a read
 	extern void fm_reverse_fmivec(fmintv_v *p);
 	int c, depth, dir, end;
@@ -45,8 +45,13 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 		fm6_extend(e, &ik, ok, !at5);
 		if (!ok[c].x[2]) break; // cannot be extended
 		if (depth >= min && ok[0].x[2]) {
-			ok[0].info = j - dir;
-			kv_push(fmintv_t, *p, ok[0]);
+			if (inc_sentinel) {
+				ok[0].info = j - dir;
+				kv_push(fmintv_t, *p, ok[0]);
+			} else {
+				ik.info = j - dir;
+				kv_push(fmintv_t, *p, ik);
+			}
 		}
 		ik = ok[c];
 	}
@@ -66,12 +71,14 @@ static int test_contained(const rld_t *e, fmintv_t *intv)
 { // *intv is the interval of a read excluding sentinels
 	fmintv_t ok[6];
 	int ret = 0;
+	uint64_t info = intv->info;
 	fm6_extend(e, intv, ok, 1); assert(ok[0].x[2]);
 	if (intv->x[2] != ok[0].x[2]) ret |= 1; // left contained
 	*intv = ok[0];
 	fm6_extend(e, intv, ok, 0); assert(ok[0].x[2]);
 	if (intv->x[2] != ok[0].x[2]) ret |= 2; // right contained
 	*intv = ok[0];
+	intv->info = info;
 	return ret;
 }
 
@@ -80,21 +87,21 @@ static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
 	int ret;
 	assert(s->l > a->min_match);
 	a->a[0].n = 0;
-	*intv = overlap_intv(a->e, s->l, (uint8_t*)s->s, a->min_match, s->l - 1, 0, &a->a[0]);
+	*intv = overlap_intv(a->e, s->l, (uint8_t*)s->s, a->min_match, s->l - 1, 0, &a->a[0], 0);
 	ret = test_contained(a->e, intv)? -1 : 0;
 	set_bits(a->used, intv); // mark the read(s) has been used
 	return ret;
 }
 
-static int try_right(aux_t *a, int beg, kstring_t *s)
+static int try_right(aux_t *a, int beg, kstring_t *s, int *left_fork)
 {
 	int ori_l = s->l, j, i, c, rbeg;
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
 	fmintv_t ok[6];
 
-	curr->n = a->nei.n = 0;
+	curr->n = a->nei.n = 0; *left_fork = 0;
 	if (prev->n == 0) { // when try_right() is called for the seed, prev is filled by test_contained_right()
-		overlap_intv(a->e, s->l - beg, (uint8_t*)s->s + beg, a->min_match, s->l - beg - 1, 0, prev);
+		overlap_intv(a->e, s->l - beg, (uint8_t*)s->s + beg, a->min_match, s->l - beg - 1, 0, prev, 0);
 		if (prev->n == 0) return -1; // no overlap
 		for (j = 0; j < prev->n; ++j) prev->a[j].info += beg;
 	}
@@ -105,21 +112,23 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
 			if (a->cat.a[j] < 0) continue;
-			fm6_extend(a->e, p, ok, 0);
-			if (ok[0].x[2]) { // some reads end here
-				// if there are no contained reads, we do not need the following "if()"
-				if ((int32_t)p->info == (int32_t)prev->a[a->cat.a[j]].info && ok[0].x[2] == p->x[2] && s->l != ori_l) { // found the neighbor
-					int cat = a->cat.a[j];
-					assert(j == 0 || a->cat.a[j] > a->cat.a[j-1]);
-					ok[0].info = ori_l - (p->info&0xffffffffU);
-					for (i = j; i < prev->n && a->cat.a[i] == cat; ++i) {
-						ok[0].info += prev->a[i].x[2]<<32; // get the "width"
-						a->cat.a[i] = -1; // mask out other intervals of the same category
-					}
-					kv_push(fmintv_t, a->nei, ok[0]); // keep in the neighbor vector
-					continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
-				}
-				set_bits(a->used, ok); // the read is contained in another read; mark it as used
+			fm6_extend(a->e, p, ok, 0); // forward extension
+			if (ok[0].x[2] && ori_l != s->l) { // some (partial) reads end here
+				fmintv_t ok2[6];
+				fm6_extend(a->e, &ok[0], ok2, 1); // backward extension to look for sentinels
+				if (ok2[0].x[2]) { // the match is bounded by sentinels - a full-length match
+					if (ok[0].x[2] == p->x[2] && p->x[2] == ok2[0].x[2]) { // never consider a read contained in another read
+						int cat = a->cat.a[j];
+						assert(j == 0 || a->cat.a[j] > a->cat.a[j-1]);
+						ok2[0].info = ori_l - (p->info&0xffffffffU);
+						for (i = j; i < prev->n && a->cat.a[i] == cat; ++i) {
+							ok2[0].info += prev->a[i].x[2]<<32; // get the "width"
+							a->cat.a[i] = -1; // mask out other intervals of the same category
+						}
+						kv_push(fmintv_t, a->nei, ok2[0]); // keep in the neighbor vector
+						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
+					} else set_bits(a->used, &ok2[0]); // the read is contained in another read; mark it as used
+				} else *left_fork = 1;
 			} // ~if(ok[0].x[2])
 			for (c = 1; c < 5; ++c) // collect extensible intervals
 				if (ok[c].x[2]) {
@@ -154,12 +163,12 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
 	int i, j;
 
-	overlap_intv(a->e, s->l, (uint8_t*)s->s, a->min_match, rbeg, 1, prev);
+	overlap_intv(a->e, s->l, (uint8_t*)s->s, a->min_match, rbeg, 1, prev, 1);
 	for (i = rbeg - 1; i >= beg; --i) {
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
 			fm6_extend(a->e, p, ok, 1);
-			if (ok[0].x[2]) set_bits(a->used, ok); // some reads end here; they must be contained in a longer read
+			if (ok[0].x[2]) set_bits(a->used, &ok[0]); // some reads end here; they must be contained in a longer read
 			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) return -1; // backward bifurcation
 			kv_push(fmintv_t, *curr, ok[(int)s->s[i]]);
 		}
@@ -170,8 +179,8 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
-	int i, beg = beg0, rbeg, ori_l = s->l;
-	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
+	int i, beg = beg0, rbeg, ori_l = s->l, left_fork;
+	while ((rbeg = try_right(a, beg, s, &left_fork)) >= 0) { // loop if there is at least one overlap
 		uint64_t k = a->nei.a[0].x[0];
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
@@ -179,7 +188,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		}
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
-		if ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
+		if (left_fork || (a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
 			set_bit(a->bend, k);
 			break;
 		}
@@ -220,14 +229,14 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
-	unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
+	unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]); // FIXME: no need to run this if a->a[0].n == 0
 	for (i = 0; i < a->nei.n; ++i) {
 		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
 		kv_push(fm128_t, nei[0], z);
 	}
-	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
+	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
 	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	for (i = 0; i < a->nei.n; ++i) {
 		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
