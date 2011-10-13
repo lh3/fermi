@@ -67,29 +67,20 @@ typedef struct {
 	uint64_t *used, *bend;
 } aux_t;
 
-static int test_contained(const rld_t *e, fmintv_t *intv)
-{ // *intv is the interval of a read excluding sentinels
-	fmintv_t ok[6];
-	int ret = 0;
-	uint64_t info = intv->info;
-	fm6_extend(e, intv, ok, 1); assert(ok[0].x[2]);
-	if (intv->x[2] != ok[0].x[2]) ret |= 1; // left contained
-	*intv = ok[0];
-	fm6_extend(e, intv, ok, 0); assert(ok[0].x[2]);
-	if (intv->x[2] != ok[0].x[2]) ret |= 2; // right contained
-	*intv = ok[0];
-	intv->info = info;
-	return ret;
-}
-
 static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
 { // read e; write prev and used
-	int ret;
+	fmintv_t ik, ok[6];
+	int ret = 0;
 	assert(s->l > a->min_match);
 	a->a[0].n = 0;
-	*intv = overlap_intv(a->e, s->l, (uint8_t*)s->s, a->min_match, s->l - 1, 0, &a->a[0], 0);
-	ret = test_contained(a->e, intv)? -1 : 0;
-	set_bits(a->used, intv); // mark the read(s) has been used
+	ik = overlap_intv(a->e, s->l, (uint8_t*)s->s, a->min_match, s->l - 1, 0, &a->a[0], 0);
+	fm6_extend(a->e, &ik, ok, 1); assert(ok[0].x[2]);
+	if (ik.x[2] != ok[0].x[2]) ret = -1; // the sequence is left contained
+	ik = ok[0];
+	fm6_extend(a->e, &ik, ok, 0); assert(ok[0].x[2]);
+	if (ik.x[2] != ok[0].x[2]) ret = -1; // the sequence is right contained
+	set_bits(a->used, ok); // mark the read(s) has been used
+	*intv = ok[0];
 	return ret;
 }
 
