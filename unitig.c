@@ -222,10 +222,12 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
-	unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]); // FIXME: no need to run this if a->a[0].n == 0
-	for (i = 0; i < a->nei.n; ++i) {
-		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
-		kv_push(fm128_t, nei[0], z);
+	if (a->a[0].n) { // no need to run this if a->a[0].n == 0
+		unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
+		for (i = 0; i < a->nei.n; ++i) {
+			z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
+			kv_push(fm128_t, nei[0], z);
+		}
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
