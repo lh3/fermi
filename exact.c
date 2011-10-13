@@ -53,6 +53,16 @@ int fm6_extend(const rld_t *e, const fmintv_t *ik, fmintv_t ok[6], int is_back)
 	return 0;
 }
 
+int fm6_extend0(const rld_t *e, const fmintv_t *ik, fmintv_t *ok0, int is_back)
+{ // FIXME: this can be accelerated a little by using rld_rank1a() when ik.x[2]==1
+	uint64_t tk[6], tl[6];
+	rld_rank2a(e, ik->x[!is_back] - 1, ik->x[!is_back] - 1 + ik->x[2], tk, tl);
+	ok0->x[!is_back] = tk[0];
+	ok0->x[is_back] = ik->x[is_back];
+	ok0->x[2] = tl[0] - tk[0];
+	return 0;
+}
+
 uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, int *contained)
 {
 	uint64_t k = x, ok[6];

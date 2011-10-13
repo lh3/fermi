@@ -104,6 +104,7 @@ extern "C" {
 	 * @param is_back  true is backward (right-to-left); otherwise forward (left-to-right)
 	 */
 	int fm6_extend(const struct __rld_t *e, const fmintv_t *ik, fmintv_t ok[6], int is_back);
+	int fm6_extend0(const struct __rld_t *e, const fmintv_t *ik, fmintv_t *ok0, int is_back);
 
 	int fm6_smem1(const struct __rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem);
 	int fm6_smem(const struct __rld_t *e, int len, const uint8_t *q, fmintv_v *mem);

@@ -97,7 +97,7 @@ static int try_right(aux_t *a, int beg, kstring_t *s, int *left_fork)
 {
 	int ori_l = s->l, j, i, c, rbeg;
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
-	fmintv_t ok[6];
+	fmintv_t ok[6], ok0;
 
 	curr->n = a->nei.n = 0; *left_fork = 0;
 	if (prev->n == 0) { // when try_right() is called for the seed, prev is filled by test_contained_right()
@@ -180,15 +180,21 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
 	int i, beg = beg0, rbeg, ori_l = s->l, left_fork;
+	if (*end == 1743) {
+		fprintf(stderr, "\n");
+	}
 	while ((rbeg = try_right(a, beg, s, &left_fork)) >= 0) { // loop if there is at least one overlap
 		uint64_t k = a->nei.a[0].x[0];
+		if (*end == 1743 || *end == 5171) {
+			fprintf(stderr, "\n");
+		}
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
 			break;
 		}
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
-		if (left_fork || (a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
+		if ((0&&left_fork) || (a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
 			set_bit(a->bend, k);
 			break;
 		}
