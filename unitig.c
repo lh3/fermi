@@ -98,7 +98,7 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 	}
 	kv_resize(int, a->cat, prev->m);
 	for (j = 0; j < prev->n; ++j) a->cat.a[j] = 0; // only one interval; all point to 0
-	rbeg = prev->a[0].info&0xffffffffU; // read start
+	rbeg = (uint32_t)prev->a[0].info;
 	while (prev->n) {
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
@@ -116,6 +116,7 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 							a->cat.a[i] = -1; // mask out other intervals of the same category
 						}
 						kv_push(fmintv_t, a->nei, ok0); // keep in the neighbor vector
+						rbeg = (uint32_t)p->info; // we ought to update rbeg because the leftmost read may be contained
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
 					} else set_bits(a->used, &ok0); // the read is contained in another read; mark it as used
 				}
