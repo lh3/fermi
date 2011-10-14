@@ -87,7 +87,7 @@ static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
 
 static int try_right(aux_t *a, int beg, kstring_t *s)
 {
-	int ori_l = s->l, j, i, c, rbeg;
+	int ori_l = s->l, j, i, c, rbeg, is_forked = 0;
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
 	fmintv_t ok[6], ok0;
 
@@ -99,7 +99,6 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 	}
 	kv_resize(int, a->cat, prev->m);
 	for (j = 0; j < prev->n; ++j) a->cat.a[j] = 0; // only one interval; all point to 0
-	rbeg = (uint32_t)prev->a[0].info;
 	while (prev->n) {
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
@@ -117,7 +116,6 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 							a->cat.a[i] = -1; // mask out other intervals of the same category
 						}
 						kv_push(fmintv_t, a->nei, ok0); // keep in the neighbor vector
-						rbeg = (uint32_t)p->info; // we ought to update rbeg because the leftmost read may be contained
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
 					} else set_bits(a->used, &ok0); // the read is contained in another read; mark it as used
 				}
@@ -146,9 +144,31 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 				a->cat.a[j] = cat;
 				curr->a[j].info = (curr->a[j].info&0xffffffff) | (uint64_t)cat<<36;
 			}
+			if (cat != 0) is_forked = 1;
 		}
 		swap = curr; curr = prev; prev = swap; // swap curr and prev
 	} // ~while(prev->n)
+	if (a->nei.n == 0) return -1; // no overlap
+	rbeg = ori_l - (uint32_t)a->nei.a[0].info;
+	if (a->nei.n == 1 && is_forked) { // this may happen if there are contained reads
+		fm6_set_intv(a->e, 0, ok0);
+		for (i = rbeg; i < ori_l; ++i) {
+			fm6_extend(a->e, &ok0, ok, 0);
+			ok0 = ok[fm6_comp(s->s[i])];
+		}
+		for (i = ori_l; i < s->l; ++i) {
+			int c0 = -1;
+			fm6_extend(a->e, &ok0, ok, 0);
+			for (c = 1, j = 0; c < 5; ++c)
+				if (ok[c].x[2] && ok[c].x[0] <= a->nei.a[0].x[0] && ok[c].x[0] + ok[c].x[2] >= a->nei.a[0].x[0] + a->nei.a[0].x[2])
+					++j, c0 = c;
+			if (j == 0 && ok[0].x[2]) break;
+			assert(j == 1);
+			s->s[i] = fm6_comp(c0);
+			ok0 = ok[c0];
+		}
+		s->l = i; s->s[s->l] = 0;
+	}
 	if (a->nei.n > 1) s->l = ori_l, s->s[s->l] = 0;
 	return rbeg;
 }
@@ -201,7 +221,6 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 	int i, beg = beg0, rbeg, ori_l = s->l;
 	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
-		if (a->nei.n == 0) break; // no overlap
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
 			break;
