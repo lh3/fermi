@@ -65,6 +65,7 @@ typedef struct {
 	fmintv_v a[2], nei;
 	kvec_t(int) cat;
 	uint64_t *used, *bend;
+	kstring_t str;
 } aux_t;
 
 static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
@@ -152,7 +153,7 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 	return rbeg;
 }
 
-static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
+static int check_left_simple(aux_t *a, int beg, int rbeg, const kstring_t *s)
 {
 	fmintv_t ok[6];
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
@@ -164,7 +165,9 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 			fmintv_t *p = &prev->a[j];
 			fm6_extend(a->e, p, ok, 1);
 			if (ok[0].x[2]) set_bits(a->used, &ok[0]); // some reads end here; they must be contained in a longer read
-			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) return -1; // backward bifurcation
+			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) {
+				return -1; // backward bifurcation
+			}
 			kv_push(fmintv_t, *curr, ok[(int)s->s[i]]);
 		}
 		swap = curr; curr = prev; prev = swap;
@@ -172,15 +175,38 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	return 0;
 }
 
+static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
+{
+	int i, ret;
+	fmintv_t tmp;
+	assert(a->nei.n == 1);
+	ret = check_left_simple(a, beg, rbeg, s);
+	if (ret == 0) return 0;
+	// when ret<0, the back fork may be caused by a contained read. we have to do more to confirm this.
+	tmp = a->nei.a[0]; // backup the neighbour as it will be overwritten by try_right()
+	a->a[0].n = a->a[1].n = a->nei.n = 0;
+	ks_resize(&a->str, s->l - rbeg + 1);
+	for (i = s->l - 1, a->str.l = 0; i >= rbeg; --i)
+		a->str.s[a->str.l++] = fm6_comp(s->s[i]);
+	a->str.s[a->str.l] = 0;
+	try_right(a, 0, &a->str);
+	assert(a->nei.n >= 1);
+	ret = a->nei.n > 1? -1 : 0;
+	a->nei.n = 1; a->nei.a[0] = tmp; // recover the original neighbour
+	return ret;
+}
+
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
 	int i, beg = beg0, rbeg, ori_l = s->l;
 	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
-		uint64_t k = a->nei.a[0].x[0];
+		uint64_t k;
+		if (a->nei.n == 0) break; // no overlap
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
 			break;
 		}
+		k = a->nei.a[0].x[0];
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
 		if ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
@@ -254,7 +280,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 
 	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
-	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
+	a.str.l = a.str.m = str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
 	kv_init(z.nei[0]); kv_init(z.nei[1]);
@@ -281,7 +307,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	fm_print_buffer(&out, &g_out_lock, 1);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
 	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
-	free(str.s); free(cov.s); free(out.s);
+	free(a.str.s); free(str.s); free(cov.s); free(out.s);
 }
 
 typedef struct {
