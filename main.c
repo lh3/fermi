@@ -9,7 +9,6 @@ int main_exact(int argc, char *argv[]);
 int main_merge(int argc, char *argv[]);
 int main_build(int argc, char *argv[]);
 int main_strlen(int argc, char *argv[]);
-int main_join(int argc, char *argv[]);
 int main_correct(int argc, char *argv[]);
 int main_unitig(int argc, char *argv[]);
 int main_clean(int argc, char *argv[]);
@@ -38,7 +37,6 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         exact     Find exact matches\n");
 		fprintf(stderr, "         correct   Error correction\n");
 		fprintf(stderr, "         unitig    Unitig\n");
-		fprintf(stderr, "         join      Unambiguously join overlaps\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -48,7 +46,6 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "exact") == 0) ret = main_exact(argc-1, argv+1);
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
 	else if (strcmp(argv[1], "strlen") == 0) ret = main_strlen(argc-1, argv+1);
-	else if (strcmp(argv[1], "join") == 0) ret = main_join(argc-1, argv+1);
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);
