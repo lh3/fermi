@@ -475,6 +475,7 @@ int main_clean(int argc, char *argv[])
 {
 	extern fmnode_v *msg_read(const char *fn);
 	extern void msg_print(const fmnode_v *nodes);
+	extern void msg_clean(const fmnode_v *nodes, float min_cov, int min_len);
 	fmnode_v *nodes;
 	int c;
 	while ((c = getopt(argc, argv, "")) >= 0) {
