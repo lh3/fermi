@@ -24,9 +24,8 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 		kputl(p->k[j], out); kputc('>', out);
 		for (k = 0; k < p->nei[j].n; ++k) {
 			if (k) kputc(',', out);
-			kputl(p->nei[j].a[k].x, out); kputc(':', out);
-			kputw((int32_t)p->nei[j].a[k].y, out); kputc(':', out);
-			kputw((int32_t)(p->nei[j].a[k].y>>32), out);
+			kputl(p->nei[j].a[k].x, out); kputc(':', out); kputw((int32_t)p->nei[j].a[k].y, out);
+			//kputc(':', out); kputw((int32_t)(p->nei[j].a[k].y>>32), out);
 		}
 		if (p->nei[j].n == 0) kputc('.', out);
 	}
@@ -123,10 +122,10 @@ static hash64_t *build_hash(const fmnode_v *nodes)
 static void amend(fmnode_v *nodes, hash64_t *h)
 {
 	size_t i;
-	int j, l, b;
+	int j, l;
 	khint_t k;
 	for (i = 0; i < nodes->n; ++i) {
-		fmnode_t *q, *p = &nodes->a[i];
+		fmnode_t *p = &nodes->a[i];
 		for (j = 0; j < 2; ++j) {
 			for (l = 0; l < p->nei[j].n; ++l) {
 				uint64_t x = p->nei[j].a[l].x;
@@ -135,7 +134,6 @@ static void amend(fmnode_v *nodes, hash64_t *h)
 					if (fm_verbose >= 2) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
 					continue;
 				}
-				q = &nodes->a[kh_val(h, k)>>1];
 			}
 		}
 	}

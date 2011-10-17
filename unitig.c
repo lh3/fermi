@@ -109,12 +109,9 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 				if (ok0.x[2]) { // the match is bounded by sentinels - a full-length match
 					if (ok[0].x[2] == p->x[2] && p->x[2] == ok0.x[2]) { // never consider a read contained in another read
 						int cat = a->cat.a[j];
-						assert(j == 0 || a->cat.a[j] > a->cat.a[j-1]);
+						assert(j == 0 || a->cat.a[j] > a->cat.a[j-1]); // otherwise not irreducible
 						ok0.info = ori_l - (p->info&0xffffffffU);
-						for (i = j; i < prev->n && a->cat.a[i] == cat; ++i) {
-							ok0.info += prev->a[i].x[2]<<32; // get the "width"
-							a->cat.a[i] = -1; // mask out other intervals of the same category
-						}
+						for (i = j; i < prev->n && a->cat.a[i] == cat; ++i) a->cat.a[i] = -1; // mask out other intervals of the same cat
 						kv_push(fmintv_t, a->nei, ok0); // keep in the neighbor vector
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
 					} else set_bits(a->used, &ok0); // the read is contained in another read; mark it as used
