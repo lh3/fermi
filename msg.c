@@ -60,6 +60,7 @@ fmnode_v *msg_read(const char *fn)
 	gzFile fp;
 	kseq_t *seq;
 	fmnode_v *nodes;
+	int64_t cnt = 0, tot_len = 0;
 
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	if (fp == 0) return 0;
@@ -85,16 +86,20 @@ fmnode_v *msg_read(const char *fn)
 				do {
 					++q;
 					x.x = strtol(q, &q, 10); ++q;
-					x.y = strtol(q, &q, 10); ++q;
-					x.y |= (uint64_t)strtol(q, &q, 10)<<32;
+					x.y = strtol(q, &q, 10);
 					kv_push(fm128_t, p->nei[j], x);
 				} while (*q == ',');
 				++q;
 			} else q += 2;
 		}
+		++cnt; tot_len += seq->seq.l;
+		if (fm_verbose >= 3 && cnt % 100000 == 0)
+			fprintf(stderr, "[%s] read %ld nodes in %ld bp\n", __func__, (long)cnt, (long)tot_len);
 	}
 	kseq_destroy(seq);
 	gzclose(fp);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[%s] In total: %ld nodes in %ld bp\n", __func__, (long)cnt, (long)tot_len);
 	return nodes;
 }
 
