@@ -144,36 +144,34 @@ static void amend(fmnode_v *nodes, hash64_t *h)
 	}
 }
 
-/*
-static int rmnode(fmnode_v *nodes, hash64_t *h, uint64_t k0)
+static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v) // delete v from u
 {
 	khint_t k;
-	fm64_v *q;
-	int i, j, n, cnt = 0;
-	k = kh_get(64, h, k0);
-	q = &kh_val(h, k);
-	for (i = 0; i < q->n; ++i) {
-		fm128_v *r;
-		if ((q->a[i] & 2) == 0) continue; // not in the nei array
-		r = &nodes->a[q->a[i]>>2].nei[q->a[i]&1];
-		for (j = n = 0; j < r->n; ++j)
-			if (r->a[j].x != k0) r->a[n++] = r->a[j];
-		cnt += r->n - n;
-		r->n = n;
-	}
-	kh_del(64, h, k);
-	return cnt;
+	int i, j;
+	fmnode_t *p;
+	fm128_v *r;
+	k = kh_get(64, h, u);
+	if (k == kh_end(h)) return;
+	p = &nodes->a[kh_val(h, k)>>1];
+	r = &p->nei[kh_val(h, k)&1];
+	for (j = i = 0; j < r->n; ++j)
+		if (r->a[j].x != v) r->a[i++] = r->a[j];
+	r->n = i;
 }
 
 static void rmtip_core(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 {
 	size_t i;
-	int j;
+	int j, l;
 	for (i = 0; i < nodes->n; ++i) {
 		fmnode_t *p = &nodes->a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->avg_cov < min_cov || p->l < min_len) p->l = -1;
-		for (j = 0; j < 2; ++j) rmnode(nodes, h, p->k[j]);
+		if (p->avg_cov < min_cov || p->l < min_len) {
+			p->l = -1;
+			for (j = 0; j < 2; ++j)
+				for (l = 0; l < p->nei[j].n; ++l)
+					cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j]);
+		}
 	}
 }
 
@@ -189,7 +187,7 @@ static void flip(fmnode_t *p)
 	__swap(p->k[0], p->k[1]);
 	t = p->nei[0]; p->nei[0] = p->nei[1]; p->nei[1] = t;
 }
-
+/*
 static int merge_node(fmnode_v *nodes, hash64_t *h, uint64_t key0, uint64_t key1, int len)
 {
 	int j;
@@ -228,6 +226,6 @@ void msg_clean(fmnode_v *nodes, float min_cov, int min_len)
 	hash64_t *h;
 	h = build_hash(nodes);
 	amend(nodes, h);
-//	rmtip_core(nodes, h, min_cov, min_len);
+	rmtip_core(nodes, h, min_cov, min_len);
 //	clean_core(nodes, h);
 }
