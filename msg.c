@@ -70,13 +70,17 @@ fmnode_v *msg_read(const char *fn)
 		fmnode_t *p;
 		int i, j;
 		uint64_t sum;
+		uint32_t tmp;
 		char *q;
 		kv_pushp(fmnode_t, *nodes, &p);
 		kv_init(p->nei[0]); kv_init(p->nei[1]);
 		p->l = seq->seq.l;
-		p->seq = malloc(p->l);
+		tmp = p->l + 1;
+		kroundup32(tmp);
+		p->seq = malloc(tmp);
 		for (i = 0; i < p->l; ++i) p->seq[i] = seq_nt6_table[(int)seq->seq.s[i]];
-		p->cov = strdup(seq->qual.s);
+		p->cov = malloc(tmp);
+		strcpy(p->cov, seq->qual.s);
 		for (i = 0, sum = 0; i < p->l; ++i) sum += p->cov[i] - 33;
 		p->avg_cov = (double)sum / p->l;
 		for (j = 0, q = seq->comment.s; j < 2; ++j) {
@@ -177,37 +181,74 @@ static void rmtip_core(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 
 #define __swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))
 
-static void flip(fmnode_t *p)
+static void flip(fmnode_t *p, hash64_t *h)
 {
 	extern void seq_reverse(int l, unsigned char *s);
 	extern void seq_revcomp6(int l, unsigned char *s);
 	fm128_v t;
+	khint_t k;
 	seq_revcomp6(p->l, (uint8_t*)p->seq);
 	seq_reverse(p->l, (uint8_t*)p->cov);
 	__swap(p->k[0], p->k[1]);
 	t = p->nei[0]; p->nei[0] = p->nei[1]; p->nei[1] = t;
+	k = kh_get(64, h, p->k[0]);
+	assert(k != kh_end(h));
+	kh_val(h, k) ^= 1;
+	k = kh_get(64, h, p->k[1]);
+	assert(k != kh_end(h));
+	kh_val(h, k) ^= 1;
 }
-/*
-static int merge_node(fmnode_v *nodes, hash64_t *h, uint64_t key0, uint64_t key1, int len)
+
+static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor to the right-end of i
 {
-	int j;
-	fmnode_t *p[2];
-	fm64_v *q[2];
-	khint_t k[2];
-	uint32_t key[2];
-	key[0] = key0; key[1] = key1;
-	for (j = 0; j < 2; ++j) {
-		k[j] = kh_get(64, h, key[j]);
-		if (k[j] == kh_end(h)) return -1; // cannot find in the hash table
-		q[j] = &kh_val(h, k[j]);
-		if (q[j]->n != 2) return -1; // not exactly two nodes
-		if (((q[j]->a[0] ^ q[j]->a[1]) & 2) == 0) return -1; // not a start and an end
-		if (q[j]->a[0]&2) __swap(q[j]->a[0], q[j]->a[1]);
-		p[j] = &nodes->a[q[j]->a[0]>>2];
+	fmnode_t *p = &nodes->a[w], *q;
+	khint_t kp, kq;
+	uint32_t tmp;
+	int i, j, new_l;
+	if (p->nei[1].n != 1) return -1; // cannot be merged
+	kq = kh_get(64, h, p->nei[1].a[0].x);
+	if (kq == kh_end(h)) return -2; // not found
+	q = &nodes->a[kh_val(h, kq)>>1];
+	if (p == q) return -4; // this is a loop
+	if (q->nei[kh_val(h, kq)&1].n != 1) return -3; // cannot be merged
+	// we can perform a merge
+	if (kh_val(h, kq)&1) flip(q, h); // a "><" bidirectional arc; flip q
+	kp = kh_get(64, h, p->k[1]); assert(kp != kh_end(h)); // get the iterator to p
+	kh_del(64, h, kp); kh_del(64, h, kq); // remove the two ends of the arc in the hash table
+	assert(p->nei[1].a[0].y == q->nei[0].a[0].y);
+	assert(p->l > p->nei[1].a[0].y && q->l > p->nei[1].a[0].y);
+	new_l = p->l + q->l - p->nei[1].a[0].y;
+	tmp = p->l;
+	kroundup32(tmp);
+	if (new_l + 1 >= tmp) { // then double p->seq and p->cov
+		tmp = new_l + 1;
+		kroundup32(tmp);
+		p->seq = realloc(p->seq, tmp);
+		p->cov = realloc(p->cov, tmp);
 	}
-	if (q[0]->a[0]>>2 != q[1]->a[1]>>2 || q[0]->a[1]>>2 != q[1]->a[0]>>2) return -1;
-	if (!(q[0]->a[0]&1)) flip(p[0]);
-	if (q[0]->a[1]&1) flip(p[1]);
+	// merge seq and cov
+	for (i = p->l - p->nei[1].a[0].y, j = 0; j < q->l; ++i, ++j) { // write seq and cov
+		p->seq[i] = q->seq[j];
+		if (i < p->l) {
+			if ((int)p->cov[i] + (q->cov[j] - 33) > 126) p->cov[i] = 126;
+			else p->cov[i] += q->cov[j] - 33;
+		} else p->cov[i] = q->cov[j];
+	}
+	p->seq[new_l] = p->cov[new_l] = 0;
+	p->l = new_l;
+	// merge neighbors
+	free(p->nei[1].a);
+	p->nei[1] = q->nei[1]; p->k[1] = q->k[1];
+	// update the hash table
+	kp = kh_get(64, h, p->k[1]);
+	assert(kp != kh_end(h));
+	kh_val(h, kp) = w<<1|1;
+	// clean up q
+	free(q->cov); free(q->seq);
+	q->cov = q->seq = 0; q->l = -1;
+	free(q->nei[0].a);
+	q->nei[0].n = q->nei[0].m = q->nei[1].n = q->nei[1].m = 0;
+	q->nei[0].a = q->nei[1].a = 0; // q->nei[1] has been copied over to p->nei[1], so we can delete it
 	return 0;
 }
 
@@ -215,17 +256,20 @@ static void clean_core(fmnode_v *nodes, hash64_t *h)
 {
 	size_t i;
 	for (i = 0; i < nodes->n; ++i) {
-		fmnode_t *p = &nodes->a[i];
-		if (p->nei[0].n == 1) merge_node(nodes, h, p->k[0], p->nei[0].a[0].x, (uint32_t)p->nei[0].a[0].y);
-		if (p->nei[1].n == 1) merge_node(nodes, h, p->k[1], p->nei[1].a[0].x, (uint32_t)p->nei[1].a[0].y);
+		if (nodes->a[i].l <= 0) continue;
+		while (merge(nodes, h, i) == 0);
+		flip(&nodes->a[i], h);
+		while (merge(nodes, h, i) == 0);
 	}
 }
-*/
+
 void msg_clean(fmnode_v *nodes, float min_cov, int min_len)
 {
 	hash64_t *h;
+	khint_t k;
 	h = build_hash(nodes);
 	amend(nodes, h);
 	rmtip_core(nodes, h, min_cov, min_len);
-//	clean_core(nodes, h);
+	merge(nodes, h, 0);
+	clean_core(nodes, h);
 }
