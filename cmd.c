@@ -473,19 +473,25 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 int main_clean(int argc, char *argv[])
 {
-	extern fmnode_v *msg_read(const char *fn);
-	extern void msg_print(const fmnode_v *nodes);
-	extern void msg_clean(const fmnode_v *nodes, float min_cov, int min_len);
 	fmnode_v *nodes;
 	int c;
-	while ((c = getopt(argc, argv, "")) >= 0) {
+	fmclnopt_t opt;
+	opt.min_tip_len = 200; opt.min_tip_cov = 2.0;
+	opt.min_br_width= 3;   opt.min_br_ratio= 0.2;
+	while ((c = getopt(argc, argv, "l:c:r:w:")) >= 0) {
+		switch (c) {
+			case 'l': opt.min_tip_len = atoi(optarg); break;
+			case 'c': opt.min_tip_cov = atof(optarg); break;
+			case 'w': opt.min_br_width= atoi(optarg); break;
+			case 'r': opt.min_br_ratio= atof(optarg); break;
+		}
 	}
 	if (argc == optind) {
 		fprintf(stderr, "Usage: fermi clean <in.msg>\n");
 		return 1;
 	}
 	nodes = msg_read(argv[optind]);
-	msg_clean(nodes, 2.0, 102);
+	msg_clean(nodes, &opt);
 	msg_print(nodes);
 	return 0;
 }

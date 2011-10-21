@@ -16,9 +16,13 @@ typedef struct {
 } fmintv_t;
 
 typedef struct {
-	int min_match, max_match, t, do_dedup, keep_single;
-	float r;
-} fmjopt_t;
+	uint64_t x, y;
+} fm128_t;
+
+typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
+typedef struct { size_t n, m; uint64_t *a; } fm64_v;
+typedef struct { size_t n, m; fm128_t  *a; } fm128_v;
+struct __rld_t; // defined in rld.h
 
 typedef struct {
 	int T, t, w, max_pre_mm;
@@ -26,21 +30,9 @@ typedef struct {
 } fmecopt_t;
 
 typedef struct {
-	uint64_t x, y;
-} fm128_t;
-
-typedef struct {
-	uint64_t k[2];
-	uint8_t type[2], dir[2];
-	int l;
-	char *seq, *cov;
-} fmgelem_t;
-
-typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
-typedef struct { size_t n, m; uint64_t *a; } fm64_v;
-typedef struct { size_t n, m; fm128_t  *a; } fm128_v;
-typedef struct { size_t n, m; fmgelem_t *a; } fmgelem_v;
-struct __rld_t; // defined in rld.h
+	float min_tip_cov, min_br_ratio;
+	int min_tip_len, min_br_width;
+} fmclnopt_t;
 
 typedef struct {
 	uint64_t k[2];
@@ -121,11 +113,14 @@ extern "C" {
 	 */
 	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
-	int fm6_unambi_join(const struct __rld_t *e, const fmjopt_t *opt, int n_threads);
 	int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads);
 
 	void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T);
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, int n_threads);
+
+	fmnode_v *msg_read(const char *fn);
+	void msg_print(const fmnode_v *nodes);
+	void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt);
 
 #ifdef __cplusplus
 }

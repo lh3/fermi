@@ -163,7 +163,7 @@ static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v) // del
 	r->n = i;
 }
 
-static void rmtip_core(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
+static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 {
 	size_t i;
 	int j, l;
@@ -263,13 +263,12 @@ static void clean_core(fmnode_v *nodes, hash64_t *h)
 	}
 }
 
-void msg_clean(fmnode_v *nodes, float min_cov, int min_len)
+void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 {
 	hash64_t *h;
-	khint_t k;
 	h = build_hash(nodes);
 	amend(nodes, h);
-	rmtip_core(nodes, h, min_cov, min_len);
+	rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
 	merge(nodes, h, 0);
 	clean_core(nodes, h);
 }
