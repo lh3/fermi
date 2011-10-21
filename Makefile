@@ -27,8 +27,8 @@ unitig.o:fermi.h rld.h kstring.h kvec.h
 correct.o:fermi.h rld.h kvec.h
 smem.o:fermi.h rld.h kvec.h
 merge.o:fermi.h rld.h ksort.h
-bog.o:fermi.h kstring.h
 cmd.o:fermi.h rld.h kseq.h
+msg.o:fermi.h khash.h
 main.o:fermi.h
 
 clean:

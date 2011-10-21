@@ -128,7 +128,7 @@ static hash64_t *build_hash(const fmnode_v *nodes)
 	return h;
 }
 
-static void amend(fmnode_v *nodes, hash64_t *h)
+static void check(fmnode_v *nodes, hash64_t *h)
 {
 	size_t i;
 	int j, l;
@@ -267,7 +267,7 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 {
 	hash64_t *h;
 	h = build_hash(nodes);
-	amend(nodes, h);
+	if (opt->check) check(nodes, h);
 	rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
 	merge(nodes, h, 0);
 	clean_core(nodes, h);
