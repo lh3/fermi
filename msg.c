@@ -131,10 +131,12 @@ static hash64_t *build_hash(const fmnode_v *nodes)
 static void check(fmnode_v *nodes, hash64_t *h)
 {
 	size_t i;
-	int j, l;
+	int j, l, ll;
 	khint_t k;
 	for (i = 0; i < nodes->n; ++i) {
-		fmnode_t *p = &nodes->a[i];
+		fmnode_t *q, *p = &nodes->a[i];
+		fm128_v *r;
+		if (p->l <= 0) continue;
 		for (j = 0; j < 2; ++j) {
 			for (l = 0; l < p->nei[j].n; ++l) {
 				uint64_t x = p->nei[j].a[l].x;
@@ -143,12 +145,20 @@ static void check(fmnode_v *nodes, hash64_t *h)
 					if (fm_verbose >= 2) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
 					continue;
 				}
+				q = &nodes->a[kh_val(h, k)>>1];
+				r = &q->nei[kh_val(h, k)&1];
+				for (ll = 0; ll < r->n; ++ll)
+					if (r->a[ll].x == p->k[j]) break;
+				if (ll == r->n) {
+					if (fm_verbose >= 2) fprintf(stderr, "[W::%s] have %ld->%ld but no reverse.\n", __func__, (long)p->k[j], (long)x);
+					continue;
+				}
 			}
 		}
 	}
 }
 
-static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v) // delete v from u
+static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int remove) // delete v from u
 {
 	khint_t k;
 	int i, j;
@@ -158,9 +168,14 @@ static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v) // del
 	if (k == kh_end(h)) return;
 	p = &nodes->a[kh_val(h, k)>>1];
 	r = &p->nei[kh_val(h, k)&1];
-	for (j = i = 0; j < r->n; ++j)
-		if (r->a[j].x != v) r->a[i++] = r->a[j];
-	r->n = i;
+	if (remove) {
+		for (j = i = 0; j < r->n; ++j)
+			if (r->a[j].x != v) r->a[i++] = r->a[j];
+		r->n = i;
+	} else {
+		for (j = 0; j < r->n; ++j)
+			if (r->a[j].x == v) r->a[j].x = r->a[j].y = 0;
+	}
 }
 
 static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
@@ -174,7 +189,41 @@ static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 			p->l = -1;
 			for (j = 0; j < 2; ++j)
 				for (l = 0; l < p->nei[j].n; ++l)
-					cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j]);
+					cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j], 1);
+		}
+	}
+}
+
+static void break_arc(fmnode_v *nodes, hash64_t *h, float max_ratio, int min_width)
+{
+	size_t i;
+	int j, l;
+	khint_t k;
+	for (i = 0; i < nodes->n; ++i) {
+		fmnode_t *p = &nodes->a[i], *q;
+		if (p->l <= 0) continue;
+		for (j = 0; j < 2; ++j) {
+			int sum, max = 0, max_l = -1;
+			if (p->nei[j].n <= 1) continue;
+			for (l = sum = 0; l < p->nei[j].n; ++l) {
+				int dq, l_overlap = p->nei[j].a[l].y;
+				k = kh_get(64, h, p->nei[j].a[l].x); // get the iteratro to the neighbor
+				if (k == kh_end(h)) continue;
+				q = &nodes->a[kh_val(h, k)>>1];
+				assert(q->l > l_overlap);
+				dq = q->cov[(kh_val(h, k)&1)? q->l - 1 - l_overlap : l_overlap] - 33;
+				sum += dq;
+				if (dq >= max) max = dq, max_l = l;
+			}
+			if (sum - max <= min_width && (double)max / sum > max_ratio) {
+				for (l = 0; l < p->nei[j].n; ++l) {
+					if (l == max_l) continue;
+					cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j], 1);
+					cut_arc(nodes, h, p->k[j], p->nei[j].a[l].x, 0);
+				}
+				p->nei[j].a[0] = p->nei[j].a[max_l];
+				p->nei[j].n = 1;
+			}
 		}
 	}
 }
@@ -215,6 +264,8 @@ static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor t
 	if (kh_val(h, kq)&1) flip(q, h); // a "><" bidirectional arc; flip q
 	kp = kh_get(64, h, p->k[1]); assert(kp != kh_end(h)); // get the iterator to p
 	kh_del(64, h, kp); kh_del(64, h, kq); // remove the two ends of the arc in the hash table
+	assert(p->k[1] == q->nei[0].a[0].x);
+	assert(q->k[0] == p->nei[1].a[0].x);
 	assert(p->nei[1].a[0].y == q->nei[0].a[0].y);
 	assert(p->l > p->nei[1].a[0].y && q->l > p->nei[1].a[0].y);
 	new_l = p->l + q->l - p->nei[1].a[0].y;
@@ -268,7 +319,9 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	hash64_t *h;
 	h = build_hash(nodes);
 	if (opt->check) check(nodes, h);
+	break_arc(nodes, h, opt->max_br_ratio, opt->min_br_width);
 	rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
 	merge(nodes, h, 0);
 	clean_core(nodes, h);
+	kh_destroy(64, h);
 }

@@ -30,7 +30,7 @@ typedef struct {
 } fmecopt_t;
 
 typedef struct {
-	float min_tip_cov, min_br_ratio;
+	float min_tip_cov, max_br_ratio;
 	int min_tip_len, min_br_width;
 	int check;
 } fmclnopt_t;

@@ -477,14 +477,14 @@ int main_clean(int argc, char *argv[])
 	int c;
 	fmclnopt_t opt;
 	opt.min_tip_len = 200; opt.min_tip_cov = 2.0;
-	opt.min_br_width= 3;   opt.min_br_ratio= 0.2;
+	opt.min_br_width= 3;   opt.max_br_ratio= 0.8;
 	opt.check = 0;
 	while ((c = getopt(argc, argv, "Cl:c:r:w:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len = atoi(optarg); break;
 			case 'c': opt.min_tip_cov = atof(optarg); break;
 			case 'w': opt.min_br_width= atoi(optarg); break;
-			case 'r': opt.min_br_ratio= atof(optarg); break;
+			case 'r': opt.max_br_ratio= atof(optarg); break;
 			case 'C': opt.check = 1; break;
 		}
 	}
