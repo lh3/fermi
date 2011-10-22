@@ -489,7 +489,13 @@ int main_clean(int argc, char *argv[])
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fermi clean <in.msg>\n");
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi clean [options] <in.msg>\n\n");
+		fprintf(stderr, "Options: -l INT      minimum tip length [%d]\n", opt.min_tip_len);
+		fprintf(stderr, "         -c FLOAT    minimum tip coverage [%.1f]\n", opt.min_tip_cov);
+		fprintf(stderr, "         -w INT      minimum branching width [%d]\n", opt.min_br_width);
+		fprintf(stderr, "         -r FLOAT    maximum branching ratio [%.2f]\n", opt.max_br_ratio);
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	nodes = msg_read(argv[optind]);
