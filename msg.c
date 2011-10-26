@@ -185,7 +185,7 @@ static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 	for (i = 0; i < nodes->n; ++i) {
 		fmnode_t *p = &nodes->a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->avg_cov < min_cov || p->l < min_len) {
+		if (p->avg_cov < min_cov && p->l < min_len) {
 			p->l = -1;
 			for (j = 0; j < 2; ++j)
 				for (l = 0; l < p->nei[j].n; ++l)
