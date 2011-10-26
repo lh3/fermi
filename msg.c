@@ -12,7 +12,6 @@ KSEQ_INIT(gzFile, gzread)
 #include "khash.h"
 KHASH_MAP_INIT_INT64(64, uint64_t)
 
-#define MAX_DEBUBBLE_LEN  200
 #define MAX_DEBUBBLE_DIFF 3
 
 typedef khash_t(64) hash64_t;
@@ -207,13 +206,12 @@ static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 	}
 }
 
-static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, hash64_t *tmph)
+static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min_bub_ratio, double min_bub_cov)
 {
 	fmnode_t *p = &nodes->a[id], *q[2], *top_p, *tmp_p;
 	fm128_v *r[2];
 	uint64_t nei[2];
-	int j, l, ret;
-	khint_t k;
+	int j, cnt;
 	double max_cov;
 	uint64_t top_id;
 
@@ -224,33 +222,52 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, hash64_t *
 	}
 	if (q[0]->l < 0 || q[1]->l < 0) return; // deleted node
 	if (q[0]->nei[nei[0]&1].n <= 1 || q[1]->nei[nei[1]&1].n <= 1) return; // unmerged or inconsistent arc
-	if (q[0]->nei[nei[0]&1].n != q[1]->nei[nei[1]&1].n) return; // branching
 	r[0] = &q[0]->nei[nei[0]&1]; r[1] = &q[1]->nei[nei[1]&1];
-	kh_clear(64, tmph);
-	for (j = 0, max_cov = 0; j < r[0]->n; ++j) {
+	for (j = 0, max_cov = 0, cnt = 0; j < r[0]->n; ++j) {
 		uint64_t t = get_node_id(h, r[0]->a[j].x);
 		tmp_p = &nodes->a[t>>1];
-		if (tmp_p->nei[0].n != 1 || tmp_p->nei[1].n != 1) break; // FIXME: it is still possible to de-bubble; but need to be more careful
-		if (tmp_p->avg_cov > max_cov)
-			max_cov = tmp_p->avg_cov, top_id = t;
-		kh_put(64, tmph, t^1, &ret);
+		if (tmp_p->nei[0].n != 1 || tmp_p->nei[1].n != 1) continue; // skip this node
+		if (t&1) flip(tmp_p, h); // s.t. tmp_p is on the same strand as p
+		if (tmp_p->nei[1].a[0].x != p->nei[1].a[0].x) continue; // not a multi-edge
+		if (tmp_p->avg_cov > max_cov) max_cov = tmp_p->avg_cov, top_id = t;
+		++cnt;
 	}
-	if (j != r[0]->n) return; // branching
-	for (j = 0; j < r[1]->n; ++j) {
-		k = kh_get(64, tmph, get_node_id(h, r[1]->a[j].x));
-		if (k == kh_end(tmph)) break;
-	}
-	if (j != r[1]->n) return; // branching
+	if (cnt < 2) return;
 	top_p = &nodes->a[top_id>>1];
 	fprintf(stderr, "[%lld,%lld] %f<%f\n", p->k[0], p->k[1], p->avg_cov, max_cov);
-	for (j = 0; j < r[0]->n; ++j) {
+	for (j = 0, cnt = 0; j < r[0]->n; ++j) {
 		uint64_t t = get_node_id(h, r[0]->a[j].x);
+		int l, diff, ml, to_del = 0, beg[2], end[2];
+		double cov[2];
 		//if (top_id == t) continue; // we do not process the node with the highest coverage
 		tmp_p = &nodes->a[t>>1];
-		if ((top_id&1) != (t&1)) flip(tmp_p, h);
+		if (tmp_p->nei[0].n != 1 || tmp_p->nei[1].n != 1) continue; // skip this node
+		if (tmp_p->nei[1].a[0].x != p->nei[1].a[0].x) continue; // not a multi-edge
+		// the following is really nasty. A banded global alignment would look much cleaner and work better.
+		beg[0] = top_p->nei[0].a[0].y; end[0] = top_p->l - top_p->nei[1].a[0].y;
+		beg[1] = tmp_p->nei[0].a[0].y; end[1] = tmp_p->l - tmp_p->nei[1].a[0].y;
+		for (l = diff = 0; l < end[0] - beg[0] && l < end[1] - beg[1]; ++l)
+			if (top_p->seq[l + beg[0]] != tmp_p->seq[l + beg[1]])
+				if (diff++ == 0) ml = l;
+		if (diff) { // then compute the number of matching bases from the end of the sequence
+			for (l = 0; l < end[0] - beg[0] && l < end[1] - beg[1]; ++l)
+				if (top_p->seq[end[0] - 1 - l] != tmp_p->seq[end[1] - 1 - l]) break;
+			ml += l;
+		} else ml = l;
+		for (l = beg[0], cov[0] = 0; l < end[0]; ++l) cov[0] += top_p->cov[l] - 33;
+		cov[0] /= end[0] > beg[0]? end[0] - beg[0] : 1;
+		for (l = beg[1], cov[1] = 0; l < end[1]; ++l) cov[1] += tmp_p->cov[l] - 33;
+		cov[1] /= end[1] > beg[1]? end[1] - beg[1] : 1;
+		if (top_p != tmp_p && (end[0]-beg[0]) - (end[1]-beg[1]) < MAX_DEBUBBLE_DIFF && (end[1]-beg[1]) - (end[0]-beg[0]) < MAX_DEBUBBLE_DIFF) {
+			if (diff < MAX_DEBUBBLE_DIFF) to_del = 1;
+			else if (end[0]-beg[0] - ml < MAX_DEBUBBLE_DIFF || end[1]-beg[1] - ml < MAX_DEBUBBLE_DIFF) to_del = 1;
+		}
+		if (to_del && cov[0] > 0. && cov[1] > 0.) {
+			if (cov[1] / cov[0] >= min_bub_ratio || cov[1] >= min_bub_cov) to_del = 0;
+		}
 		for (l = tmp_p->nei[0].a[0].y; l < tmp_p->l - tmp_p->nei[1].a[0].y; ++l)
 			fputc("ACGTN"[tmp_p->seq[l]-1], stderr);
-		fputc('\n', stderr);
+		fprintf(stderr, "\t[%f,%f] %d %d %f %c\n", cov[0], cov[1], ml, diff, tmp_p->avg_cov, "NY"[to_del]);
 	}
 }
 
@@ -385,9 +402,8 @@ static void clean_core(fmnode_v *nodes, hash64_t *h)
 
 void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 {
-	hash64_t *h, *tmph;
+	hash64_t *h;
 	size_t i;
-	tmph = kh_init(64);
 	h = build_hash(nodes);
 	if (opt->check) check(nodes, h);
 	if (opt->min_tip_len && opt->min_tip_cov >= 1.)
@@ -396,12 +412,11 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	merge(nodes, h, 0);
 	{
 		for (i = 0; i < nodes->n; ++i)
-			debubble1_simple(nodes, h, i, tmph);
+			debubble1_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
 	}
 	if (opt->min_term_cov)
 		for (i = 0; i < nodes->n; ++i)
 			erode_end1(nodes, h, i, opt->min_term_cov);
 	clean_core(nodes, h);
 	kh_destroy(64, h);
-	kh_destroy(64, tmph);
 }

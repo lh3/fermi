@@ -476,14 +476,17 @@ int main_clean(int argc, char *argv[])
 	fmnode_v *nodes;
 	int c;
 	fmclnopt_t opt;
-	opt.min_tip_len = 200; opt.min_tip_cov = 2.0;
+	opt.min_tip_len = 200; opt.min_tip_cov  = 2.0;
+	opt.min_bub_cov = 7.0; opt.min_bub_ratio= 0.3;
 	opt.min_term_cov= 0;
 	opt.check = 0;
-	while ((c = getopt(argc, argv, "Cl:c:T:")) >= 0) {
+	while ((c = getopt(argc, argv, "Cl:c:T:r:w:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len = atoi(optarg); break;
 			case 'c': opt.min_tip_cov = atof(optarg); break;
 			case 'T': opt.min_term_cov= atoi(optarg); break;
+			case 'w': opt.min_bub_cov = atof(optarg); break;
+			case 'r': opt.min_bub_ratio=atof(optarg); break;
 			case 'C': opt.check = 1; break;
 		}
 	}
