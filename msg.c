@@ -230,40 +230,6 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, hash64_t *
 	if (j != r[1]->n) return; // branching
 }
 
-static void break_arc(fmnode_v *nodes, hash64_t *h, float max_ratio, int min_width)
-{
-	size_t i;
-	int j, l;
-	khint_t k;
-	for (i = 0; i < nodes->n; ++i) {
-		fmnode_t *p = &nodes->a[i], *q;
-		if (p->l <= 0) continue;
-		for (j = 0; j < 2; ++j) {
-			int sum, max = 0, max_l = -1;
-			if (p->nei[j].n <= 1) continue;
-			for (l = sum = 0; l < p->nei[j].n; ++l) {
-				int dq, l_overlap = p->nei[j].a[l].y;
-				k = kh_get(64, h, p->nei[j].a[l].x); // get the iteratro to the neighbor
-				if (k == kh_end(h)) continue;
-				q = &nodes->a[kh_val(h, k)>>1];
-				assert(q->l > l_overlap);
-				dq = q->cov[(kh_val(h, k)&1)? q->l - 1 - l_overlap : l_overlap] - 33;
-				sum += dq;
-				if (dq >= max) max = dq, max_l = l;
-			}
-			if (sum - max <= min_width && (double)max / sum > max_ratio) {
-				for (l = 0; l < p->nei[j].n; ++l) {
-					if (l == max_l) continue;
-					cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j], 1);
-					cut_arc(nodes, h, p->k[j], p->nei[j].a[l].x, 0);
-				}
-				p->nei[j].a[0] = p->nei[j].a[max_l];
-				p->nei[j].n = 1;
-			}
-		}
-	}
-}
-
 static void erode_end1(fmnode_v *nodes, hash64_t *h, size_t id, int min_cov)
 {
 	fmnode_t *p = &nodes->a[id];
@@ -402,8 +368,6 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	if (opt->min_tip_len && opt->min_tip_cov >= 1.)
 		for (i = 0; i < 5; ++i)
 			rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
-	if (opt->min_br_width && opt->max_br_ratio < 1.)
-		break_arc(nodes, h, opt->max_br_ratio, opt->min_br_width);
 	merge(nodes, h, 0);
 	if (opt->min_term_cov)
 		for (i = 0; i < nodes->n; ++i)

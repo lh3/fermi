@@ -477,15 +477,12 @@ int main_clean(int argc, char *argv[])
 	int c;
 	fmclnopt_t opt;
 	opt.min_tip_len = 200; opt.min_tip_cov = 2.0;
-	opt.min_br_width= 3;   opt.max_br_ratio= 0.8;
 	opt.min_term_cov= 0;
 	opt.check = 0;
-	while ((c = getopt(argc, argv, "Cl:c:r:w:T:")) >= 0) {
+	while ((c = getopt(argc, argv, "Cl:c:T:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len = atoi(optarg); break;
 			case 'c': opt.min_tip_cov = atof(optarg); break;
-			case 'w': opt.min_br_width= atoi(optarg); break;
-			case 'r': opt.max_br_ratio= atof(optarg); break;
 			case 'T': opt.min_term_cov= atoi(optarg); break;
 			case 'C': opt.check = 1; break;
 		}
@@ -495,8 +492,6 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "Usage:   fermi clean [options] <in.msg>\n\n");
 		fprintf(stderr, "Options: -l INT      minimum tip length [%d]\n", opt.min_tip_len);
 		fprintf(stderr, "         -c FLOAT    minimum tip coverage [%.1f]\n", opt.min_tip_cov);
-		fprintf(stderr, "         -w INT      minimum branching width [%d]\n", opt.min_br_width);
-		fprintf(stderr, "         -r FLOAT    maximum branching ratio [%.2f]\n", opt.max_br_ratio);
 		fprintf(stderr, "         -T INT      trim terminals with low coverage [%d]\n", opt.min_term_cov);
 		fprintf(stderr, "\n");
 		return 1;
