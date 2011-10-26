@@ -239,16 +239,19 @@ static void break_arc(fmnode_v *nodes, hash64_t *h, float max_ratio, int min_wid
 static void erode_end1(fmnode_v *nodes, hash64_t *h, size_t id, int min_cov)
 {
 	fmnode_t *p = &nodes->a[id];
-	int j, l, k, el[2];
+	int j, l, k, el[2], ol[2];
 	if (p->l <= 0) return;
-	for (l = 0; l < p->l; ++l)
+	for (j = 0; j < 2; ++j) {
+		for (l = 0, ol[j] = 0; l < p->nei[j].n; ++l)
+			if (ol[j] < p->nei[j].a[l].y) ol[j] = p->nei[j].a[l].y;
+	}
+	for (l = 0; l < p->l - ol[1]; ++l)
 		if (p->cov[l] - 33 > min_cov) break;
-	if (l == p->l) return; // do not erode the entire node
 	el[0] = l;
-	for (l = p->l - 1; l >= 0; --l)
+	for (l = p->l - 1; l >= ol[0]; --l)
 		if (p->cov[l] - 33 > min_cov) break;
-	assert(l > el[0]);
 	el[1] = p->l - 1 - l;
+	if (el[0] + el[1] >= p->l) return; // erode the entire node
 	for (j = 0; j < 2; ++j) {
 		if (el[j] == 0) continue;
 		for (l = 0; l < p->nei[j].n; ++l) {
@@ -314,7 +317,7 @@ static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor t
 	assert(p->k[1] == q->nei[0].a[0].x);
 	assert(q->k[0] == p->nei[1].a[0].x);
 	assert(p->nei[1].a[0].y == q->nei[0].a[0].y);
-	assert(p->l > p->nei[1].a[0].y && q->l > p->nei[1].a[0].y);
+	assert(p->l >= p->nei[1].a[0].y && q->l >= p->nei[1].a[0].y); // "==" may happen due to end trimming
 	new_l = p->l + q->l - p->nei[1].a[0].y;
 	tmp = p->l;
 	kroundup32(tmp);
