@@ -128,6 +128,14 @@ static hash64_t *build_hash(const fmnode_v *nodes)
 	return h;
 }
 
+static inline uint64_t get_node_id(hash64_t *h, uint64_t tid)
+{
+	khint_t k;
+	k = kh_get(64, h, tid);
+	if (k == kh_end(h)) return (uint64_t)(-1);
+	return kh_val(h, k);
+}
+
 static void check(fmnode_v *nodes, hash64_t *h)
 {
 	size_t i;
@@ -228,6 +236,45 @@ static void break_arc(fmnode_v *nodes, hash64_t *h, float max_ratio, int min_wid
 	}
 }
 
+static void erode_end1(fmnode_v *nodes, hash64_t *h, size_t id, int min_cov)
+{
+	fmnode_t *p = &nodes->a[id];
+	int j, l, k, el[2];
+	if (p->l <= 0) return;
+	for (l = 0; l < p->l; ++l)
+		if (p->cov[l] - 33 > min_cov) break;
+	if (l == p->l) return; // do not erode the entire node
+	el[0] = l;
+	for (l = p->l - 1; l >= 0; --l)
+		if (p->cov[l] - 33 > min_cov) break;
+	assert(l > el[0]);
+	el[1] = p->l - 1 - l;
+	for (j = 0; j < 2; ++j) {
+		if (el[j] == 0) continue;
+		for (l = 0; l < p->nei[j].n; ++l) {
+			fm128_t *q = &p->nei[j].a[l];
+			fmnode_t *r;
+			uint64_t nei;
+			nei = get_node_id(h, q->x);
+			if (nei == (uint64_t)-1) continue;
+			q->y = q->y < el[j]? 0 : q->y - el[j];
+			r = &nodes->a[nei>>1];
+			for (k = 0; k < r->nei[nei&1].n; ++k)
+				if (r->nei[nei&1].a[k].x == p->k[j])
+					break;
+			if (k < r->nei[nei&1].n) // no broken edges
+				r->nei[nei&1].a[k].y = q->y;
+		}
+	}
+	if (el[1]) p->l -= el[1];
+	if (el[0]) {
+		p->l -= el[0];
+		memmove(p->cov, p->cov + el[0], p->l);
+		memmove(p->seq, p->seq + el[0], p->l);
+	}
+	p->cov[p->l] = p->seq[p->l] = 0;
+}
+
 #define __swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))
 
 static void flip(fmnode_t *p, hash64_t *h)
@@ -322,6 +369,11 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	break_arc(nodes, h, opt->max_br_ratio, opt->min_br_width);
 	rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
 	merge(nodes, h, 0);
+	if (opt->min_term_cov) {
+		size_t i;
+		for (i = 0; i < nodes->n; ++i)
+			erode_end1(nodes, h, i, opt->min_term_cov);
+	}
 	clean_core(nodes, h);
 	kh_destroy(64, h);
 }
