@@ -202,6 +202,34 @@ static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 	}
 }
 
+static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, hash64_t *tmph)
+{
+	fmnode_t *p = &nodes->a[id], *q[2];
+	fm128_v *r[2];
+	uint64_t nei[2];
+	int j, ret;
+	khint_t k;
+	if (p->l <= 0 || p->nei[0].n != 1 || p->nei[1].n != 1) return;
+	for (j = 0; j < 2; ++j) {
+		nei[j] = get_node_id(h, p->nei[j].a[0].x);
+		q[j] = &nodes->a[nei[j]>>1];
+	}
+	if (q[0]->l < 0 || q[1]->l < 0) return; // deleted node
+	if (q[0]->nei[nei[0]&1].n <= 1 || q[1]->nei[nei[1]&1].n <= 1) return; // unmerged or inconsistent arc
+	if (q[0]->nei[nei[0]&1].n != q[1]->nei[nei[1]&1].n) return; // branching
+	r[0] = &q[0]->nei[nei[0]&1]; r[1] = &q[1]->nei[nei[1]&1];
+	kh_clear(64, tmph);
+	for (j = 0; j < r[0]->n; ++j) {
+		k = kh_put(64, tmph, r[0]->a[j].x, &ret);
+		assert(ret == 0);
+	}
+	for (j = 0; j < r[1]->n; ++j) {
+		k = kh_get(64, tmph, r[1]->a[j].x);
+		if (k == kh_end(tmph)) break;
+	}
+	if (j != r[1]->n) return; // branching
+}
+
 static void break_arc(fmnode_v *nodes, hash64_t *h, float max_ratio, int min_width)
 {
 	size_t i;
@@ -366,17 +394,21 @@ static void clean_core(fmnode_v *nodes, hash64_t *h)
 
 void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 {
-	hash64_t *h;
+	hash64_t *h, *tmph;
+	size_t i;
+	tmph = kh_init(64);
 	h = build_hash(nodes);
 	if (opt->check) check(nodes, h);
-	break_arc(nodes, h, opt->max_br_ratio, opt->min_br_width);
-	rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
+	if (opt->min_tip_len && opt->min_tip_cov >= 1.)
+		for (i = 0; i < 5; ++i)
+			rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
+	if (opt->min_br_width && opt->max_br_ratio < 1.)
+		break_arc(nodes, h, opt->max_br_ratio, opt->min_br_width);
 	merge(nodes, h, 0);
-	if (opt->min_term_cov) {
-		size_t i;
+	if (opt->min_term_cov)
 		for (i = 0; i < nodes->n; ++i)
 			erode_end1(nodes, h, i, opt->min_term_cov);
-	}
 	clean_core(nodes, h);
 	kh_destroy(64, h);
+	kh_destroy(64, tmph);
 }
