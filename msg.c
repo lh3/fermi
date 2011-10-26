@@ -12,7 +12,12 @@ KSEQ_INIT(gzFile, gzread)
 #include "khash.h"
 KHASH_MAP_INIT_INT64(64, uint64_t)
 
+#define MAX_DEBUBBLE_LEN  200
+#define MAX_DEBUBBLE_DIFF 3
+
 typedef khash_t(64) hash64_t;
+
+static void flip(fmnode_t *p, hash64_t *h);
 
 void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 {
@@ -204,11 +209,14 @@ static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 
 static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, hash64_t *tmph)
 {
-	fmnode_t *p = &nodes->a[id], *q[2];
+	fmnode_t *p = &nodes->a[id], *q[2], *top_p, *tmp_p;
 	fm128_v *r[2];
 	uint64_t nei[2];
-	int j, ret;
+	int j, l, ret;
 	khint_t k;
+	double max_cov;
+	uint64_t top_id;
+
 	if (p->l <= 0 || p->nei[0].n != 1 || p->nei[1].n != 1) return;
 	for (j = 0; j < 2; ++j) {
 		nei[j] = get_node_id(h, p->nei[j].a[0].x);
@@ -219,15 +227,31 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, hash64_t *
 	if (q[0]->nei[nei[0]&1].n != q[1]->nei[nei[1]&1].n) return; // branching
 	r[0] = &q[0]->nei[nei[0]&1]; r[1] = &q[1]->nei[nei[1]&1];
 	kh_clear(64, tmph);
-	for (j = 0; j < r[0]->n; ++j) {
-		k = kh_put(64, tmph, r[0]->a[j].x, &ret);
-		assert(ret == 0);
+	for (j = 0, max_cov = 0; j < r[0]->n; ++j) {
+		uint64_t t = get_node_id(h, r[0]->a[j].x);
+		tmp_p = &nodes->a[t>>1];
+		if (tmp_p->nei[0].n != 1 || tmp_p->nei[1].n != 1) break; // FIXME: it is still possible to de-bubble; but need to be more careful
+		if (tmp_p->avg_cov > max_cov)
+			max_cov = tmp_p->avg_cov, top_id = t;
+		kh_put(64, tmph, t^1, &ret);
 	}
+	if (j != r[0]->n) return; // branching
 	for (j = 0; j < r[1]->n; ++j) {
-		k = kh_get(64, tmph, r[1]->a[j].x);
+		k = kh_get(64, tmph, get_node_id(h, r[1]->a[j].x));
 		if (k == kh_end(tmph)) break;
 	}
 	if (j != r[1]->n) return; // branching
+	top_p = &nodes->a[top_id>>1];
+	fprintf(stderr, "[%lld,%lld] %f<%f\n", p->k[0], p->k[1], p->avg_cov, max_cov);
+	for (j = 0; j < r[0]->n; ++j) {
+		uint64_t t = get_node_id(h, r[0]->a[j].x);
+		//if (top_id == t) continue; // we do not process the node with the highest coverage
+		tmp_p = &nodes->a[t>>1];
+		if ((top_id&1) != (t&1)) flip(tmp_p, h);
+		for (l = tmp_p->nei[0].a[0].y; l < tmp_p->l - tmp_p->nei[1].a[0].y; ++l)
+			fputc("ACGTN"[tmp_p->seq[l]-1], stderr);
+		fputc('\n', stderr);
+	}
 }
 
 static void erode_end1(fmnode_v *nodes, hash64_t *h, size_t id, int min_cov)
@@ -330,6 +354,7 @@ static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor t
 		} else p->cov[i] = q->cov[j];
 	}
 	p->seq[new_l] = p->cov[new_l] = 0;
+	p->avg_cov = (p->l * p->avg_cov + q->l * q->avg_cov) / new_l; // recalculate coverage
 	p->l = new_l;
 	// merge neighbors
 	free(p->nei[1].a);
@@ -369,6 +394,10 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 		for (i = 0; i < 5; ++i)
 			rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
 	merge(nodes, h, 0);
+	{
+		for (i = 0; i < nodes->n; ++i)
+			debubble1_simple(nodes, h, i, tmph);
+	}
 	if (opt->min_term_cov)
 		for (i = 0; i < nodes->n; ++i)
 			erode_end1(nodes, h, i, opt->min_term_cov);
