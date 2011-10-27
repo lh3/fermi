@@ -203,7 +203,6 @@ static inline void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
 static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 {
 	size_t i;
-	int j, l;
 	for (i = 0; i < nodes->n; ++i) {
 		fmnode_t *p = &nodes->a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
@@ -218,7 +217,7 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 	uint64_t nei[2];
 	int j, cnt;
 	double max_cov;
-	uint64_t top_id;
+	uint64_t top_id = (uint64_t)-1;
 
 	if (p->l <= 0 || p->nei[0].n != 1 || p->nei[1].n != 1) return;
 	for (j = 0; j < 2; ++j) {
@@ -238,12 +237,13 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 		++cnt;
 	}
 	if (cnt < 2) return;
+	assert(top_id != (uint64_t)-1);
 	top_p = &nodes->a[top_id>>1];
 	for (j = 0; j < r[0]->n; ++j) {
 		uint64_t t = get_node_id(h, r[0]->a[j].x);
-		int l, diff, ml, to_del = 0, beg[2], end[2];
+		int l, diff, ml = 0, to_del = 0, beg[2], end[2];
 		double cov[2];
-		//if (top_id == t) continue; // we do not process the node with the highest coverage
+		if (top_id == t) continue; // we do not process the node with the highest coverage
 		tmp_p = &nodes->a[t>>1];
 		if (tmp_p->nei[0].n != 1 || tmp_p->nei[1].n != 1) continue; // skip this node
 		if (tmp_p->nei[1].a[0].x != p->nei[1].a[0].x) continue; // not a multi-edge
