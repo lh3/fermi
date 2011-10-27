@@ -476,7 +476,7 @@ int main_clean(int argc, char *argv[])
 	fmnode_v *nodes;
 	int c;
 	fmclnopt_t opt;
-	opt.min_tip_len = 200; opt.min_tip_cov  = 2.0;
+	opt.min_tip_len = 150; opt.min_tip_cov  = 5.0;
 	opt.min_bub_cov = 7.0; opt.min_bub_ratio= 0.3;
 	opt.check = 0;
 	while ((c = getopt(argc, argv, "Cl:c:T:r:w:")) >= 0) {
