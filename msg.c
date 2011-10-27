@@ -234,7 +234,6 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 	}
 	if (cnt < 2) return;
 	top_p = &nodes->a[top_id>>1];
-	//fprintf(stderr, "[%lld,%lld] %f<%f\n", p->k[0], p->k[1], p->avg_cov, max_cov);
 	for (j = 0; j < r[0]->n; ++j) {
 		uint64_t t = get_node_id(h, r[0]->a[j].x);
 		int l, diff, ml, to_del = 0, beg[2], end[2];
@@ -270,57 +269,10 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 			cut_arc(nodes, h, q[1]->k[nei[1]&1], tmp_p->k[1], 1);
 			tmp_p->l = -1;
 		}
-		/*
-		for (l = tmp_p->nei[0].a[0].y; l < tmp_p->l - tmp_p->nei[1].a[0].y; ++l)
-			fputc("ACGTN"[tmp_p->seq[l]-1], stderr);
-		fprintf(stderr, "\t[%f,%f] %d %d %f %c\n", cov[0], cov[1], ml, diff, tmp_p->avg_cov, "NY"[to_del]);
-		*/
 	}
 	for (j = 0, cnt = 0; j < r[0]->n; ++j)
 		if (r[0]->a[j].x) r[0]->a[cnt++] = r[0]->a[j];
 	r[0]->n = cnt;
-}
-
-static void erode_end1(fmnode_v *nodes, hash64_t *h, size_t id, int min_cov)
-{
-	fmnode_t *p = &nodes->a[id];
-	int j, l, k, el[2], ol[2];
-	if (p->l <= 0) return;
-	for (j = 0; j < 2; ++j) {
-		for (l = 0, ol[j] = 0; l < p->nei[j].n; ++l)
-			if (ol[j] < p->nei[j].a[l].y) ol[j] = p->nei[j].a[l].y;
-	}
-	for (l = 0; l < p->l - ol[1]; ++l)
-		if (p->cov[l] - 33 > min_cov) break;
-	el[0] = l;
-	for (l = p->l - 1; l >= ol[0]; --l)
-		if (p->cov[l] - 33 > min_cov) break;
-	el[1] = p->l - 1 - l;
-	if (el[0] + el[1] >= p->l) return; // erode the entire node
-	for (j = 0; j < 2; ++j) {
-		if (el[j] == 0) continue;
-		for (l = 0; l < p->nei[j].n; ++l) {
-			fm128_t *q = &p->nei[j].a[l];
-			fmnode_t *r;
-			uint64_t nei;
-			nei = get_node_id(h, q->x);
-			if (nei == (uint64_t)-1) continue;
-			q->y = q->y < el[j]? 0 : q->y - el[j];
-			r = &nodes->a[nei>>1];
-			for (k = 0; k < r->nei[nei&1].n; ++k)
-				if (r->nei[nei&1].a[k].x == p->k[j])
-					break;
-			if (k < r->nei[nei&1].n) // no broken edges
-				r->nei[nei&1].a[k].y = q->y;
-		}
-	}
-	if (el[1]) p->l -= el[1];
-	if (el[0]) {
-		p->l -= el[0];
-		memmove(p->cov, p->cov + el[0], p->l);
-		memmove(p->seq, p->seq + el[0], p->l);
-	}
-	p->cov[p->l] = p->seq[p->l] = 0;
 }
 
 #define __swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))
@@ -424,9 +376,6 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 		for (i = 0; i < nodes->n; ++i)
 			debubble1_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
 	}
-	if (opt->min_term_cov)
-		for (i = 0; i < nodes->n; ++i)
-			erode_end1(nodes, h, i, opt->min_term_cov);
 	rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
 	clean_core(nodes, h);
 	kh_destroy(64, h);

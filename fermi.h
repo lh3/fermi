@@ -31,7 +31,7 @@ typedef struct {
 
 typedef struct {
 	float min_tip_cov, min_bub_ratio, min_bub_cov;
-	int min_tip_len, min_term_cov;
+	int min_tip_len;
 	int check;
 } fmclnopt_t;
 
