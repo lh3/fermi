@@ -234,8 +234,8 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 	}
 	if (cnt < 2) return;
 	top_p = &nodes->a[top_id>>1];
-	fprintf(stderr, "[%lld,%lld] %f<%f\n", p->k[0], p->k[1], p->avg_cov, max_cov);
-	for (j = 0, cnt = 0; j < r[0]->n; ++j) {
+	//fprintf(stderr, "[%lld,%lld] %f<%f\n", p->k[0], p->k[1], p->avg_cov, max_cov);
+	for (j = 0; j < r[0]->n; ++j) {
 		uint64_t t = get_node_id(h, r[0]->a[j].x);
 		int l, diff, ml, to_del = 0, beg[2], end[2];
 		double cov[2];
@@ -258,17 +258,27 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 		cov[0] /= end[0] > beg[0]? end[0] - beg[0] : 1;
 		for (l = beg[1], cov[1] = 0; l < end[1]; ++l) cov[1] += tmp_p->cov[l] - 33;
 		cov[1] /= end[1] > beg[1]? end[1] - beg[1] : 1;
-		if (top_p != tmp_p && (end[0]-beg[0]) - (end[1]-beg[1]) < MAX_DEBUBBLE_DIFF && (end[1]-beg[1]) - (end[0]-beg[0]) < MAX_DEBUBBLE_DIFF) {
+		if (top_p != tmp_p && abs((end[0]-beg[0]) - (end[1]-beg[1])) < MAX_DEBUBBLE_DIFF) {
 			if (diff < MAX_DEBUBBLE_DIFF) to_del = 1;
 			else if (end[0]-beg[0] - ml < MAX_DEBUBBLE_DIFF || end[1]-beg[1] - ml < MAX_DEBUBBLE_DIFF) to_del = 1;
 		}
-		if (to_del && cov[0] > 0. && cov[1] > 0.) {
-			if (cov[1] / cov[0] >= min_bub_ratio || cov[1] >= min_bub_cov) to_del = 0;
+		if (cov[0] > 0. && cov[1] > 0. && (cov[1] / cov[0] >= min_bub_ratio || cov[1] >= min_bub_cov)) to_del = 0;
+		if (1&&to_del) {
+			cut_arc(nodes, h, tmp_p->k[0], q[0]->k[nei[0]&1], 1);
+			cut_arc(nodes, h, q[0]->k[nei[0]&1], tmp_p->k[0], 0);
+			cut_arc(nodes, h, tmp_p->k[1], q[0]->k[nei[1]&1], 1);
+			cut_arc(nodes, h, q[1]->k[nei[1]&1], tmp_p->k[1], 1);
+			tmp_p->l = -1;
 		}
+		/*
 		for (l = tmp_p->nei[0].a[0].y; l < tmp_p->l - tmp_p->nei[1].a[0].y; ++l)
 			fputc("ACGTN"[tmp_p->seq[l]-1], stderr);
 		fprintf(stderr, "\t[%f,%f] %d %d %f %c\n", cov[0], cov[1], ml, diff, tmp_p->avg_cov, "NY"[to_del]);
+		*/
 	}
+	for (j = 0, cnt = 0; j < r[0]->n; ++j)
+		if (r[0]->a[j].x) r[0]->a[cnt++] = r[0]->a[j];
+	r[0]->n = cnt;
 }
 
 static void erode_end1(fmnode_v *nodes, hash64_t *h, size_t id, int min_cov)
@@ -409,14 +419,15 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	if (opt->min_tip_len && opt->min_tip_cov >= 1.)
 		for (i = 0; i < 5; ++i)
 			rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
-	merge(nodes, h, 0);
-	{
+	clean_core(nodes, h);
+	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
 			debubble1_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
 	}
 	if (opt->min_term_cov)
 		for (i = 0; i < nodes->n; ++i)
 			erode_end1(nodes, h, i, opt->min_term_cov);
+	rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
 	clean_core(nodes, h);
 	kh_destroy(64, h);
 }
