@@ -493,6 +493,8 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "Usage:   fermi clean [options] <in.msg>\n\n");
 		fprintf(stderr, "Options: -l INT      minimum tip length [%d]\n", opt.min_tip_len);
 		fprintf(stderr, "         -c FLOAT    minimum tip coverage [%.1f]\n", opt.min_tip_cov);
+		fprintf(stderr, "         -w FLOAT    minimum bubble coverage [%.1f]\n", opt.min_bub_cov);
+		fprintf(stderr, "         -r FLOAT    minimum bubble ratio [%.2f]\n", opt.min_bub_ratio);
 		fprintf(stderr, "\n");
 		return 1;
 	}
