@@ -190,6 +190,16 @@ static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int re
 	}
 }
 
+static inline void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
+{
+	int j, l;
+	fmnode_t *p = &nodes->a[id];
+	p->l = -1;
+	for (j = 0; j < 2; ++j)
+		for (l = 0; l < p->nei[j].n; ++l)
+			cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j], 1);
+}
+
 static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 {
 	size_t i;
@@ -197,12 +207,7 @@ static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 	for (i = 0; i < nodes->n; ++i) {
 		fmnode_t *p = &nodes->a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->avg_cov < min_cov && p->l < min_len) {
-			p->l = -1;
-			for (j = 0; j < 2; ++j)
-				for (l = 0; l < p->nei[j].n; ++l)
-					cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j], 1);
-		}
+		if (p->avg_cov < min_cov && p->l < min_len) rmnode(nodes, h, i);
 	}
 }
 
@@ -368,15 +373,19 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	size_t i;
 	h = build_hash(nodes);
 	if (opt->check) check(nodes, h);
-	if (opt->min_tip_len && opt->min_tip_cov >= 1.)
+	if (opt->min_tip_len && opt->min_tip_cov >= 1.) {
 		for (i = 0; i < 5; ++i)
 			rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
-	clean_core(nodes, h);
+		clean_core(nodes, h);
+	}
+//	for (i = 0; i < nodes->n; ++i)
+//		if (nodes->a[i].avg_cov < 1.01 && nodes->a[i].nei[0].n == 1&& nodes->a[i].nei[1].n) rmnode(nodes, h, i);
+//	clean_core(nodes, h);
 	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
 			debubble1_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
+		rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
+		clean_core(nodes, h);
 	}
-	rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
-	clean_core(nodes, h);
 	kh_destroy(64, h);
 }
