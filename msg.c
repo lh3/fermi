@@ -190,6 +190,27 @@ static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int re
 	}
 }
 
+static void drop_arc1(fmnode_v *nodes, hash64_t *h, size_t id, int min_ovlp)
+{
+	fmnode_t *p = &nodes->a[id];
+	int j, l, cnt;
+	for (j = 0; j < 2; ++j) {
+		fm128_v *r = &p->nei[j];
+		for (l = cnt = 0; l < r->n; ++l) {
+			if (r->a[l].y < min_ovlp) {
+				cut_arc(nodes, h, r->a[l].x, p->k[j], 1);
+				r->a[l].x = 0; // mark the link to delete
+				++cnt;
+			}
+		}
+		if (cnt) {
+			for (l = cnt = 0; l < r->n; ++l)
+				if (r->a[l].x) r->a[cnt++] = r->a[l];
+			r->n = cnt;
+		}
+	}
+}
+
 static inline void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
 {
 	int j, l;
@@ -373,6 +394,10 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	size_t i;
 	h = build_hash(nodes);
 	if (opt->check) check(nodes, h);
+	if (opt->min_ovlp) {
+		for (i = 0; i < nodes->n; ++i)
+			drop_arc1(nodes, h, i, opt->min_ovlp);
+	}
 	if (opt->min_tip_len && opt->min_tip_cov >= 1.) {
 		for (i = 0; i < 5; ++i)
 			rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);

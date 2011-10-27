@@ -165,7 +165,7 @@ int main_unpack(int argc, char *argv[])
 
 int main_unitig(int argc, char *argv[])
 {
-	int c, use_mmap = 0, n_threads = 1, min_match = 50;
+	int c, use_mmap = 0, n_threads = 1, min_match = 30;
 	rld_t *e;
 	while ((c = getopt(argc, argv, "SMDl:t:r:m:L:")) >= 0) {
 		switch (c) {
@@ -476,25 +476,28 @@ int main_clean(int argc, char *argv[])
 	fmnode_v *nodes;
 	int c;
 	fmclnopt_t opt;
-	opt.min_tip_len = 150; opt.min_tip_cov  = 5.0;
+	opt.min_tip_len = 150; opt.min_tip_cov  = 10.0;
 	opt.min_bub_cov = 7.0; opt.min_bub_ratio= 0.3;
+	opt.min_ovlp    = 50;
 	opt.check = 0;
-	while ((c = getopt(argc, argv, "Cl:c:T:r:w:")) >= 0) {
+	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len = atoi(optarg); break;
 			case 'c': opt.min_tip_cov = atof(optarg); break;
 			case 'w': opt.min_bub_cov = atof(optarg); break;
 			case 'r': opt.min_bub_ratio=atof(optarg); break;
+			case 'o': opt.min_ovlp    = atoi(optarg); break;
 			case 'C': opt.check = 1; break;
 		}
 	}
 	if (argc == optind) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   fermi clean [options] <in.msg>\n\n");
-		fprintf(stderr, "Options: -l INT      minimum tip length [%d]\n", opt.min_tip_len);
-		fprintf(stderr, "         -c FLOAT    minimum tip coverage [%.1f]\n", opt.min_tip_cov);
-		fprintf(stderr, "         -w FLOAT    minimum bubble coverage [%.1f]\n", opt.min_bub_cov);
+		fprintf(stderr, "Options: -c FLOAT    minimum tip coverage (0 to disable tip trimming) [%.1f]\n", opt.min_tip_cov);
+		fprintf(stderr, "         -l INT      minimum tip length [%d]\n", opt.min_tip_len);
+		fprintf(stderr, "         -w FLOAT    minimum bubble coverage (0 to disable debubbling) [%.1f]\n", opt.min_bub_cov);
 		fprintf(stderr, "         -r FLOAT    minimum bubble ratio [%.2f]\n", opt.min_bub_ratio);
+		fprintf(stderr, "         -o INT      minimum overlap [%d]\n", opt.min_ovlp);
 		fprintf(stderr, "\n");
 		return 1;
 	}
