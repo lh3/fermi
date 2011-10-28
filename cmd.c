@@ -478,15 +478,16 @@ int main_clean(int argc, char *argv[])
 	fmclnopt_t opt;
 	opt.min_tip_len = 150; opt.min_tip_cov  = 10.0;
 	opt.min_bub_cov = 7.0; opt.min_bub_ratio= 0.3;
-	opt.min_ovlp    = 50;
+	opt.min_ovlp    = 0;   opt.min_ovlp_ratio=0.7;
 	opt.check = 0;
 	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:")) >= 0) {
 		switch (c) {
-			case 'l': opt.min_tip_len = atoi(optarg); break;
-			case 'c': opt.min_tip_cov = atof(optarg); break;
-			case 'w': opt.min_bub_cov = atof(optarg); break;
-			case 'r': opt.min_bub_ratio=atof(optarg); break;
-			case 'o': opt.min_ovlp    = atoi(optarg); break;
+			case 'l': opt.min_tip_len =  atoi(optarg); break;
+			case 'c': opt.min_tip_cov =  atof(optarg); break;
+			case 'w': opt.min_bub_cov =  atof(optarg); break;
+			case 'r': opt.min_bub_ratio= atof(optarg); break;
+			case 'o': opt.min_ovlp    =  atoi(optarg); break;
+			case 'R': opt.min_ovlp_ratio=atof(optarg); break;
 			case 'C': opt.check = 1; break;
 		}
 	}
@@ -498,6 +499,7 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "         -w FLOAT    minimum bubble coverage (0 to disable debubbling) [%.1f]\n", opt.min_bub_cov);
 		fprintf(stderr, "         -r FLOAT    minimum bubble ratio [%.2f]\n", opt.min_bub_ratio);
 		fprintf(stderr, "         -o INT      minimum overlap [%d]\n", opt.min_ovlp);
+		fprintf(stderr, "         -R FLOAT    minimum relative overlap ratio [%.2f]\n", opt.min_ovlp_ratio);
 		fprintf(stderr, "\n");
 		return 1;
 	}

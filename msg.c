@@ -190,14 +190,18 @@ static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int re
 	}
 }
 
-static void drop_arc1(fmnode_v *nodes, hash64_t *h, size_t id, int min_ovlp)
+static void drop_arc1(fmnode_v *nodes, hash64_t *h, size_t id, int min_ovlp, float min_ovlp_ratio)
 {
 	fmnode_t *p = &nodes->a[id];
 	int j, l, cnt;
 	for (j = 0; j < 2; ++j) {
 		fm128_v *r = &p->nei[j];
+		int max = 0;
+		if (r->n == 0) continue;
+		for (l = 0; l < r->n; ++l)
+			if (r->a[l].y > max) max = r->a[l].y;
 		for (l = cnt = 0; l < r->n; ++l) {
-			if (r->a[l].y < min_ovlp) {
+			if (r->a[l].y < min_ovlp || (double)r->a[l].y/max < min_ovlp_ratio) {
 				cut_arc(nodes, h, r->a[l].x, p->k[j], 1);
 				r->a[l].x = 0; // mark the link to delete
 				++cnt;
@@ -394,9 +398,9 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	size_t i;
 	h = build_hash(nodes);
 	if (opt->check) check(nodes, h);
-	if (opt->min_ovlp) {
+	if (opt->min_ovlp || opt->min_ovlp_ratio > 0.) {
 		for (i = 0; i < nodes->n; ++i)
-			drop_arc1(nodes, h, i, opt->min_ovlp);
+			drop_arc1(nodes, h, i, opt->min_ovlp, opt->min_ovlp_ratio);
 	}
 	if (opt->min_tip_len && opt->min_tip_cov >= 1.) {
 		for (i = 0; i < 5; ++i)
