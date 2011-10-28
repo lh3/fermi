@@ -480,7 +480,7 @@ int main_clean(int argc, char *argv[])
 	opt.min_bub_cov = 7.0; opt.min_bub_ratio= 0.3;
 	opt.min_ovlp    = 0;   opt.min_ovlp_ratio=0.7;
 	opt.check = 0;
-	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:")) >= 0) {
+	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:R:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len =  atoi(optarg); break;
 			case 'c': opt.min_tip_cov =  atof(optarg); break;
