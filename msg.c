@@ -12,6 +12,10 @@ KSEQ_INIT(gzFile, gzread)
 #include "khash.h"
 KHASH_MAP_INIT_INT64(64, uint64_t)
 
+#define fm128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
+#include "ksort.h"
+KSORT_INIT(128x, fm128_t, fm128_xlt)
+
 #define MAX_DEBUBBLE_DIFF 3
 
 typedef khash_t(64) hash64_t;
@@ -100,6 +104,7 @@ fmnode_v *msg_read(const char *fn)
 				++q;
 			} else q += 2;
 		}
+		msg_rmdup(p);
 		++cnt; tot_len += seq->seq.l;
 		if (fm_verbose >= 3 && cnt % 100000 == 0)
 			fprintf(stderr, "[%s] read %ld nodes in %ld bp\n", __func__, (long)cnt, (long)tot_len);
@@ -109,6 +114,27 @@ fmnode_v *msg_read(const char *fn)
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[%s] In total: %ld nodes in %ld bp\n", __func__, (long)cnt, (long)tot_len);
 	return nodes;
+}
+
+void msg_rmdup(fmnode_t *p)
+{
+	int j, l, cnt;
+	uint64_t x;
+	for (j = 0; j < 2; ++j) {
+		fm128_v *r = &p->nei[j];
+		if (r->n < 2) continue;
+		ks_introsort(128x, r->n, r->a);
+		x = r->a[0].x;
+		for (l = 1, cnt = 0; l < r->n; ++l) {
+			if (r->a[l].x == x) r->a[l].x = 0, ++cnt;
+			else x = r->a[l].x;
+		}
+		if (cnt) {
+			for (l = 0, cnt = 0; l < r->n; ++l)
+				if (r->a[l].x) r->a[cnt++] = r->a[l];
+			r->n = cnt;
+		}
+	}
 }
 
 static hash64_t *build_hash(const fmnode_v *nodes)
@@ -140,10 +166,10 @@ static inline uint64_t get_node_id(hash64_t *h, uint64_t tid)
 	return kh_val(h, k);
 }
 
-static void check(fmnode_v *nodes, hash64_t *h)
+static int check(fmnode_v *nodes, hash64_t *h)
 {
 	size_t i;
-	int j, l, ll;
+	int j, l, ll, ret = 0;
 	khint_t k;
 	for (i = 0; i < nodes->n; ++i) {
 		fmnode_t *q, *p = &nodes->a[i];
@@ -155,6 +181,7 @@ static void check(fmnode_v *nodes, hash64_t *h)
 				k = kh_get(64, h, x);
 				if (k == kh_end(h)) {
 					if (fm_verbose >= 2) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
+					ret = -1;
 					continue;
 				}
 				q = &nodes->a[kh_val(h, k)>>1];
@@ -163,11 +190,13 @@ static void check(fmnode_v *nodes, hash64_t *h)
 					if (r->a[ll].x == p->k[j]) break;
 				if (ll == r->n) {
 					if (fm_verbose >= 2) fprintf(stderr, "[W::%s] have %ld->%ld but no reverse.\n", __func__, (long)p->k[j], (long)x);
+					return -1;
 					continue;
 				}
 			}
 		}
 	}
+	return ret;
 }
 
 static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int remove) // delete v from u
@@ -194,6 +223,7 @@ static void drop_arc1(fmnode_v *nodes, hash64_t *h, size_t id, int min_ovlp, flo
 {
 	fmnode_t *p = &nodes->a[id];
 	int j, l, cnt;
+	if (min_ovlp == 0 && (min_ovlp_ratio <= 0.01 || min_ovlp_ratio >= 0.99)) return;
 	for (j = 0; j < 2; ++j) {
 		fm128_v *r = &p->nei[j];
 		int max = 0;
@@ -202,7 +232,8 @@ static void drop_arc1(fmnode_v *nodes, hash64_t *h, size_t id, int min_ovlp, flo
 			if (r->a[l].y > max) max = r->a[l].y;
 		for (l = cnt = 0; l < r->n; ++l) {
 			if (r->a[l].y < min_ovlp || (double)r->a[l].y/max < min_ovlp_ratio) {
-				cut_arc(nodes, h, r->a[l].x, p->k[j], 1);
+				if (r->a[l].x != p->k[j])
+					cut_arc(nodes, h, r->a[l].x, p->k[j], 1);
 				r->a[l].x = 0; // mark the link to delete
 				++cnt;
 			}
@@ -228,6 +259,7 @@ static inline void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
 static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
 {
 	size_t i;
+	if (min_cov < 1. || min_len < 0) return;
 	for (i = 0; i < nodes->n; ++i) {
 		fmnode_t *p = &nodes->a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
@@ -396,15 +428,16 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 {
 	hash64_t *h;
 	size_t i;
+	int j;
 	h = build_hash(nodes);
 	if (opt->check) check(nodes, h);
-	if (opt->min_ovlp || opt->min_ovlp_ratio > 0.) {
+	for (j = 0; j < opt->n_iter; ++j) {
+		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
+		for (i = 0; i < nodes->n; ++i) msg_rmdup(&nodes->a[i]);
 		for (i = 0; i < nodes->n; ++i)
-			drop_arc1(nodes, h, i, opt->min_ovlp, opt->min_ovlp_ratio);
-	}
-	if (opt->min_tip_len && opt->min_tip_cov >= 1.) {
-		for (i = 0; i < 5; ++i)
-			rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
+			drop_arc1(nodes, h, i, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
+		rmtip(nodes, h, opt->min_tip_cov * r, opt->min_tip_len * r);
+		for (i = 0; i < nodes->n; ++i) msg_rmdup(&nodes->a[i]);
 		clean_core(nodes, h);
 	}
 //	for (i = 0; i < nodes->n; ++i)
