@@ -19,19 +19,48 @@ void seq_revcomp6(int l, unsigned char *s);
 
 double cputime();
 
-int main_strlen(int argc, char *argv[])
+int main_splitfa(int argc, char *argv[])
 {
-	int64_t l = 0;
-	gzFile fp;
+	int64_t n_seqs = 0;
+	int i, n_files = 8;
+	gzFile fp, *out;
 	kseq_t *seq;
-	if (argc == 1) {
-		fprintf(stderr, "Usage: fermi strlen <in.fq>\n");
+	char *str;
+	kstring_t *ss;
+
+	if (argc < 3) {
+		fprintf(stderr, "Usage: fermi splitfa <in.fq> <out.prefix> [%d]\n", n_files);
 		return 1;
 	}
-	fp = gzopen(argv[1], "r");
+	if (argc >= 4) n_files = atoi(argv[3]);
+	out = calloc(n_files, sizeof(gzFile));
+	str = calloc(strlen(argv[2]) + 20, 1);
+	ss = calloc(n_files, sizeof(kstring_t));
+	for (i = 0; i < n_files; ++i) {
+		sprintf(str, "%s.%.4d.fq.gz", argv[2], i);
+		out[i] = gzopen(str, "wb1");
+	}
+	fp = strcmp(argv[1], "-")? gzopen(argv[1], "r") : gzdopen(fileno(stdin), "r");
 	seq = kseq_init(fp);
-	while (kseq_read(seq) >= 0) l += 2 * (seq->seq.l + 1);
-	printf("%lld\n", (long long)l);
+	while (kseq_read(seq) >= 0) {
+		i = n_seqs % n_files;
+		kputc(seq->qual.l? '@' : '>', &ss[i]); kputsn(seq->name.s, seq->name.l, &ss[i]); kputc('\n', &ss[i]);
+		kputsn(seq->seq.s, seq->seq.l, &ss[i]); kputc('\n', &ss[i]);
+		if (seq->qual.l) {
+			kputsn("+\n", 2, &ss[i]); kputsn(seq->qual.s, seq->qual.l, &ss[i]); kputc('\n', &ss[i]);
+		}
+		if (ss[i].l > 64000) {
+			gzwrite(out[i], ss[i].s, ss[i].l);
+			ss[i].l = 0;
+		}
+		++n_seqs;
+	}
+	for (i = 0; i < n_files; ++i) {
+		gzwrite(out[i], ss[i].s, ss[i].l);
+		gzclose(out[i]);
+		free(ss[i].s);
+	}
+	free(out); free(ss); free(str);
 	kseq_destroy(seq);
 	gzclose(fp);
 	return 0;
@@ -315,7 +344,7 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0, min_q = 0, trim_end_N = 1;
+	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0, min_q = 3, trim_end_N = 1;
 	int64_t i, sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;

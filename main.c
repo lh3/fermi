@@ -8,7 +8,7 @@ int main_unpack(int argc, char *argv[]);
 int main_exact(int argc, char *argv[]);
 int main_merge(int argc, char *argv[]);
 int main_build(int argc, char *argv[]);
-int main_strlen(int argc, char *argv[]);
+int main_splitfa(int argc, char *argv[]);
 int main_correct(int argc, char *argv[]);
 int main_unitig(int argc, char *argv[]);
 int main_clean(int argc, char *argv[]);
@@ -29,8 +29,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Version: %s\n", FERMI_VERSION);
 		fprintf(stderr, "Contact: Heng Li <lh3@live.co.uk>\n\n");
 		fprintf(stderr, "Usage:   fermi <command> [arguments]\n\n");
-		fprintf(stderr, "Command: strlen    Total number of symbols to index\n");
-		fprintf(stderr, "         build     Generate FM-Index\n");
+		fprintf(stderr, "Command: build     Generate FM-Index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
 		fprintf(stderr, "         merge     Merge multiple FM-Indexes\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
@@ -46,7 +45,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
 	else if (strcmp(argv[1], "exact") == 0) ret = main_exact(argc-1, argv+1);
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
-	else if (strcmp(argv[1], "strlen") == 0) ret = main_strlen(argc-1, argv+1);
+	else if (strcmp(argv[1], "splitfa") == 0) ret = main_splitfa(argc-1, argv+1);
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);
