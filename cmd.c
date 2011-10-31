@@ -505,15 +505,16 @@ int main_clean(int argc, char *argv[])
 	fmnode_v *nodes;
 	int c;
 	fmclnopt_t opt;
-	opt.min_tip_len = 150; opt.min_tip_cov  = 10.0;
-	opt.min_bub_cov = 7.0; opt.min_bub_ratio= 0.3;
+	opt.min_tip_len = 200;
+	opt.min_weak_cov  = 2.1;
+	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
 	opt.min_ovlp    = 30;  opt.min_ovlp_ratio=0.7;
 	opt.n_iter = 5;
 	opt.check  = 0;
 	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:R:n:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len =  atoi(optarg); break;
-			case 'c': opt.min_tip_cov =  atof(optarg); break;
+			case 'c': opt.min_weak_cov=  atof(optarg); break;
 			case 'w': opt.min_bub_cov =  atof(optarg); break;
 			case 'r': opt.min_bub_ratio= atof(optarg); break;
 			case 'o': opt.min_ovlp    =  atoi(optarg); break;
@@ -525,7 +526,7 @@ int main_clean(int argc, char *argv[])
 	if (argc == optind) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   fermi clean [options] <in.msg>\n\n");
-		fprintf(stderr, "Options: -c FLOAT    minimum tip coverage (0 to disable tip trimming) [%.1f]\n", opt.min_tip_cov);
+		fprintf(stderr, "Options: -c FLOAT    minimum node coverage [%.1f]\n", opt.min_weak_cov);
 		fprintf(stderr, "         -l INT      minimum tip length [%d]\n", opt.min_tip_len);
 		fprintf(stderr, "         -w FLOAT    minimum bubble coverage (0 to disable debubbling) [%.1f]\n", opt.min_bub_cov);
 		fprintf(stderr, "         -r FLOAT    minimum bubble ratio [%.2f]\n", opt.min_bub_ratio);

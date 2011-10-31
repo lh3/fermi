@@ -17,6 +17,7 @@ KHASH_MAP_INIT_INT64(64, uint64_t)
 KSORT_INIT(128x, fm128_t, fm128_xlt)
 
 #define MAX_DEBUBBLE_DIFF 3
+#define MAX_POP_EXTENSION 1000
 
 typedef khash_t(64) hash64_t;
 
@@ -91,6 +92,7 @@ fmnode_v *msg_read(const char *fn)
 		strcpy(p->cov, seq->qual.s);
 		for (i = 0, sum = 0; i < p->l; ++i) sum += p->cov[i] - 33;
 		p->avg_cov = (double)sum / p->l;
+		p->aux[0] = p->aux[1] = -1;
 		for (j = 0, q = seq->comment.s; j < 2; ++j) {
 			p->k[j] = strtol(q, &q, 10);
 			if (*q == '>' && q[1] != '.') {
@@ -256,15 +258,57 @@ static inline void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
 			cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j], 1);
 }
 
-static void rmtip(fmnode_v *nodes, hash64_t *h, float min_cov, int min_len)
+static void rmtip(fmnode_v *nodes, hash64_t *h, int min_len)
 {
 	size_t i;
-	if (min_cov < 1. || min_len < 0) return;
+	if (min_len < 0) return;
 	for (i = 0; i < nodes->n; ++i) {
 		fmnode_t *p = &nodes->a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->avg_cov < min_cov && p->l < min_len) rmnode(nodes, h, i);
+		if (p->l < min_len) rmnode(nodes, h, i);
 	}
+}
+
+static uint64_t pop_bubble(fmnode_v *nodes, hash64_t *h, size_t id_dir, int max_len, fm64_v *stack)
+{
+	int beg = 0, end = 1, i, j;
+	fmnode_t *p = &nodes->a[id_dir>>1], *q;
+	fm128_v *r;
+	uint64_t x, z, ret = nodes->n;
+	if (p->l < 0 || p->nei[id_dir&1].n < 2) return ret;
+	p->aux[id_dir&1] = 0;
+	stack->n = 0;
+	kv_push(uint64_t, *stack, id_dir);
+	while (beg < end) {
+		for (i = beg; i < end; ++i) {
+			x = stack->a[i];
+			p = &nodes->a[x>>1];
+			if (p->aux[x&1] >= max_len) continue; // stop searching
+			r = &p->nei[x&1];
+			for (j = 0; j < r->n; ++j) {
+				z = get_node_id(h, r->a[j].x);
+				q = &nodes->a[z>>1];
+				if (q->l < 0) continue;
+				if (q->aux[z&1] >= 0) goto end_db;
+				q->aux[z&1] = p->aux[x&1] - r->a[j].y + q->l;
+				kv_push(uint64_t, *stack, z^1);
+			}
+		}
+		beg = end; end = stack->n;
+	}
+end_db:
+	if (beg < end && z != id_dir) { // bubble but not a loop
+		double min_cov = 1e100;
+		int min_i = -1;
+		for (i = 0; i < stack->n; ++i) {
+			fmnode_t *p = &nodes->a[stack->a[i]>>1];
+			if (p->avg_cov < min_cov) min_cov = p->avg_cov, min_i = i;
+		}
+		ret = stack->a[min_i]>>1;
+	}
+	for (i = 0; i < stack->n; ++i) // reset aux[]
+		nodes->a[stack->a[i]>>1].aux[0] = nodes->a[stack->a[i]>>1].aux[1] = -1;
+	return ret;
 }
 
 static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min_bub_ratio, double min_bub_cov)
@@ -427,8 +471,10 @@ static void clean_core(fmnode_v *nodes, hash64_t *h)
 void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 {
 	hash64_t *h;
+	fm64_v stack;
 	size_t i;
 	int j;
+	kv_init(stack);
 	h = build_hash(nodes);
 	if (opt->check) check(nodes, h);
 	for (j = 0; j < opt->n_iter; ++j) {
@@ -436,7 +482,14 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 		for (i = 0; i < nodes->n; ++i) msg_rmdup(&nodes->a[i]);
 		for (i = 0; i < nodes->n; ++i)
 			drop_arc1(nodes, h, i, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
-		rmtip(nodes, h, opt->min_tip_cov * r, opt->min_tip_len * r);
+		rmtip(nodes, h, opt->min_tip_len * r);
+		clean_core(nodes, h);
+		for (i = 0; i < nodes->n; ++i) {
+			uint64_t x = pop_bubble(nodes, h, i<<1, MAX_POP_EXTENSION, &stack);
+			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov) rmnode(nodes, h, x);
+			x = pop_bubble(nodes, h, i<<1|1, MAX_POP_EXTENSION, &stack);
+			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov) rmnode(nodes, h, x);
+		}
 		for (i = 0; i < nodes->n; ++i) msg_rmdup(&nodes->a[i]);
 		clean_core(nodes, h);
 	}
@@ -446,8 +499,9 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
 			debubble1_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
-		rmtip(nodes, h, opt->min_tip_cov, opt->min_tip_len);
+		rmtip(nodes, h, opt->min_tip_len);
 		clean_core(nodes, h);
 	}
 	kh_destroy(64, h);
+	free(stack.a);
 }
