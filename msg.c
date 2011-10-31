@@ -203,14 +203,12 @@ static int check(fmnode_v *nodes, hash64_t *h)
 
 static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int remove) // delete v from u
 {
-	khint_t k;
 	int i, j;
-	fmnode_t *p;
+	uint64_t x;
 	fm128_v *r;
-	k = kh_get(64, h, u);
-	if (k == kh_end(h)) return;
-	p = &nodes->a[kh_val(h, k)>>1];
-	r = &p->nei[kh_val(h, k)&1];
+	x = get_node_id(h, u);
+	if (x == (uint64_t)-1) return;
+	r = &nodes->a[x>>1].nei[x&1];
 	if (remove) {
 		for (j = i = 0; j < r->n; ++j)
 			if (r->a[j].x != v) r->a[i++] = r->a[j];
@@ -248,14 +246,39 @@ static void drop_arc1(fmnode_v *nodes, hash64_t *h, size_t id, int min_ovlp, flo
 	}
 }
 
-static inline void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
+static void add_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int ovlp)
 {
-	int j, l;
+	uint64_t x = get_node_id(h, u);
+	fm128_v *r;
+	fm128_t z;
+	if (x == (uint64_t)-1) return;
+	r = &nodes->a[x>>1].nei[x&1];
+	z.x = v; z.y = ovlp;
+	kv_push(fm128_t, *r, z);
+	assert(r->n < 10000);
+}
+
+static void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
+{
+	int i, j;
 	fmnode_t *p = &nodes->a[id];
+	if (p->l < 0) return;
+	if (p->nei[0].n && p->nei[1].n) {
+		for (i = 0; i < p->nei[0].n; ++i) {
+			if (p->nei[0].a[i].x == p->k[0] || p->nei[0].a[i].x == p->k[1]) continue;
+			for (j = 0; j < p->nei[1].n; ++j) {
+				int ovlp = (int)(p->nei[0].a[i].y + p->nei[1].a[j].y) - p->l;
+				if (ovlp > 0) {
+					add_arc(nodes, h, p->nei[0].a[i].x, p->nei[1].a[j].x, ovlp);
+					add_arc(nodes, h, p->nei[1].a[j].x, p->nei[0].a[i].x, ovlp);
+				}
+			}
+		}
+	}
+	for (i = 0; i < p->nei[0].n; ++i) cut_arc(nodes, h, p->nei[0].a[i].x, p->k[0], 1);
+	for (i = 0; i < p->nei[1].n; ++i) cut_arc(nodes, h, p->nei[1].a[i].x, p->k[1], 1);
+	p->nei[0].n = p->nei[1].n = 0;
 	p->l = -1;
-	for (j = 0; j < 2; ++j)
-		for (l = 0; l < p->nei[j].n; ++l)
-			cut_arc(nodes, h, p->nei[j].a[l].x, p->k[j], 1);
 }
 
 static void rmtip(fmnode_v *nodes, hash64_t *h, int min_len)
@@ -460,6 +483,7 @@ static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor t
 static void clean_core(fmnode_v *nodes, hash64_t *h)
 {
 	size_t i;
+	for (i = 0; i < nodes->n; ++i) msg_rmdup(&nodes->a[i]);
 	for (i = 0; i < nodes->n; ++i) {
 		if (nodes->a[i].l <= 0) continue;
 		while (merge(nodes, h, i) == 0);
@@ -486,16 +510,12 @@ void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
 		clean_core(nodes, h);
 		for (i = 0; i < nodes->n; ++i) {
 			uint64_t x = pop_bubble(nodes, h, i<<1, MAX_POP_EXTENSION, &stack);
-			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov) rmnode(nodes, h, x);
+			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov && nodes->a[x].l < opt->min_tip_len) rmnode(nodes, h, x);
 			x = pop_bubble(nodes, h, i<<1|1, MAX_POP_EXTENSION, &stack);
-			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov) rmnode(nodes, h, x);
+			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov && nodes->a[x].l < opt->min_tip_len) rmnode(nodes, h, x);
 		}
-		for (i = 0; i < nodes->n; ++i) msg_rmdup(&nodes->a[i]);
 		clean_core(nodes, h);
 	}
-//	for (i = 0; i < nodes->n; ++i)
-//		if (nodes->a[i].avg_cov < 1.01 && nodes->a[i].nei[0].n == 1&& nodes->a[i].nei[1].n) rmnode(nodes, h, i);
-//	clean_core(nodes, h);
 	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
 			debubble1_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
