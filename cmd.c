@@ -502,16 +502,15 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 int main_clean(int argc, char *argv[])
 {
-	fmnode_v *nodes;
-	int c;
+	msg_t *g;
+	int c, no_clean = 0, max_nei = 512;
 	fmclnopt_t opt;
 	opt.min_tip_len = 200;
 	opt.min_weak_cov  = 2.1;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
 	opt.min_ovlp    = 30;  opt.min_ovlp_ratio=0.7;
-	opt.n_iter = 5;
-	opt.check  = 0;
-	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:R:n:")) >= 0) {
+	opt.n_iter = 3;
+	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:R:n:N:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len =  atoi(optarg); break;
 			case 'c': opt.min_weak_cov=  atof(optarg); break;
@@ -520,7 +519,8 @@ int main_clean(int argc, char *argv[])
 			case 'o': opt.min_ovlp    =  atoi(optarg); break;
 			case 'R': opt.min_ovlp_ratio=atof(optarg); break;
 			case 'n': opt.n_iter = atoi(optarg); break;
-			case 'C': opt.check = 1; break;
+			case 'N': max_nei = atoi(optarg); break;
+			case 'C': no_clean = 1; break;
 		}
 	}
 	if (argc == optind) {
@@ -536,8 +536,9 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		return 1;
 	}
-	nodes = msg_read(argv[optind]);
-	msg_clean(nodes, &opt);
-	msg_print(nodes);
+	g = msg_read(argv[optind], 512, 1);
+	msg_join_unambi(g);
+	if (!no_clean) msg_clean(g, &opt);
+	msg_print(&g->nodes);
 	return 0;
 }

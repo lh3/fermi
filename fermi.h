@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-dev (r369)"
+#define FERMI_VERSION "0.0-dev (r370)"
 
 #define FM_MASK30 0x3fffffff
 
@@ -32,7 +32,6 @@ typedef struct {
 typedef struct {
 	float min_weak_cov, min_bub_ratio, min_bub_cov, min_ovlp_ratio;
 	int min_tip_len, min_ovlp;
-	int check;
 	int n_iter;
 } fmclnopt_t;
 
@@ -46,6 +45,11 @@ typedef struct {
 } fmnode_t;
 
 typedef struct { size_t n, m; fmnode_t *a; } fmnode_v;
+
+typedef struct {
+	fmnode_v nodes;
+	void *h;
+} msg_t;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -121,10 +125,11 @@ extern "C" {
 	void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T);
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, int n_threads);
 
-	fmnode_v *msg_read(const char *fn);
+	msg_t *msg_read(const char *fn, int max_nei, int drop_tip);
+	void msg_amend(msg_t *g);
+	void msg_join_unambi(msg_t *g);
+	void msg_clean(msg_t *g, const fmclnopt_t *opt);
 	void msg_print(const fmnode_v *nodes);
-	void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt);
-	void msg_rmdup(fmnode_t *p);
 
 #ifdef __cplusplus
 }

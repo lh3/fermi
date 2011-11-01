@@ -4,6 +4,7 @@
 #include <string.h>
 #include "fermi.h"
 #include "rld.h"
+#include "utils.h"
 #include "kstring.h"
 #include "kvec.h"
 #include "kseq.h"
@@ -13,14 +14,18 @@ KSEQ_INIT(gzFile, gzread)
 KHASH_MAP_INIT_INT64(64, uint64_t)
 
 #define fm128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
+#define fm128_ylt(a, b) ((a).y > (b).y)
 #include "ksort.h"
 KSORT_INIT(128x, fm128_t, fm128_xlt)
+KSORT_INIT(128y, fm128_t, fm128_ylt)
 
 #define MAX_DEBUBBLE_DIFF 3
 #define MAX_POP_EXTENSION 1000
+#define MAX_NEIGHBORS     512
 
 typedef khash_t(64) hash64_t;
 
+static hash64_t *build_hash(const fmnode_v *nodes);
 static void flip(fmnode_t *p, hash64_t *h);
 
 void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
@@ -34,7 +39,6 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 		for (k = 0; k < p->nei[j].n; ++k) {
 			if (k) kputc(',', out);
 			kputl(p->nei[j].a[k].x, out); kputc(':', out); kputw((int32_t)p->nei[j].a[k].y, out);
-			//kputc(':', out); kputw((int32_t)(p->nei[j].a[k].y>>32), out);
 		}
 		if (p->nei[j].n == 0) kputc('.', out);
 	}
@@ -63,25 +67,74 @@ void msg_print(const fmnode_v *nodes)
 	free(out.s);
 }
 
-fmnode_v *msg_read(const char *fn)
+static inline void rmdup_128v(fm128_v *r)
+{
+	int l, cnt;
+	uint64_t x;
+	if (r->n < 2) return;
+	ks_introsort(128x, r->n, r->a);
+	x = r->a[0].x;
+	for (l = 1, cnt = 0; l < r->n; ++l) {
+		if (r->a[l].x == x) r->a[l].x = 0, ++cnt;
+		else x = r->a[l].x;
+	}
+	if (cnt) {
+		for (l = 0, cnt = 0; l < r->n; ++l)
+			if (r->a[l].x) r->a[cnt++] = r->a[l];
+		r->n = cnt;
+	}
+}
+
+static void rm_dup_arc(fmnode_t *p)
+{
+	rmdup_128v(&p->nei[0]);
+	rmdup_128v(&p->nei[1]);
+}
+
+static hash64_t *build_hash(const fmnode_v *nodes)
+{
+	size_t i;
+	int j, ret;
+	hash64_t *h;
+	double tcpu = cputime();
+	h = kh_init(64);
+	for (i = 0; i < nodes->n; ++i) {
+		const fmnode_t *p = &nodes->a[i];
+		if (p->l < 0) continue;
+		for (j = 0; j < 2; ++j) {
+			khint_t k = kh_put(64, h, p->k[j], &ret);
+			if (ret == 0) {
+				if (fm_verbose >= 2)
+					fprintf(stderr, "[W::%s] tip %ld is duplicated.\n", __func__, (long)p->k[j]);
+				kh_val(h, k) = (uint64_t)-1;
+			} else kh_val(h, k) = i<<1|j;
+		}
+	}
+	if (fm_verbose >= 2)
+		fprintf(stderr, "[%s] build the hash table in %.2f sec\n", __func__, cputime() - tcpu);
+	return h;
+}
+
+msg_t *msg_read(const char *fn, int max_nei, int drop_tip)
 {
 	extern unsigned char seq_nt6_table[128];
 	gzFile fp;
 	kseq_t *seq;
-	fmnode_v *nodes;
 	int64_t cnt = 0, tot_len = 0;
+	double tcpu = cputime();
+	msg_t *g;
 
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	if (fp == 0) return 0;
+	g = calloc(1, sizeof(msg_t));
 	seq = kseq_init(fp);
-	nodes = calloc(1, sizeof(fmnode_v));
 	while (kseq_read(seq) >= 0) {
 		fmnode_t *p;
 		int i, j;
 		uint64_t sum;
 		uint32_t tmp;
 		char *q;
-		kv_pushp(fmnode_t, *nodes, &p);
+		kv_pushp(fmnode_t, g->nodes, &p);
 		kv_init(p->nei[0]); kv_init(p->nei[1]);
 		p->l = seq->seq.l;
 		tmp = p->l + 1;
@@ -105,59 +158,28 @@ fmnode_v *msg_read(const char *fn)
 				} while (*q == ',');
 				++q;
 			} else q += 2;
+			rmdup_128v(&p->nei[j]);
+			if (p->nei[j].n > max_nei) {
+				ks_introsort(128y, p->nei[j].n, p->nei[j].a);
+				p->nei[j].n = max_nei;
+			}
 		}
-		msg_rmdup(p);
-		++cnt; tot_len += seq->seq.l;
-		if (fm_verbose >= 3 && cnt % 100000 == 0)
-			fprintf(stderr, "[%s] read %ld nodes in %ld bp\n", __func__, (long)cnt, (long)tot_len);
+		if (drop_tip && (p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.000001) {
+			free(p->nei[0].a); free(p->nei[1].a); free(p->cov); free(p->seq);
+			--g->nodes.n;
+		} else {
+			++cnt; tot_len += seq->seq.l;
+			if (fm_verbose >= 3 && cnt % 100000 == 0)
+				fprintf(stderr, "[%s] read %ld nodes in %ld bp in %.2f sec\n", __func__, (long)cnt, (long)tot_len, cputime() - tcpu);
+		}
 	}
 	kseq_destroy(seq);
 	gzclose(fp);
-	if (fm_verbose >= 3)
-		fprintf(stderr, "[%s] In total: %ld nodes in %ld bp\n", __func__, (long)cnt, (long)tot_len);
-	return nodes;
-}
-
-void msg_rmdup(fmnode_t *p)
-{
-	int j, l, cnt;
-	uint64_t x;
-	for (j = 0; j < 2; ++j) {
-		fm128_v *r = &p->nei[j];
-		if (r->n < 2) continue;
-		ks_introsort(128x, r->n, r->a);
-		x = r->a[0].x;
-		for (l = 1, cnt = 0; l < r->n; ++l) {
-			if (r->a[l].x == x) r->a[l].x = 0, ++cnt;
-			else x = r->a[l].x;
-		}
-		if (cnt) {
-			for (l = 0, cnt = 0; l < r->n; ++l)
-				if (r->a[l].x) r->a[cnt++] = r->a[l];
-			r->n = cnt;
-		}
-	}
-}
-
-static hash64_t *build_hash(const fmnode_v *nodes)
-{
-	size_t i;
-	int j, ret;
-	hash64_t *h;
-	h = kh_init(64);
-	for (i = 0; i < nodes->n; ++i) {
-		const fmnode_t *p = &nodes->a[i];
-		if (p->l < 0) continue;
-		for (j = 0; j < 2; ++j) {
-			khint_t k = kh_put(64, h, p->k[j], &ret);
-			if (ret == 0) {
-				if (fm_verbose >= 2)
-					fprintf(stderr, "[W::%s] tip %ld is duplicated.\n", __func__, (long)p->k[j]);
-				kh_val(h, k) = (uint64_t)-1;
-			} else kh_val(h, k) = i<<1|j;
-		}
-	}
-	return h;
+	if (fm_verbose >= 2)
+		fprintf(stderr, "[%s] finished reading %ld nodes in %ld bp in %.2f sec\n", __func__, (long)cnt, (long)tot_len, cputime() - tcpu);
+	g->h = build_hash(&g->nodes);
+	msg_amend(g);
+	return g;
 }
 
 static inline uint64_t get_node_id(hash64_t *h, uint64_t tid)
@@ -168,37 +190,46 @@ static inline uint64_t get_node_id(hash64_t *h, uint64_t tid)
 	return kh_val(h, k);
 }
 
-static int check(fmnode_v *nodes, hash64_t *h)
+void msg_amend(msg_t *g)
 {
 	size_t i;
-	int j, l, ll, ret = 0;
-	khint_t k;
-	for (i = 0; i < nodes->n; ++i) {
-		fmnode_t *q, *p = &nodes->a[i];
+	int j, l, ll;
+	double tcpu;
+	tcpu = cputime(); // excluding time spent on building the hash table
+	for (i = 0; i < g->nodes.n; ++i) {
+		fmnode_t *p = &g->nodes.a[i];
 		fm128_v *r;
 		if (p->l <= 0) continue;
 		for (j = 0; j < 2; ++j) {
+			int cnt = 0;
 			for (l = 0; l < p->nei[j].n; ++l) {
 				uint64_t x = p->nei[j].a[l].x;
-				k = kh_get(64, h, x);
-				if (k == kh_end(h)) {
-					if (fm_verbose >= 2) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
-					ret = -1;
+				uint64_t z = get_node_id(g->h, x);
+				if (z == (uint64_t)-1) {
+					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
+					p->nei[j].a[l].x = 0;
+					++cnt;
 					continue;
 				}
-				q = &nodes->a[kh_val(h, k)>>1];
-				r = &q->nei[kh_val(h, k)&1];
+				r = &g->nodes.a[z>>1].nei[z&1];
 				for (ll = 0; ll < r->n; ++ll)
 					if (r->a[ll].x == p->k[j]) break;
 				if (ll == r->n) {
-					if (fm_verbose >= 2) fprintf(stderr, "[W::%s] have %ld->%ld but no reverse.\n", __func__, (long)p->k[j], (long)x);
-					return -1;
+					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] have %ld->%ld but no reverse.\n", __func__, (long)p->k[j], (long)x);
+					p->nei[j].a[l].x = 0;
+					++cnt;
 					continue;
 				}
 			}
+			if (cnt) {
+				for (l = cnt = 0, r = &p->nei[j]; l < r->n; ++l)
+					if (r->a[l].x) r->a[cnt++] = r->a[l];
+				r->n = cnt;
+			}
 		}
 	}
-	return ret;
+	if (fm_verbose >= 2)
+		fprintf(stderr, "[%s] amended the graph in %.2f sec\n", __func__, cputime() - tcpu);
 }
 
 static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int remove) // delete v from u
@@ -206,9 +237,11 @@ static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int re
 	int i, j;
 	uint64_t x;
 	fm128_v *r;
+	fmnode_t *p;
 	x = get_node_id(h, u);
 	if (x == (uint64_t)-1) return;
-	r = &nodes->a[x>>1].nei[x&1];
+	p = &nodes->a[x>>1];
+	r = &p->nei[x&1];
 	if (remove) {
 		for (j = i = 0; j < r->n; ++j)
 			if (r->a[j].x != v) r->a[i++] = r->a[j];
@@ -216,6 +249,22 @@ static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int re
 	} else {
 		for (j = 0; j < r->n; ++j)
 			if (r->a[j].x == v) r->a[j].x = r->a[j].y = 0;
+	}
+}
+
+void msg_shrink_node(fmnode_v *nodes, hash64_t *h, size_t id)
+{
+	int i, j;
+	fmnode_t *p = &nodes->a[id];
+	if (p->nei[0].n + p->nei[1].n < MAX_NEIGHBORS<<1) return;
+	for (j = 0; j < 2; ++j) {
+		fm128_v *r = &p->nei[j];
+		if (r->n < MAX_NEIGHBORS<<1) continue;
+		ks_introsort(128y, r->n, r->a);
+		for (i = MAX_NEIGHBORS; i < r->n; ++i)
+			if (r->a[i].x != p->k[0] && r->a[i].x != p->k[1])
+				cut_arc(nodes, h, r->a[i].x, p->k[j], 1);
+		r->n = MAX_NEIGHBORS;
 	}
 }
 
@@ -232,7 +281,7 @@ static void drop_arc1(fmnode_v *nodes, hash64_t *h, size_t id, int min_ovlp, flo
 			if (r->a[l].y > max) max = r->a[l].y;
 		for (l = cnt = 0; l < r->n; ++l) {
 			if (r->a[l].y < min_ovlp || (double)r->a[l].y/max < min_ovlp_ratio) {
-				if (r->a[l].x != p->k[j])
+				if (r->a[l].x != p->k[0] && r->a[l].x != p->k[1])
 					cut_arc(nodes, h, r->a[l].x, p->k[j], 1);
 				r->a[l].x = 0; // mark the link to delete
 				++cnt;
@@ -268,6 +317,7 @@ static void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
 			if (p->nei[0].a[i].x == p->k[0] || p->nei[0].a[i].x == p->k[1]) continue;
 			for (j = 0; j < p->nei[1].n; ++j) {
 				int ovlp = (int)(p->nei[0].a[i].y + p->nei[1].a[j].y) - p->l;
+				if (p->nei[1].a[j].x == p->k[0] || p->nei[1].a[j].x == p->k[1]) continue;
 				if (ovlp > 0) {
 					add_arc(nodes, h, p->nei[0].a[i].x, p->nei[1].a[j].x, ovlp);
 					add_arc(nodes, h, p->nei[1].a[j].x, p->nei[0].a[i].x, ovlp);
@@ -310,6 +360,7 @@ static uint64_t pop_bubble(fmnode_v *nodes, hash64_t *h, size_t id_dir, int max_
 			r = &p->nei[x&1];
 			for (j = 0; j < r->n; ++j) {
 				z = get_node_id(h, r->a[j].x);
+				if (z == (uint64_t)-1) continue;
 				q = &nodes->a[z>>1];
 				if (q->l < 0) continue;
 				if (q->aux[z&1] >= 0) goto end_db;
@@ -346,6 +397,7 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 	if (p->l <= 0 || p->nei[0].n != 1 || p->nei[1].n != 1) return;
 	for (j = 0; j < 2; ++j) {
 		nei[j] = get_node_id(h, p->nei[j].a[0].x);
+		if (nei[j] == (uint64_t)-1) return;
 		q[j] = &nodes->a[nei[j]>>1];
 	}
 	if (q[0]->l < 0 || q[1]->l < 0) return; // deleted node
@@ -353,6 +405,7 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 	r[0] = &q[0]->nei[nei[0]&1]; r[1] = &q[1]->nei[nei[1]&1];
 	for (j = 0, max_cov = 0, cnt = 0; j < r[0]->n; ++j) {
 		uint64_t t = get_node_id(h, r[0]->a[j].x);
+		if (t == (uint64_t)-1) continue;
 		tmp_p = &nodes->a[t>>1];
 		if (tmp_p->nei[0].n != 1 || tmp_p->nei[1].n != 1) continue; // skip this node
 		if (t&1) flip(tmp_p, h); // s.t. tmp_p is on the same strand as p
@@ -367,6 +420,7 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 		uint64_t t = get_node_id(h, r[0]->a[j].x);
 		int l, diff, ml = 0, to_del = 0, beg[2], end[2];
 		double cov[2];
+		if (t == (uint64_t)-1) continue;
 		if (top_id == t) continue; // we do not process the node with the highest coverage
 		tmp_p = &nodes->a[t>>1];
 		if (tmp_p->nei[0].n != 1 || tmp_p->nei[1].n != 1) continue; // skip this node
@@ -480,47 +534,58 @@ static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor t
 	return 0;
 }
 
-static void clean_core(fmnode_v *nodes, hash64_t *h)
+void msg_join_unambi(msg_t *g)
 {
 	size_t i;
-	for (i = 0; i < nodes->n; ++i) msg_rmdup(&nodes->a[i]);
+	fmnode_v *nodes = &g->nodes;
+	hash64_t *h = (hash64_t*)g->h;
+	double tcpu = cputime();
+	for (i = 0; i < nodes->n; ++i) rm_dup_arc(&nodes->a[i]);
 	for (i = 0; i < nodes->n; ++i) {
 		if (nodes->a[i].l <= 0) continue;
 		while (merge(nodes, h, i) == 0);
 		flip(&nodes->a[i], h);
 		while (merge(nodes, h, i) == 0);
 	}
+	if (fm_verbose >= 2)
+		fprintf(stderr, "[%s] joined unambiguous arcs in %.2f sec\n", __func__, cputime() - tcpu);
 }
 
-void msg_clean(fmnode_v *nodes, const fmclnopt_t *opt)
+void msg_clean(msg_t *g, const fmclnopt_t *opt)
 {
-	hash64_t *h;
+	hash64_t *h = (hash64_t*)g->h;
+	fmnode_v *nodes = &g->nodes;
 	fm64_v stack;
 	size_t i;
 	int j;
+
 	kv_init(stack);
-	h = build_hash(nodes);
-	if (opt->check) check(nodes, h);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
-		for (i = 0; i < nodes->n; ++i) msg_rmdup(&nodes->a[i]);
 		for (i = 0; i < nodes->n; ++i)
 			drop_arc1(nodes, h, i, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
 		rmtip(nodes, h, opt->min_tip_len * r);
-		clean_core(nodes, h);
+		msg_join_unambi(g);
 		for (i = 0; i < nodes->n; ++i) {
 			uint64_t x = pop_bubble(nodes, h, i<<1, MAX_POP_EXTENSION, &stack);
 			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov && nodes->a[x].l < opt->min_tip_len) rmnode(nodes, h, x);
 			x = pop_bubble(nodes, h, i<<1|1, MAX_POP_EXTENSION, &stack);
 			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov && nodes->a[x].l < opt->min_tip_len) rmnode(nodes, h, x);
 		}
-		clean_core(nodes, h);
+		msg_join_unambi(g);
+		for (i = 0; i < nodes->n; ++i) {
+			rm_dup_arc(&nodes->a[i]);
+			msg_shrink_node(nodes, h, i);
+		}
 	}
+	for (i = 0; i < nodes->n; ++i)
+		if (nodes->a[i].avg_cov < opt->min_weak_cov/2. && nodes->a[i].l < opt->min_tip_len)
+			rmnode(nodes, h, i);
 	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
 			debubble1_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
 		rmtip(nodes, h, opt->min_tip_len);
-		clean_core(nodes, h);
+		msg_join_unambi(g);
 	}
 	kh_destroy(64, h);
 	free(stack.a);
