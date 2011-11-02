@@ -35,22 +35,6 @@ typedef struct {
 	int n_iter;
 } fmclnopt_t;
 
-typedef struct {
-	uint64_t k[2];
-	fm128_v nei[2];
-	int l;
-	float avg_cov;
-	int aux[2];
-	char *seq, *cov;
-} fmnode_t;
-
-typedef struct { size_t n, m; fmnode_t *a; } fmnode_v;
-
-typedef struct {
-	fmnode_v nodes;
-	void *h;
-} msg_t;
-
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
 typedef struct __kstring_t { // implemented in kstring.h
@@ -125,11 +109,8 @@ extern "C" {
 	void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T);
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, int n_threads);
 
-	msg_t *msg_read(const char *fn, int max_nei, int drop_tip);
-	void msg_amend(msg_t *g);
-	void msg_join_unambi(msg_t *g);
-	void msg_clean(msg_t *g, const fmclnopt_t *opt);
-	void msg_print(const fmnode_v *nodes);
+	void *msg_read(const char *fn, int drop_tip);
+	void msg_print(const void *g);
 
 #ifdef __cplusplus
 }

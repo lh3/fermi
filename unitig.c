@@ -284,45 +284,54 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
+static void write_node(kstring_t *out, long id, uint64_t kk[2], fm128_v nei[2], int l, const char *seq, const char *cov)
+{
+	int j, k;
+	kputc('@', out); kputl(id, out);
+	for (j = 0; j < 2; ++j) {
+		kputc('\t', out); kputl(kk[j], out); kputc('>', out);
+		for (k = 0; k != nei[j].n; ++k) {
+			if (k) kputc(',', out);
+			kputl(nei[j].a[k].x, out); kputc(':', out); kputw(nei[j].a[k].y, out);
+		}
+		if (nei[j].n == 0) kputc('.', out);
+	}
+	kputc('\n', out);
+	ks_resize(out, out->l + 2 * l + 5);
+	for (j = 0; j < l; ++j) out->s[out->l++] = "ACGT"[(int)seq[j] - 1];
+	kputsn("\n+\n", 3, out);
+	kputsn(cov, l, out);
+	kputc('\n', out);
+}
+
 static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited)
 {
-	extern void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
 	extern void fm_print_buffer(kstring_t *buf, volatile int *lock, int force);
-	uint64_t i;
-	int max_l = 0;
+	uint64_t i, k[2];
 	aux_t a;
 	kstring_t str, cov, out;
-	fmnode_t z;
+	fm128_v nei[2];
 
 	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
 	a.str.l = a.str.m = str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
-	kv_init(z.nei[0]); kv_init(z.nei[1]);
-	z.seq = z.cov = 0;
+	kv_init(nei[0]); kv_init(nei[1]);
 	// the core loop
 	for (i = start|1; i < end; i += 2) {
-		if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
+		if (unitig1(&a, i, &str, &cov, k, nei) >= 0) { // then we keep the unitig
 			uint64_t *p[2], x[2];
-			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
-			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
+			p[0] = visited + (k[0]>>6); x[0] = 1LLU<<(k[0]&0x3f);
+			p[1] = visited + (k[1]>>6); x[1] = 1LLU<<(k[1]&0x3f);
 			if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue; // NOT always working
-			z.l = str.l;
-			if (max_l < str.m) {
-				max_l = str.m;
-				z.seq = realloc(z.seq, max_l);
-				z.cov = realloc(z.cov, max_l);
-			}
-			memcpy(z.seq, str.s, z.l);
-			memcpy(z.cov, cov.s, z.l + 1);
-			msg_write_node(&z, i, &out);
+			write_node(&out, i, k, nei, str.l, str.s, cov.s);
 			fm_print_buffer(&out, &g_out_lock, 0);
 		}
 	}
 	fm_print_buffer(&out, &g_out_lock, 1);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
-	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
+	free(nei[0].a); free(nei[1].a);
 	free(a.str.s); free(str.s); free(cov.s); free(out.s);
 }
 

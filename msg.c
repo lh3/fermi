@@ -12,6 +12,7 @@ KSEQ_INIT(gzFile, gzread)
 
 #include "khash.h"
 KHASH_MAP_INIT_INT64(64, uint64_t)
+KHASH_INIT2(arc,, uint64_t, int, 1, kh_int64_hash_func, kh_int64_hash_equal)
 
 #define fm128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
 #define fm128_ylt(a, b) ((a).y > (b).y)
@@ -23,24 +24,57 @@ KSORT_INIT(128y, fm128_t, fm128_ylt)
 #define MAX_POP_EXTENSION 1000
 #define MAX_NEIGHBORS     512
 
+typedef struct {
+	uint64_t k[2];
+	kh_arc_t *arc[2];
+	int l, aux[2];
+	float avg_cov;
+	char *seq, *cov;
+} fmnode_t, *fmnode_p;
+
 typedef khash_t(64) hash64_t;
 
-static hash64_t *build_hash(const fmnode_v *nodes);
+typedef struct {
+	kvec_t(fmnode_p) nodes;
+	hash64_t *h;
+} msg_t;
+
 static void flip(fmnode_t *p, hash64_t *h);
 
-void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
+fmnode_t *msg_node_init()
 {
-	int j, k;
+	fmnode_t *p;
+	p = calloc(1, sizeof(fmnode_t));
+	p->arc[0] = kh_init(arc);
+	p->arc[1] = kh_init(arc);
+	return p;
+}
+
+void *msg_node_destroy(fmnode_t *p)
+{
+	kh_destroy(arc, p->arc[0]);
+	kh_destroy(arc, p->arc[1]);
+	free(p->seq); free(p->cov);
+	return 0;
+}
+
+static void write_node(const fmnode_t *p, long id, kstring_t *out)
+{
+	int j, first;
+	khint_t k;
 	if (p->l <= 0) return;
 	kputc('@', out); kputl(id, out);
 	for (j = 0; j < 2; ++j) {
 		kputc('\t', out);
 		kputl(p->k[j], out); kputc('>', out);
-		for (k = 0; k < p->nei[j].n; ++k) {
-			if (k) kputc(',', out);
-			kputl(p->nei[j].a[k].x, out); kputc(':', out); kputw((int32_t)p->nei[j].a[k].y, out);
-		}
-		if (p->nei[j].n == 0) kputc('.', out);
+		if (kh_size(p->arc[j])) {
+			for (k = 0, first = 0; k != kh_end(p->arc[j]); ++k) {
+				if (kh_exist(p->arc[j], k)) {
+					if (first++) kputc(',', out);
+					kputl(kh_key(p->arc[j], k), out); kputc(':', out); kputw(kh_val(p->arc[j], k), out);
+				}
+			}
+		} else kputc('.', out);
 	}
 	kputc('\n', out);
 	ks_resize(out, out->l + 2 * p->l + 5);
@@ -51,97 +85,52 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 	kputc('\n', out);
 }
 
-void msg_print(const fmnode_v *nodes)
+void msg_print(const void *_g)
 {
 	size_t i;
+	const msg_t *g = (const msg_t*)_g;
 	kstring_t out;
 	out.l = out.m = 0; out.s = 0;
-	for (i = 0; i < nodes->n; ++i) {
-		if (nodes->a[i].l > 0) {
+	for (i = 0; i < g->nodes.n; ++i) {
+		if (g->nodes.a[i]) {
 			out.l = 0;
 			if (out.m) out.s[0] = 0;
-			msg_write_node(&nodes->a[i], i, &out);
+			write_node(g->nodes.a[i], i, &out);
 			fputs(out.s, stdout);
 		}
 	}
 	free(out.s);
 }
 
-static inline void rmdup_128v(fm128_v *r)
+void *msg_read(const char *fn, int drop_tip)
 {
-	int l, cnt;
-	uint64_t x;
-	if (r->n < 2) return;
-	ks_introsort(128x, r->n, r->a);
-	x = r->a[0].x;
-	for (l = 1, cnt = 0; l < r->n; ++l) {
-		if (r->a[l].x == x) r->a[l].x = 0, ++cnt;
-		else x = r->a[l].x;
-	}
-	if (cnt) {
-		for (l = 0, cnt = 0; l < r->n; ++l)
-			if (r->a[l].x) r->a[cnt++] = r->a[l];
-		r->n = cnt;
-	}
-}
-
-static void rm_dup_arc(fmnode_t *p)
-{
-	rmdup_128v(&p->nei[0]);
-	rmdup_128v(&p->nei[1]);
-}
-
-static hash64_t *build_hash(const fmnode_v *nodes)
-{
-	size_t i;
-	int j, ret;
-	hash64_t *h;
-	double tcpu = cputime();
-	h = kh_init(64);
-	for (i = 0; i < nodes->n; ++i) {
-		const fmnode_t *p = &nodes->a[i];
-		if (p->l < 0) continue;
-		for (j = 0; j < 2; ++j) {
-			khint_t k = kh_put(64, h, p->k[j], &ret);
-			if (ret == 0) {
-				if (fm_verbose >= 2)
-					fprintf(stderr, "[W::%s] tip %ld is duplicated.\n", __func__, (long)p->k[j]);
-				kh_val(h, k) = (uint64_t)-1;
-			} else kh_val(h, k) = i<<1|j;
-		}
-	}
-	if (fm_verbose >= 2)
-		fprintf(stderr, "[%s] build the hash table in %.2f sec\n", __func__, cputime() - tcpu);
-	return h;
-}
-
-msg_t *msg_read(const char *fn, int max_nei, int drop_tip)
-{
+	extern void msg_amend(msg_t *g);
 	extern unsigned char seq_nt6_table[128];
+	extern void msg_join_unambi(msg_t *g);
 	gzFile fp;
 	kseq_t *seq;
-	int64_t cnt = 0, tot_len = 0;
+	khint_t iter;
+	int64_t tot_len = 0;
 	double tcpu = cputime();
 	msg_t *g;
 
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	if (fp == 0) return 0;
 	g = calloc(1, sizeof(msg_t));
+	g->h = kh_init(64);
 	seq = kseq_init(fp);
 	while (kseq_read(seq) >= 0) {
 		fmnode_t *p;
-		int i, j;
-		uint64_t sum;
+		int i, j, ret;
+		uint64_t sum, x;
 		uint32_t tmp;
 		char *q;
-		kv_pushp(fmnode_t, g->nodes, &p);
-		kv_init(p->nei[0]); kv_init(p->nei[1]);
+		p = msg_node_init();
 		p->l = seq->seq.l;
 		tmp = p->l + 1;
 		kroundup32(tmp);
-		p->seq = malloc(tmp);
+		p->seq = malloc(tmp); p->cov = malloc(tmp);
 		for (i = 0; i < p->l; ++i) p->seq[i] = seq_nt6_table[(int)seq->seq.s[i]];
-		p->cov = malloc(tmp);
 		strcpy(p->cov, seq->qual.s);
 		for (i = 0, sum = 0; i < p->l; ++i) sum += p->cov[i] - 33;
 		p->avg_cov = (double)sum / p->l;
@@ -149,36 +138,35 @@ msg_t *msg_read(const char *fn, int max_nei, int drop_tip)
 		for (j = 0, q = seq->comment.s; j < 2; ++j) {
 			p->k[j] = strtol(q, &q, 10);
 			if (*q == '>' && q[1] != '.') {
-				fm128_t x;
 				do {
-					++q;
-					x.x = strtol(q, &q, 10); ++q;
-					x.y = strtol(q, &q, 10);
-					kv_push(fm128_t, p->nei[j], x);
+					++q; x = strtol(q, &q, 10); ++q;
+					iter = kh_put(arc, p->arc[j], x, &ret);
+					x = strtol(q, &q, 10);
+					if (ret || kh_val(p->arc[j], iter) < x)
+						kh_val(p->arc[j], iter) = x;
 				} while (*q == ',');
 				++q;
 			} else q += 2;
-			rmdup_128v(&p->nei[j]);
-			if (p->nei[j].n > max_nei) {
-				ks_introsort(128y, p->nei[j].n, p->nei[j].a);
-				p->nei[j].n = max_nei;
+		}
+		if (!drop_tip || p->avg_cov > 1.000001 || (kh_size(p->arc[0]) && kh_size(p->arc[1]))) {
+			for (j = 0; j < 2; ++j) {
+				iter = kh_put(64, g->h, p->k[j], &ret);
+				kh_val(g->h, iter) = ret? g->nodes.n<<1|j : (uint64_t)-1;
+				if (ret == 0 && fm_verbose >= 2)
+					fprintf(stderr, "[W::%s] rank %ld is duplicated.\n", __func__, (long)p->k[j]);
 			}
-		}
-		if (drop_tip && (p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.000001) {
-			free(p->nei[0].a); free(p->nei[1].a); free(p->cov); free(p->seq);
-			--g->nodes.n;
-		} else {
-			++cnt; tot_len += seq->seq.l;
-			if (fm_verbose >= 3 && cnt % 100000 == 0)
-				fprintf(stderr, "[%s] read %ld nodes in %ld bp in %.2f sec\n", __func__, (long)cnt, (long)tot_len, cputime() - tcpu);
-		}
+			kv_push(fmnode_p, g->nodes, p);
+			tot_len += seq->seq.l;
+			if (fm_verbose >= 3 && g->nodes.n % 100000 == 0)
+				fprintf(stderr, "[M::%s] read %ld nodes in %ld bp in %.2f sec\n", __func__, g->nodes.n, (long)tot_len, cputime() - tcpu);
+		} else msg_node_destroy(p); // an obvious tip or a singleton; do not add
 	}
 	kseq_destroy(seq);
 	gzclose(fp);
 	if (fm_verbose >= 2)
-		fprintf(stderr, "[%s] finished reading %ld nodes in %ld bp in %.2f sec\n", __func__, (long)cnt, (long)tot_len, cputime() - tcpu);
-	g->h = build_hash(&g->nodes);
+		fprintf(stderr, "[M::%s] finished reading %ld nodes in %ld bp in %.2f sec\n", __func__, g->nodes.n, (long)tot_len, cputime() - tcpu);
 	msg_amend(g);
+	msg_join_unambi(g);
 	return g;
 }
 
@@ -193,45 +181,39 @@ static inline uint64_t get_node_id(hash64_t *h, uint64_t tid)
 void msg_amend(msg_t *g)
 {
 	size_t i;
-	int j, l, ll;
+	int j;
 	double tcpu;
+	khash_t(arc) *r;
+	uint64_t x, z;
+
 	tcpu = cputime(); // excluding time spent on building the hash table
 	for (i = 0; i < g->nodes.n; ++i) {
-		fmnode_t *p = &g->nodes.a[i];
-		fm128_v *r;
-		if (p->l <= 0) continue;
+		fmnode_t *p = g->nodes.a[i];
+		khint_t k, k2;
+		if (p == 0) continue;
 		for (j = 0; j < 2; ++j) {
-			int cnt = 0;
-			for (l = 0; l < p->nei[j].n; ++l) {
-				uint64_t x = p->nei[j].a[l].x;
-				uint64_t z = get_node_id(g->h, x);
+			for (k = 0; k != kh_end(p->arc[j]); ++k) {
+				if (!kh_exist(p->arc[j], k)) continue;
+				x = kh_key(p->arc[j], k);
+				z = get_node_id(g->h, x);
 				if (z == (uint64_t)-1) {
-					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
-					p->nei[j].a[l].x = 0;
-					++cnt;
+					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] rank %ld is non-existing.\n", __func__, (long)x);
+					kh_del(arc, p->arc[j], k);
 					continue;
 				}
-				r = &g->nodes.a[z>>1].nei[z&1];
-				for (ll = 0; ll < r->n; ++ll)
-					if (r->a[ll].x == p->k[j]) break;
-				if (ll == r->n) {
-					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] have %ld->%ld but no reverse.\n", __func__, (long)p->k[j], (long)x);
-					p->nei[j].a[l].x = 0;
-					++cnt;
-					continue;
+				r = g->nodes.a[z>>1]->arc[z&1];
+				k2 = kh_get(arc, r, p->k[j]);
+				if (k2 == kh_end(r)) {
+					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] have %ld->%ld but not the reverse.\n", __func__, (long)p->k[j], (long)x);
+					kh_del(arc, p->arc[j], k);
 				}
-			}
-			if (cnt) {
-				for (l = cnt = 0, r = &p->nei[j]; l < r->n; ++l)
-					if (r->a[l].x) r->a[cnt++] = r->a[l];
-				r->n = cnt;
 			}
 		}
 	}
 	if (fm_verbose >= 2)
 		fprintf(stderr, "[%s] amended the graph in %.2f sec\n", __func__, cputime() - tcpu);
 }
-
+/*
 static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int remove) // delete v from u
 {
 	int i, j;
@@ -457,19 +439,19 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 		if (r[0]->a[j].x) r[0]->a[cnt++] = r[0]->a[j];
 	r[0]->n = cnt;
 }
-
+*/
 #define __swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))
 
 static void flip(fmnode_t *p, hash64_t *h)
 {
 	extern void seq_reverse(int l, unsigned char *s);
 	extern void seq_revcomp6(int l, unsigned char *s);
-	fm128_v t;
+	khash_t(arc) *t;
 	khint_t k;
 	seq_revcomp6(p->l, (uint8_t*)p->seq);
 	seq_reverse(p->l, (uint8_t*)p->cov);
 	__swap(p->k[0], p->k[1]);
-	t = p->nei[0]; p->nei[0] = p->nei[1]; p->nei[1] = t;
+	t = p->arc[0]; p->arc[0] = p->arc[1]; p->arc[1] = t;
 	k = kh_get(64, h, p->k[0]);
 	assert(k != kh_end(h));
 	kh_val(h, k) ^= 1;
@@ -478,29 +460,40 @@ static void flip(fmnode_t *p, hash64_t *h)
 	kh_val(h, k) ^= 1;
 }
 
-static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor to the right-end of i
+static inline uint64_t first_arc(khash_t(arc) *arc, int *val)
 {
-	fmnode_t *p = &nodes->a[w], *q;
+	khint_t k;
+	for (k = 0; k != kh_end(arc); ++k)
+		if (kh_exist(arc, k)) break;
+	*val = kh_val(arc, k);
+	return kh_key(arc, k);
+}
+
+static int merge(msg_t *g, size_t w) // merge w's neighbor to the right-end of w
+{
+	fmnode_t *p = g->nodes.a[w], *q;
 	khint_t kp, kq;
 	uint32_t tmp;
-	int i, j, new_l;
-	if (p->nei[1].n != 1) return -1; // cannot be merged
-	kq = kh_get(64, h, p->nei[1].a[0].x);
-	if (kq == kh_end(h)) return -2; // not found
-	q = &nodes->a[kh_val(h, kq)>>1];
+	int i, j, new_l, val[2];
+	uint64_t key[2], qid;
+	if (kh_size(p->arc[1]) != 1) return -1; // not exactly one neighbor; cannot be merged
+	key[0] = first_arc(p->arc[1], &val[0]);
+	kq = kh_get(64, g->h, key[0]);
+	assert(kq < kh_end(g->h));
+	q = g->nodes.a[qid = kh_val(g->h, kq)>>1];
 	if (p == q) return -4; // this is a loop
-	if (q->nei[kh_val(h, kq)&1].n != 1) return -3; // cannot be merged
+	if (kh_size(q->arc[kh_val(g->h, kq)&1]) != 1) return -3; // not exactly one neighbor; cannot be merged
 	// we can perform a merge
-	if (kh_val(h, kq)&1) flip(q, h); // a "><" bidirectional arc; flip q
-	kp = kh_get(64, h, p->k[1]); assert(kp != kh_end(h)); // get the iterator to p
-	kh_del(64, h, kp); kh_del(64, h, kq); // remove the two ends of the arc in the hash table
-	assert(p->k[1] == q->nei[0].a[0].x);
-	assert(q->k[0] == p->nei[1].a[0].x);
-	assert(p->nei[1].a[0].y == q->nei[0].a[0].y);
-	assert(p->l >= p->nei[1].a[0].y && q->l >= p->nei[1].a[0].y); // "==" may happen due to end trimming
-	new_l = p->l + q->l - p->nei[1].a[0].y;
+	if (kh_val(g->h, kq)&1) flip(q, g->h); // a "><" bidirectional arc; flip q
+	kp = kh_get(64, g->h, p->k[1]); assert(kp != kh_end(g->h)); // get the iterator to p
+	kh_del(64, g->h, kp); kh_del(64, g->h, kq); // remove the two ends of the arc in the hash table
+	key[1] = first_arc(q->arc[0], &val[1]);
+	assert(p->k[1] == key[1] && q->k[0] == key[0]);
+	assert(val[0] == val[1]);
+	assert(p->l >= val[0] && q->l >= val[0]); // "==" may happen due to end trimming
+	new_l = p->l + q->l - val[0];
 	tmp = p->l;
-	kroundup32(tmp);
+	kroundup32(tmp); // this the maximum memory allocated
 	if (new_l + 1 >= tmp) { // then double p->seq and p->cov
 		tmp = new_l + 1;
 		kroundup32(tmp);
@@ -508,7 +501,7 @@ static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor t
 		p->cov = realloc(p->cov, tmp);
 	}
 	// merge seq and cov
-	for (i = p->l - p->nei[1].a[0].y, j = 0; j < q->l; ++i, ++j) { // write seq and cov
+	for (i = p->l - val[0], j = 0; j < q->l; ++i, ++j) { // write seq and cov
 		p->seq[i] = q->seq[j];
 		if (i < p->l) {
 			if ((int)p->cov[i] + (q->cov[j] - 33) > 126) p->cov[i] = 126;
@@ -518,39 +511,34 @@ static int merge(fmnode_v *nodes, hash64_t *h, size_t w) // merge i's neighbor t
 	p->seq[new_l] = p->cov[new_l] = 0;
 	p->avg_cov = (p->l * p->avg_cov + q->l * q->avg_cov) / new_l; // recalculate coverage
 	p->l = new_l;
-	// merge neighbors
-	free(p->nei[1].a);
-	p->nei[1] = q->nei[1]; p->k[1] = q->k[1];
+	// move neighbors and the rank
+	p->k[1] = q->k[1];
+	kh_destroy(arc, p->arc[1]);
+	p->arc[1] = q->arc[1]; q->arc[1] = 0;
 	// update the hash table
-	kp = kh_get(64, h, p->k[1]);
-	assert(kp != kh_end(h));
-	kh_val(h, kp) = w<<1|1;
+	kp = kh_get(64, g->h, p->k[1]);
+	assert(kp != kh_end(g->h));
+	kh_val(g->h, kp) = w<<1|1;
 	// clean up q
-	free(q->cov); free(q->seq);
-	q->cov = q->seq = 0; q->l = -1;
-	free(q->nei[0].a);
-	q->nei[0].n = q->nei[0].m = q->nei[1].n = q->nei[1].m = 0;
-	q->nei[0].a = q->nei[1].a = 0; // q->nei[1] has been copied over to p->nei[1], so we can delete it
+	msg_node_destroy(q);
+	g->nodes.a[qid] = 0;
 	return 0;
 }
 
 void msg_join_unambi(msg_t *g)
 {
 	size_t i;
-	fmnode_v *nodes = &g->nodes;
-	hash64_t *h = (hash64_t*)g->h;
 	double tcpu = cputime();
-	for (i = 0; i < nodes->n; ++i) rm_dup_arc(&nodes->a[i]);
-	for (i = 0; i < nodes->n; ++i) {
-		if (nodes->a[i].l <= 0) continue;
-		while (merge(nodes, h, i) == 0);
-		flip(&nodes->a[i], h);
-		while (merge(nodes, h, i) == 0);
+	for (i = 0; i < g->nodes.n; ++i) {
+		if (g->nodes.a[i] == 0) continue;
+		while (merge(g, i) == 0);
+		flip(g->nodes.a[i], g->h);
+		while (merge(g, i) == 0);
 	}
 	if (fm_verbose >= 2)
 		fprintf(stderr, "[%s] joined unambiguous arcs in %.2f sec\n", __func__, cputime() - tcpu);
 }
-
+/*
 void msg_clean(msg_t *g, const fmclnopt_t *opt)
 {
 	hash64_t *h = (hash64_t*)g->h;
@@ -590,3 +578,4 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	kh_destroy(64, h);
 	free(stack.a);
 }
+*/
