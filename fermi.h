@@ -109,7 +109,7 @@ extern "C" {
 	void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T);
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, int n_threads);
 
-	void *msg_read(const char *fn, int drop_tip);
+	void *msg_read(const char *fn, int max_arc, int drop_tip);
 	void msg_print(const void *g);
 
 #ifdef __cplusplus

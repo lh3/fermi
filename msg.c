@@ -14,11 +14,8 @@ KSEQ_INIT(gzFile, gzread)
 KHASH_MAP_INIT_INT64(64, uint64_t)
 KHASH_INIT2(arc,, uint64_t, int, 1, kh_int64_hash_func, kh_int64_hash_equal)
 
-#define fm128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
-#define fm128_ylt(a, b) ((a).y > (b).y)
 #include "ksort.h"
-KSORT_INIT(128x, fm128_t, fm128_xlt)
-KSORT_INIT(128y, fm128_t, fm128_ylt)
+KSORT_INIT_GENERIC(int)
 
 #define MAX_DEBUBBLE_DIFF 3
 #define MAX_POP_EXTENSION 1000
@@ -103,7 +100,7 @@ void msg_print(const void *_g)
 	free(out.s);
 }
 
-void *msg_read(const char *fn, int drop_tip)
+void *msg_read(const char *fn, int max_arc, int light_clean)
 {
 	extern void msg_amend(msg_t *g);
 	extern unsigned char seq_nt6_table[128];
@@ -111,11 +108,12 @@ void *msg_read(const char *fn, int drop_tip)
 	gzFile fp;
 	kseq_t *seq;
 	khint_t iter;
-	size_t i;
 	int64_t tot_len = 0;
 	double tcpu = cputime();
 	msg_t *g;
+	kvec_t(int) tarray;
 
+	kv_init(tarray);
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	if (fp == 0) return 0;
 	g = calloc(1, sizeof(msg_t));
@@ -141,18 +139,28 @@ void *msg_read(const char *fn, int drop_tip)
 		for (j = 0, q = seq->comment.s; j < 2; ++j) {
 			p->k[j] = strtol(q, &q, 10);
 			if (*q == '>' && q[1] != '.') {
+				tarray.n = 0;
 				do {
 					++q; x = strtol(q, &q, 10); ++q;
 					iter = kh_put(arc, p->arc[j], x, &ret);
 					x = strtol(q, &q, 10);
-					if (x < g->min_ovlp) g->min_ovlp = x;
-					if (ret || kh_val(p->arc[j], iter) < x)
+					if (ret || kh_val(p->arc[j], iter) < x) {
+						if (x < g->min_ovlp) g->min_ovlp = x;
 						kh_val(p->arc[j], iter) = x;
+						kv_push(int, tarray, x);
+					}
 				} while (*q == ',');
 				++q;
+				if (tarray.n > max_arc) {
+					int cutoff = ks_ksmall(int, tarray.n, tarray.a, max_arc);
+					for (iter = 0; iter != kh_end(p->arc[j]); ++iter)
+						if (kh_exist(p->arc[j], iter) && kh_val(p->arc[j], iter) < cutoff)
+							kh_del(arc, p->arc[j], iter);
+					kh_resize(arc, p->arc[j], max_arc*1.33);
+				}
 			} else q += 2;
 		}
-		if (!drop_tip || p->avg_cov > 1.000001 || (kh_size(p->arc[0]) && kh_size(p->arc[1]))) {
+		if (!light_clean || p->avg_cov > 1.000001 || (kh_size(p->arc[0]) && kh_size(p->arc[1]))) {
 			for (j = 0; j < 2; ++j) {
 				iter = kh_put(64, g->h, p->k[j], &ret);
 				kh_val(g->h, iter) = ret? g->nodes.n<<1|j : (uint64_t)-1;
@@ -171,9 +179,13 @@ void *msg_read(const char *fn, int drop_tip)
 		fprintf(stderr, "[M::%s] finished reading %ld nodes in %ld bp in %.2f sec\n", __func__, g->nodes.n, (long)tot_len, cputime() - tcpu);
 	msg_amend(g);
 	msg_join_unambi(g);
-	for (i = 0; i < g->nodes.n; ++i)
-		pop_simple_bubble(g, i, 0.1, 2.000001, 1);
-	msg_join_unambi(g);
+	if (light_clean) {
+		size_t i;
+		for (i = 0; i < g->nodes.n; ++i)
+			pop_simple_bubble(g, i, 0.1, 2.000001, 1);
+		msg_join_unambi(g);
+	}
+	free(tarray.a);
 	return g;
 }
 

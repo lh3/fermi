@@ -503,14 +503,14 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 int main_clean(int argc, char *argv[])
 {
 	void *g;
-	int c, no_clean = 0, max_nei = 512;
+	int c, max_nei = 256, light_clean = 1;
 	fmclnopt_t opt;
 	opt.min_tip_len = 200;
 	opt.min_weak_cov  = 2.1;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
 	opt.min_ovlp    = 30;  opt.min_ovlp_ratio=0.7;
 	opt.n_iter = 3;
-	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:R:n:N:v:")) >= 0) {
+	while ((c = getopt(argc, argv, "Dl:c:T:r:w:o:R:n:N:v:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len =  atoi(optarg); break;
 			case 'c': opt.min_weak_cov=  atof(optarg); break;
@@ -520,14 +520,16 @@ int main_clean(int argc, char *argv[])
 			case 'R': opt.min_ovlp_ratio=atof(optarg); break;
 			case 'n': opt.n_iter = atoi(optarg); break;
 			case 'N': max_nei = atoi(optarg); break;
-			case 'C': no_clean = 1; break;
+			case 'D': light_clean = 1; break;
 			case 'v': fm_verbose = atoi(optarg); break;
 		}
 	}
 	if (argc == optind) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   fermi clean [options] <in.msg>\n\n");
-		fprintf(stderr, "Options: -c FLOAT    minimum node coverage [%.1f]\n", opt.min_weak_cov);
+		fprintf(stderr, "Options: -N INT      maximum number of neibors to parse [%d]\n", max_nei);
+		fprintf(stderr, "         -D          do not trim tips or pop obvious erroneous bubbles\n\n");
+		fprintf(stderr, "         -c FLOAT    minimum node coverage [%.1f]\n", opt.min_weak_cov);
 		fprintf(stderr, "         -l INT      minimum tip length [%d]\n", opt.min_tip_len);
 		fprintf(stderr, "         -w FLOAT    minimum bubble coverage (0 to disable debubbling) [%.1f]\n", opt.min_bub_cov);
 		fprintf(stderr, "         -r FLOAT    minimum bubble ratio [%.2f]\n", opt.min_bub_ratio);
@@ -537,7 +539,7 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		return 1;
 	}
-	g = msg_read(argv[optind], 1);
+	g = msg_read(argv[optind], max_nei, light_clean);
 	//if (!no_clean) msg_clean(g, &opt);
 	msg_print(g);
 	return 0;
