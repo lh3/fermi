@@ -75,7 +75,7 @@ static inline void rmdup_128v(fm128_v *r)
 	ks_introsort(128x, r->n, r->a);
 	x = r->a[0].x;
 	for (l = 1, cnt = 0; l < r->n; ++l) {
-		if (r->a[l].x == x) r->a[l].x = 0, ++cnt;
+		if (r->a[l].x == 0 || r->a[l].x == x) r->a[l].x = 0, ++cnt;
 		else x = r->a[l].x;
 	}
 	if (cnt) {
@@ -115,12 +115,12 @@ static hash64_t *build_hash(const fmnode_v *nodes)
 	return h;
 }
 
-msg_t *msg_read(const char *fn, int max_nei, int drop_tip)
+msg_t *msg_read(const char *fn, float diff_ratio, int drop_tip)
 {
 	extern unsigned char seq_nt6_table[128];
 	gzFile fp;
 	kseq_t *seq;
-	int64_t cnt = 0, tot_len = 0;
+	int64_t tot_len = 0, n_arcs = 0, n_tips = 0, n_arc_drop = 0, max_arc = 0;
 	double tcpu = cputime();
 	msg_t *g;
 
@@ -147,6 +147,7 @@ msg_t *msg_read(const char *fn, int max_nei, int drop_tip)
 		p->avg_cov = (double)sum / p->l;
 		p->aux[0] = p->aux[1] = -1;
 		for (j = 0, q = seq->comment.s; j < 2; ++j) {
+			int ori_n, max_ovlp = 0, max_ovlp2 = 0, ovlp_thres;
 			p->k[j] = strtol(q, &q, 10);
 			if (*q == '>' && q[1] != '.') {
 				fm128_t x;
@@ -154,29 +155,39 @@ msg_t *msg_read(const char *fn, int max_nei, int drop_tip)
 					++q;
 					x.x = strtol(q, &q, 10); ++q;
 					x.y = strtol(q, &q, 10);
+					if (max_ovlp < x.y) max_ovlp2 = max_ovlp, max_ovlp = x.y;
+					else if (max_ovlp2 < x.y) max_ovlp2 = x.y;
 					kv_push(fm128_t, p->nei[j], x);
 				} while (*q == ',');
 				++q;
-			} else q += 2;
+			} else q += 2; // no arcs
+			n_arcs += (ori_n = p->nei[j].n);
+			ovlp_thres = (int)(max_ovlp2 * diff_ratio + .499);
+			for (i = 0; i < p->nei[j].n; ++i)
+				if (p->nei[j].a[i].y < ovlp_thres)
+					p->nei[j].a[i].x = 0; // to be deleted in rmdup_128v()
 			rmdup_128v(&p->nei[j]);
-			if (p->nei[j].n > max_nei) {
-				ks_introsort(128y, p->nei[j].n, p->nei[j].a);
-				p->nei[j].n = max_nei;
-			}
+			n_arc_drop += ori_n - p->nei[j].n;
+			if (max_arc < p->nei[j].n) max_arc = p->nei[j].n;
 		}
-		if (drop_tip && (p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.000001) {
-			free(p->nei[0].a); free(p->nei[1].a); free(p->cov); free(p->seq);
-			--g->nodes.n;
+		if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.000001) {
+			if (drop_tip) {
+				free(p->nei[0].a); free(p->nei[1].a); free(p->cov); free(p->seq);
+				--g->nodes.n;
+			}
+			++n_tips;
 		} else {
-			++cnt; tot_len += seq->seq.l;
-			if (fm_verbose >= 3 && cnt % 100000 == 0)
-				fprintf(stderr, "[%s] read %ld nodes in %ld bp in %.2f sec\n", __func__, (long)cnt, (long)tot_len, cputime() - tcpu);
+			tot_len += seq->seq.l;
+			if (fm_verbose >= 3 && g->nodes.n % 100000 == 0)
+				fprintf(stderr, "[%s] read %ld nodes in %ld bp in %.2f sec (#tips: %ld; #arcs: %ld; #dropped arcs: %ld; max arcs: %ld)\n",
+						__func__, (long)g->nodes.n, (long)tot_len, cputime() - tcpu, (long)n_tips, (long)n_arcs, (long)n_arc_drop, (long)max_arc);
 		}
 	}
 	kseq_destroy(seq);
 	gzclose(fp);
 	if (fm_verbose >= 2)
-		fprintf(stderr, "[%s] finished reading %ld nodes in %ld bp in %.2f sec\n", __func__, (long)cnt, (long)tot_len, cputime() - tcpu);
+		fprintf(stderr, "[%s] finished reading %ld nodes in %ld bp in %.2f sec (#tips: %ld; #arcs: %ld; #dropped arcs: %ld; max arcs: %ld)\n",
+				__func__, (long)g->nodes.n, (long)tot_len, cputime() - tcpu, (long)n_tips, (long)n_arcs, (long)n_arc_drop, (long)max_arc);
 	g->h = build_hash(&g->nodes);
 	msg_amend(g);
 	return g;

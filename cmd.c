@@ -504,13 +504,14 @@ int main_clean(int argc, char *argv[])
 {
 	msg_t *g;
 	int c, no_clean = 0, max_nei = 512;
+	float read_diff_ratio = 0.0;
 	fmclnopt_t opt;
 	opt.min_tip_len = 200;
-	opt.min_weak_cov  = 2.1;
+	opt.min_weak_cov= 0;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
 	opt.min_ovlp    = 30;  opt.min_ovlp_ratio=0.7;
 	opt.n_iter = 3;
-	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:R:n:N:")) >= 0) {
+	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:R:n:N:d:")) >= 0) {
 		switch (c) {
 			case 'l': opt.min_tip_len =  atoi(optarg); break;
 			case 'c': opt.min_weak_cov=  atof(optarg); break;
@@ -520,6 +521,7 @@ int main_clean(int argc, char *argv[])
 			case 'R': opt.min_ovlp_ratio=atof(optarg); break;
 			case 'n': opt.n_iter = atoi(optarg); break;
 			case 'N': max_nei = atoi(optarg); break;
+			case 'd': read_diff_ratio =  atof(optarg); break;
 			case 'C': no_clean = 1; break;
 		}
 	}
@@ -536,7 +538,7 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		return 1;
 	}
-	g = msg_read(argv[optind], 512, 1);
+	g = msg_read(argv[optind], read_diff_ratio, 1);
 	msg_join_unambi(g);
 	if (!no_clean) msg_clean(g, &opt);
 	msg_print(&g->nodes);

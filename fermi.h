@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-dev (r372)"
+#define FERMI_VERSION "0.0-dev (r373)"
 
 #define FM_MASK30 0x3fffffff
 
@@ -125,7 +125,7 @@ extern "C" {
 	void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T);
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, int n_threads);
 
-	msg_t *msg_read(const char *fn, int max_nei, int drop_tip);
+	msg_t *msg_read(const char *fn, float diff_ratio, int drop_tip);
 	void msg_amend(msg_t *g);
 	void msg_join_unambi(msg_t *g);
 	void msg_clean(msg_t *g, const fmclnopt_t *opt);
