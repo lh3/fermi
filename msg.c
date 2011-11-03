@@ -227,9 +227,11 @@ void msg_amend(msg_t *g)
 				r->n = cnt;
 			}
 		}
+		if (fm_verbose >= 3 && (i+1) % 100000 == 0)
+			fprintf(stderr, "[M::%s] amended %ld nodes in %.2f sec\n", __func__, i+1, cputime() - tcpu);
 	}
 	if (fm_verbose >= 2)
-		fprintf(stderr, "[%s] amended the graph in %.2f sec\n", __func__, cputime() - tcpu);
+		fprintf(stderr, "[M::%s] amended the graph in %.2f sec\n", __func__, cputime() - tcpu);
 }
 
 static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int remove) // delete v from u
