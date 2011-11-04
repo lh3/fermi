@@ -504,12 +504,12 @@ int main_clean(int argc, char *argv[])
 {
 	msg_t *g;
 	int c, no_clean = 0, max_arc = 512;
-	float read_diff_ratio = 0.0;
+	float read_diff_ratio = 0.7;
 	fmclnopt_t opt;
 	opt.min_tip_len = 200;
 	opt.min_weak_cov= 0;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
-	opt.min_ovlp    = 30;  opt.min_ovlp_ratio=0.7;
+	opt.min_ovlp    = 30;  opt.min_ovlp_ratio=0.8;
 	opt.n_iter = 3;
 	while ((c = getopt(argc, argv, "Cl:c:T:r:w:o:R:n:A:d:")) >= 0) {
 		switch (c) {
