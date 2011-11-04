@@ -115,17 +115,19 @@ static hash64_t *build_hash(const fmnode_v *nodes)
 	return h;
 }
 
-msg_t *msg_read(const char *fn, float diff_ratio, int drop_tip)
+msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 {
 	extern unsigned char seq_nt6_table[128];
 	gzFile fp;
 	kseq_t *seq;
-	int64_t tot_len = 0, n_arcs = 0, n_tips = 0, n_arc_drop = 0, max_arc = 0;
+	int64_t tot_len = 0, n_arcs = 0, n_tips = 0, n_arc_drop = 0;
 	double tcpu = cputime();
+	fm128_v nei;
 	msg_t *g;
 
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	if (fp == 0) return 0;
+	kv_init(nei);
 	g = calloc(1, sizeof(msg_t));
 	seq = kseq_init(fp);
 	while (kseq_read(seq) >= 0) {
@@ -149,6 +151,7 @@ msg_t *msg_read(const char *fn, float diff_ratio, int drop_tip)
 		for (j = 0, q = seq->comment.s; j < 2; ++j) {
 			int ori_n, max_ovlp = 0, max_ovlp2 = 0, ovlp_thres;
 			p->k[j] = strtol(q, &q, 10);
+			nei.n = 0;
 			if (*q == '>' && q[1] != '.') {
 				fm128_t x;
 				do {
@@ -157,18 +160,26 @@ msg_t *msg_read(const char *fn, float diff_ratio, int drop_tip)
 					x.y = strtol(q, &q, 10);
 					if (max_ovlp < x.y) max_ovlp2 = max_ovlp, max_ovlp = x.y;
 					else if (max_ovlp2 < x.y) max_ovlp2 = x.y;
-					kv_push(fm128_t, p->nei[j], x);
+					kv_push(fm128_t, nei, x);
 				} while (*q == ',');
 				++q;
 			} else q += 2; // no arcs
-			n_arcs += (ori_n = p->nei[j].n);
+			n_arcs += (ori_n = nei.n);
 			ovlp_thres = (int)(max_ovlp2 * diff_ratio + .499);
-			for (i = 0; i < p->nei[j].n; ++i)
-				if (p->nei[j].a[i].y < ovlp_thres)
-					p->nei[j].a[i].x = 0; // to be deleted in rmdup_128v()
-			rmdup_128v(&p->nei[j]);
-			n_arc_drop += ori_n - p->nei[j].n;
-			if (max_arc < p->nei[j].n) max_arc = p->nei[j].n;
+			for (i = 0; i < nei.n; ++i)
+				if (nei.a[i].y < ovlp_thres)
+					nei.a[i].x = 0; // to be deleted in rmdup_128v()
+			rmdup_128v(&nei);
+			if (nei.n > max_arc) {
+				int thres;
+				ks_introsort(128y, nei.n, nei.a);
+				thres = nei.a[max_arc].y;
+				for (i = 0; i < nei.n; ++i)
+					if (nei.a[i].y == thres) break;
+				nei.n = i;
+			}
+			n_arc_drop += ori_n - nei.n;
+			kv_copy(fm128_t, p->nei[j], nei);
 		}
 		if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.000001) {
 			if (drop_tip) {
@@ -179,15 +190,16 @@ msg_t *msg_read(const char *fn, float diff_ratio, int drop_tip)
 		} else {
 			tot_len += seq->seq.l;
 			if (fm_verbose >= 3 && g->nodes.n % 100000 == 0)
-				fprintf(stderr, "[%s] read %ld nodes in %ld bp in %.2f sec (#tips: %ld; #arcs: %ld; #dropped arcs: %ld; max arcs: %ld)\n",
-						__func__, (long)g->nodes.n, (long)tot_len, cputime() - tcpu, (long)n_tips, (long)n_arcs, (long)n_arc_drop, (long)max_arc);
+				fprintf(stderr, "[%s] read %ld nodes in %ld bp in %.2f sec (#tips: %ld; #arcs: %ld; #dropped: %ld)\n",
+						__func__, (long)g->nodes.n, (long)tot_len, cputime() - tcpu, (long)n_tips, (long)n_arcs, (long)n_arc_drop);
 		}
 	}
 	kseq_destroy(seq);
 	gzclose(fp);
+	free(nei.a);
 	if (fm_verbose >= 2)
-		fprintf(stderr, "[%s] finished reading %ld nodes in %ld bp in %.2f sec (#tips: %ld; #arcs: %ld; #dropped arcs: %ld; max arcs: %ld)\n",
-				__func__, (long)g->nodes.n, (long)tot_len, cputime() - tcpu, (long)n_tips, (long)n_arcs, (long)n_arc_drop, (long)max_arc);
+		fprintf(stderr, "[%s] finished reading %ld nodes in %ld bp in %.2f sec (#tips: %ld; #arcs: %ld; #dropped: %ld)\n",
+				__func__, (long)g->nodes.n, (long)tot_len, cputime() - tcpu, (long)n_tips, (long)n_arcs, (long)n_arc_drop);
 	g->h = build_hash(&g->nodes);
 	msg_amend(g);
 	return g;
@@ -212,14 +224,14 @@ void msg_amend(msg_t *g)
 		fm128_v *r;
 		if (p->l <= 0) continue;
 		for (j = 0; j < 2; ++j) {
-			int cnt = 0;
+			int cnt0 = 0, cnt1 = 0;
 			for (l = 0; l < p->nei[j].n; ++l) {
 				uint64_t x = p->nei[j].a[l].x;
 				uint64_t z = get_node_id(g->h, x);
 				if (z == (uint64_t)-1) {
 					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
 					p->nei[j].a[l].x = 0;
-					++cnt;
+					++cnt0;
 					continue;
 				}
 				r = &g->nodes.a[z>>1].nei[z&1];
@@ -227,15 +239,16 @@ void msg_amend(msg_t *g)
 					if (r->a[ll].x == p->k[j]) break;
 				if (ll == r->n) {
 					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] have %ld->%ld but no reverse.\n", __func__, (long)p->k[j], (long)x);
-					p->nei[j].a[l].x = 0;
-					++cnt;
+					p->nei[j].a[l].x = (uint64_t)-1;
+					++cnt1;
 					continue;
 				}
 			}
-			if (cnt) {
-				for (l = cnt = 0, r = &p->nei[j]; l < r->n; ++l)
-					if (r->a[l].x) r->a[cnt++] = r->a[l];
-				r->n = cnt;
+			if (cnt1 >= 2) rmdup_128v(&p->nei[j]);
+			else if (cnt0) {
+				for (l = cnt0 = 0, r = &p->nei[j]; l < r->n; ++l)
+					if (r->a[l].x) r->a[cnt0++] = r->a[l];
+				r->n = cnt0;
 			}
 		}
 		if (fm_verbose >= 3 && (i+1) % 100000 == 0)
