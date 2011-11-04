@@ -66,6 +66,40 @@ int main_splitfa(int argc, char *argv[])
 	return 0;
 }
 
+int main_cnt2qual(int argc, char *argv[])
+{
+	int q = 17, i;
+	gzFile fp;
+	kseq_t *seq;
+	if (argc < 2) {
+		fprintf(stderr, "Usage: fermi cnt2qual <in.fq> [%d]\n", q);
+		return 1;
+	}
+	if (argc >= 3) q = atoi(argv[2]);
+	fp = strcmp(argv[1], "-")? gzopen(argv[1], "r") : gzdopen(fileno(stdin), "r");
+	seq = kseq_init(fp);
+	while (kseq_read(seq) >= 0) {
+		if (seq->qual.l) {
+			for (i = 0; i < seq->qual.l; ++i) {
+				int x = q * (seq->qual.s[i] - 33) + 33;
+				seq->qual.s[i] = x > 126? 126 : x;
+			}
+		}
+		putchar('@'); fputs(seq->name.s, stdout);
+		if (seq->comment.l) {
+			putchar('\t'); puts(seq->comment.s);
+		} else putchar('\n');
+		puts(seq->seq.s);
+		if (seq->qual.l) {
+			putchar('+'); putchar('\n');
+			puts(seq->qual.s);
+		}
+	}
+	kseq_destroy(seq);
+	gzclose(fp);
+	return 0;
+}
+
 int main_chkbwt(int argc, char *argv[])
 {
 	rld_t *e;
