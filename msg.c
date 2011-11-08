@@ -421,7 +421,7 @@ typedef struct {
 	hash64_t *h, *kept;
 } popaux_t;
 
-static void pop_bubble_complex(fmnode_v *nodes, hash64_t *h, size_t idd, int max_len, int max_nodes, popaux_t *aux)
+static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max_len, int max_nodes, popaux_t *aux)
 {
 	fmnode_t *q, *p = &nodes->a[idd>>1];
 	fm128_t u, v;
@@ -430,7 +430,7 @@ static void pop_bubble_complex(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 	uint64_t tmp, term = (uint64_t)-1;
 	int i, j, ret, is_bubble = 0;
 
-	if (p->nei[idd&1].n < 2) return;
+	if (p->l < 0 || p->nei[idd&1].n < 2) return;
 	// initialize the aux structure
 	aux->heap.n = aux->visited.n = 0;
 	kh_clear(64, aux->h);
@@ -468,13 +468,12 @@ static void pop_bubble_complex(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 					kv_push(uint64_t, aux->visited, v.x);
 					kh_put(64, aux->h, q->k[0], &ret);
 					kh_put(64, aux->h, q->k[1], &ret);
-					fprintf(stderr, "*** %lld[%lld,%lld] -> %lld[%lld,%lld]\n", u.x,
-						nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1], v.x^1, nodes->a[v.x>>1].k[0], nodes->a[v.x>>1].k[1]);
+					//fprintf(stderr, "*** %lld[%lld,%lld] -> %lld[%lld,%lld]\n", u.x,
+					//	nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1], v.x^1, nodes->a[v.x>>1].k[0], nodes->a[v.x>>1].k[1]);
 				}
 			}
 		}
 	}
-	fprintf(stderr, "forward bulge!\n");
 	// check if this is really a bubble
 	for (i = 0; i < aux->visited.n; ++i) {
 		if (aux->visited.a[i] == idd) continue;
@@ -485,7 +484,6 @@ static void pop_bubble_complex(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 			if (k == kh_end(aux->h)) goto end_popcomp;
 		}
 	}
-	fprintf(stderr, "bubble!\n");
 	// prepare for the 2nd round of traversal
 	for (i = 0; i < aux->visited.n; ++i) {
 		p = &nodes->a[aux->visited.a[i]>>1];
@@ -539,7 +537,7 @@ static void pop_bubble_complex(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 		khint_t k = kh_get(64, aux->kept, aux->visited.a[j]>>1);
 		if (k == kh_end(aux->kept)) {
 			rmnode(nodes, h, aux->visited.a[j]>>1);
-			fprintf(stderr, "bbb %lld[%lld,%lld]\n", aux->visited.a[j]>>1, nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
+			//fprintf(stderr, "bbb %lld[%lld,%lld]\n", aux->visited.a[j]>>1, nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
 		}
 	}
 end_popcomp:
@@ -549,7 +547,28 @@ end_popcomp:
 	}
 }
 
-static void pop_bubble_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min_bub_ratio, double min_bub_cov)
+static void pop_all_complex_bubble(fmnode_v *nodes, hash64_t *h, int max_len, int max_nodes, popaux_t *aux)
+{
+	fm128_v tmp;
+	size_t i;
+	kv_init(tmp);
+	for (i = 0; i < nodes->n; ++i) {
+		fm128_t x;
+		fmnode_t *p;
+		p = &nodes->a[i];
+		if (p->l > 0 && (p->nei[0].n > 1 || p->nei[1].n > 1)) {
+			x.x = i; x.y = nodes->a[i].l;
+			kv_push(fm128_t, tmp, x);
+		}
+	}
+	ks_introsort(128y, tmp.n, tmp.a);
+	for (i = 0; i < tmp.n; ++i) {
+		pop_complex_bubble(nodes, h, i<<1|0, max_len, max_nodes, aux);
+		pop_complex_bubble(nodes, h, i<<1|1, max_len, max_nodes, aux);
+	}
+}
+
+static void pop_simple_bubble(fmnode_v *nodes, hash64_t *h, size_t id, double min_bub_ratio, double min_bub_cov)
 {
 	fmnode_t *p = &nodes->a[id], *q[2], *top_p, *tmp_p;
 	fm128_v *r[2];
@@ -732,13 +751,6 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	memset(&paux, 0, sizeof(popaux_t));
 	paux.h = kh_init(64);
 	paux.kept = kh_init(64);
-	{
-		pop_bubble_complex(nodes, h, get_node_id(h, 2616093), 1000, 100, &paux);
-		pop_bubble_complex(nodes, h, get_node_id(h, 20349862), 1000, 100, &paux);
-		pop_bubble_complex(nodes, h, get_node_id(h, 20076863), 1000, 100, &paux);
-		pop_bubble_complex(nodes, h, get_node_id(h, 53607879), 1000, 100, &paux);
-	}
-	return;
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		for (i = 0; i < nodes->n; ++i)
@@ -762,7 +774,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 			rmnode(nodes, h, i);
 	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
-			pop_bubble_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
+			pop_simple_bubble(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
 		rmtip(nodes, h, opt->min_tip_len);
 		msg_join_unambi(g);
 	}
