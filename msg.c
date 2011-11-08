@@ -14,7 +14,7 @@ KSEQ_INIT(gzFile, gzread)
 KHASH_MAP_INIT_INT64(64, uint64_t)
 
 #define fm128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
-#define fm128_ylt(a, b) ((a).y > (b).y)
+#define fm128_ylt(a, b) ((int64_t)(a).y > (int64_t)(b).y)
 #include "ksort.h"
 KSORT_INIT(128x, fm128_t, fm128_xlt)
 KSORT_INIT(128y, fm128_t, fm128_ylt)
@@ -411,7 +411,145 @@ end_db:
 	return ret;
 }
 
-static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min_bub_ratio, double min_bub_cov)
+/******************
+ * Bubble popping *
+ ******************/
+
+typedef struct {
+	fm64_v visited;
+	fm128_v heap;
+	hash64_t *h, *kept;
+} popaux_t;
+
+static void pop_bubble_complex(fmnode_v *nodes, hash64_t *h, size_t idd, int max_len, int max_nodes, popaux_t *aux)
+{
+	fmnode_t *q, *p = &nodes->a[idd>>1];
+	fm128_t u, v;
+	fm128_v *r;
+	khint_t k;
+	uint64_t tmp, term = (uint64_t)-1;
+	int i, j, ret, is_bubble = 0;
+
+	if (p->nei[idd&1].n < 2) return;
+	// initialize the aux structure
+	aux->heap.n = aux->visited.n = 0;
+	kh_clear(64, aux->h);
+	p->aux[idd&1] = 0;
+	v.x = idd; v.y = 0;
+	kv_push(fm128_t, aux->heap, v);
+	kh_put(64, aux->h, p->k[idd&1], &ret);
+	// Dijkstra-like graph traversal
+	while (aux->heap.n) {
+		// take the shortest extension from the top of the heap
+		u = aux->heap.a[0];
+		p = &nodes->a[u.x>>1];
+		//fprintf(stderr, "%lld,%lld; [%lld,%lld]\n", u.x, u.y, nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1]);
+		aux->heap.a[0] = aux->heap.a[--aux->heap.n];
+		ks_heapdown_128y(0, aux->heap.n, aux->heap.a);
+
+		r = &p->nei[u.x&1];
+		if (term == (uint64_t)-1 && aux->heap.n == 0 && u.x != idd) {
+			term = u.x;
+			break;
+		} else if (r->n == 0 || p->aux[u.x&1] > max_len) { // hit a dead-end or exceed the length limit
+			if (term != (uint64_t)-1) {
+				if (term != u.x) goto end_popcomp; // multiple dead-end; stop
+			} else term = u.x; // the first dead-end
+		} else { // try to extend
+			for (i = 0; i < r->n; ++i) {
+				v.x = get_node_id(h, r->a[i].x);
+				if (v.x == (uint64_t)-1) continue;
+				v.x ^= 1;
+				q = &nodes->a[v.x>>1];
+				if (q->aux[v.x&1] < 0) { // has not been visited
+					v.y = q->aux[v.x&1] = p->aux[u.x&1] - r->a[i].y + q->l;
+					kv_push(fm128_t, aux->heap, v);
+					ks_heapup_128y(aux->heap.n, aux->heap.a);
+					kv_push(uint64_t, aux->visited, v.x);
+					kh_put(64, aux->h, q->k[0], &ret);
+					kh_put(64, aux->h, q->k[1], &ret);
+					fprintf(stderr, "*** %lld[%lld,%lld] -> %lld[%lld,%lld]\n", u.x,
+						nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1], v.x^1, nodes->a[v.x>>1].k[0], nodes->a[v.x>>1].k[1]);
+				}
+			}
+		}
+	}
+	fprintf(stderr, "forward bulge!\n");
+	// check if this is really a bubble
+	for (i = 0; i < aux->visited.n; ++i) {
+		if (aux->visited.a[i] == idd) continue;
+		p = &nodes->a[aux->visited.a[i]>>1];
+		r = &p->nei[(aux->visited.a[i]^1)&1];
+		for (j = 0; j < r->n; ++j) {
+			khint_t k = kh_get(64, aux->h, r->a[j].x);
+			if (k == kh_end(aux->h)) goto end_popcomp;
+		}
+	}
+	fprintf(stderr, "bubble!\n");
+	// prepare for the 2nd round of traversal
+	for (i = 0; i < aux->visited.n; ++i) {
+		p = &nodes->a[aux->visited.a[i]>>1];
+		p->aux[0] = p->aux[1] = 1;
+	}
+	p = &nodes->a[idd>>1];
+	aux->heap.n = 0;
+	kh_clear(64, aux->h);
+	p->aux[idd&1] = 0;
+	v.x = idd; v.y = 0;
+	kv_push(fm128_t, aux->heap, v);
+	// the second round of the Dijkstra-like traversal to get the most covered path
+	while (aux->heap.n) {
+		// take the shortest extension from the top of the heap
+		u = aux->heap.a[0];
+		p = &nodes->a[u.x>>1];
+		//fprintf(stderr, "%lld,%lld; [%lld,%lld]\n", u.x, u.y, nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1]);
+		aux->heap.a[0] = aux->heap.a[--aux->heap.n];
+		ks_heapdown_128y(0, aux->heap.n, aux->heap.a);
+
+		if (u.x == term) break;
+		r = &p->nei[u.x&1];
+		assert(r->n && p->aux[u.x&1] <= max_len);
+		for (i = 0; i < r->n; ++i) {
+			v.x = get_node_id(h, r->a[i].x);
+			if (v.x == (uint64_t)-1) continue;
+			v.x ^= 1;
+			q = &nodes->a[v.x>>1];
+			if (q->aux[v.x&1] > 0) { // has not been visited
+				v.y = q->aux[v.x&1] = p->aux[u.x&1] - (int)(q->avg_cov * q->l + .499);
+				kv_push(fm128_t, aux->heap, v);
+				ks_heapup_128y(aux->heap.n, aux->heap.a);
+				//fprintf(stderr, "%lld -> %lld\n", u.x, v.x^1);
+				k = kh_put(64, aux->h, v.x^1, &ret);
+				kh_val(aux->h, k) = u.x;
+			}
+		}
+	}
+	// backtrack
+	aux->heap.n = 0;
+	tmp = term;
+	kh_clear(64, aux->kept);
+	while (1) {
+		kh_put(64, aux->kept, tmp>>1, &ret);
+		k = kh_get(64, aux->h, tmp^1);
+		if (k == kh_end(aux->h)) break;
+		tmp = kh_val(aux->h, k);
+	}
+	// delete nodes
+	for (j = 0; j < aux->visited.n; ++j) {
+		khint_t k = kh_get(64, aux->kept, aux->visited.a[j]>>1);
+		if (k == kh_end(aux->kept)) {
+			rmnode(nodes, h, aux->visited.a[j]>>1);
+			fprintf(stderr, "bbb %lld[%lld,%lld]\n", aux->visited.a[j]>>1, nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
+		}
+	}
+end_popcomp:
+	for (i = 0; i < aux->visited.n; ++i) {
+		p = &nodes->a[aux->visited.a[i]>>1];
+		p->aux[0] = p->aux[1] = -1;
+	}
+}
+
+static void pop_bubble_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min_bub_ratio, double min_bub_cov)
 {
 	fmnode_t *p = &nodes->a[id], *q[2], *top_p, *tmp_p;
 	fm128_v *r[2];
@@ -483,6 +621,10 @@ static void debubble1_simple(fmnode_v *nodes, hash64_t *h, size_t id, double min
 		if (r[0]->a[j].x) r[0]->a[cnt++] = r[0]->a[j];
 	r[0]->n = cnt;
 }
+
+/*********************
+ * Unambiguous merge *
+ *********************/
 
 #define __swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))
 
@@ -581,11 +723,22 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 {
 	hash64_t *h = (hash64_t*)g->h;
 	fmnode_v *nodes = &g->nodes;
+	popaux_t paux;
 	fm64_v stack;
 	size_t i;
 	int j;
 
 	kv_init(stack);
+	memset(&paux, 0, sizeof(popaux_t));
+	paux.h = kh_init(64);
+	paux.kept = kh_init(64);
+	{
+		pop_bubble_complex(nodes, h, get_node_id(h, 2616093), 1000, 100, &paux);
+		pop_bubble_complex(nodes, h, get_node_id(h, 20349862), 1000, 100, &paux);
+		pop_bubble_complex(nodes, h, get_node_id(h, 20076863), 1000, 100, &paux);
+		pop_bubble_complex(nodes, h, get_node_id(h, 53607879), 1000, 100, &paux);
+	}
+	return;
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		for (i = 0; i < nodes->n; ++i)
@@ -609,10 +762,14 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 			rmnode(nodes, h, i);
 	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
-			debubble1_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
+			pop_bubble_simple(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
 		rmtip(nodes, h, opt->min_tip_len);
 		msg_join_unambi(g);
 	}
+	// free
+	kh_destroy(64, paux.h);
+	kh_destroy(64, paux.kept);
+	free(paux.heap.a); free(paux.visited.a);
 	kh_destroy(64, h);
 	free(stack.a);
 }
