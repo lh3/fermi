@@ -278,22 +278,6 @@ static void cut_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int re
 	}
 }
 
-void msg_shrink_node(fmnode_v *nodes, hash64_t *h, size_t id)
-{
-	int i, j;
-	fmnode_t *p = &nodes->a[id];
-	if (p->nei[0].n + p->nei[1].n < MAX_NEIGHBORS<<1) return;
-	for (j = 0; j < 2; ++j) {
-		fm128_v *r = &p->nei[j];
-		if (r->n < MAX_NEIGHBORS<<1) continue;
-		ks_introsort(128y, r->n, r->a);
-		for (i = MAX_NEIGHBORS; i < r->n; ++i)
-			if (r->a[i].x != p->k[0] && r->a[i].x != p->k[1])
-				cut_arc(nodes, h, r->a[i].x, p->k[j], 1);
-		r->n = MAX_NEIGHBORS;
-	}
-}
-
 static void drop_arc1(fmnode_v *nodes, hash64_t *h, size_t id, int min_ovlp, float min_ovlp_ratio)
 {
 	fmnode_t *p = &nodes->a[id];
@@ -377,7 +361,72 @@ typedef struct {
 	fm128_v heap;
 	hash64_t *h, *kept;
 } popaux_t;
-
+/*
+static void stretch_simple_circle(fmnode_v *nodes, hash64_t *h, int max_ll, size_t id)
+{
+	fmnode_t *q, *p = &nodes->a[id];
+	fm128_v *r;
+	int j, cnt;
+	if (p->l < 0) return;
+	r = &p->nei[0];
+	for (j = cnt = 0; j < r->n; ++j)
+		if (r->a[j].x == p->k[1])
+			++cnt, r->a[j].x = 0;
+	if (cnt) {
+		for (j = cnt = 0; j < r->n; ++j)
+			if (r->a[j].x) r->a[cnt++] = r->a[j];
+		r->n = cnt;
+		r = &p->nei[1];
+		for (j = cnt = 0; j < r->n; ++j)
+			if (r->a[j].x != p->k[0]) r->a[cnt++] = r->a[j];
+		assert(cnt + 1 == r->n);
+		r->n = cnt;
+	}
+	if (p->nei[0].n == 1 && p->nei[1].n == 1) { // test a circle like a->b->a (test b)
+		uint64_t x[2];
+		x[0] = get_node_id(h, p->nei[0].a[0].x);
+		x[1] = get_node_id(h, p->nei[1].a[0].x);
+		if (x[0] == (uint64_t)-1 || x[1] == (uint64_t)-1) return;
+		if ((x[0] ^ x[1]) == 1) {
+			int i, new_l, max_l, o[2];
+			char *seq, *cov;
+			q = &nodes->a[x[0]>>1];
+			if (q->avg_cov < 4. || q->l > max_ll || q->l < 0) return; 
+			o[x[0]&1] = p->nei[0].a[0].y;
+			o[x[1]&1] = p->nei[1].a[0].y;
+			if (x[1]&1) flip(p, h);
+			new_l = p->l + q->l * 2 - o[0] - o[1];
+			assert(new_l > 0);
+			max_l = new_l + 1;
+			kroundup32(max_l);
+			seq = calloc(max_l, 1);
+			cov = calloc(max_l, 1);
+			memcpy(seq, q->seq, q->l);
+			memcpy(seq + (q->l - o[1]), p->seq, p->l);
+			memcpy(seq + (q->l + p->l - o[1] - o[0]), q->seq, q->l);
+			for (i = 0; i < q->l; ++i) cov[i] = q->cov[i];
+			for (; i < new_l; ++i) cov[i] = 33;
+			for (i = 0; i < p->l; ++i) {
+				int c = cov[i + (q->l - o[1])] - 33 + p->cov[i];
+				cov[i + (q->l - o[1])] = c > 126? 126 : c;
+			}
+			for (i = 0; i < q->l; ++i) {
+				int c = cov[i + p->l + q->l - o[0] - o[1]] - 33 + q->cov[i];
+				cov[i + p->l + q->l - o[0] - o[1]] = c > 126? 126 : c;
+			}
+			rmnode(nodes, h, id);
+			free(q->seq); free(q->cov);
+			//fprintf(stderr, "%d, %d, %d, %d\n", o[0], o[1], q->l, new_l);
+			q->l = new_l;
+			q->seq = seq; q->cov = cov;
+			q->seq[new_l] = q->cov[new_l] = 0;
+		} else if (p->l < max_ll) {
+			cut_arc(nodes, h, p->nei[0].a[0].x, p->nei[1].a[0].x, 1);
+			cut_arc(nodes, h, p->nei[0].a[1].x, p->nei[0].a[0].x, 1);
+		}
+	}
+}
+*/
 static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max_len, int max_nodes, popaux_t *aux)
 {
 	fmnode_t *q, *p = &nodes->a[idd>>1];
@@ -505,17 +554,21 @@ static void pop_all_complex_bubble(fmnode_v *nodes, hash64_t *h, int max_len, in
 	for (i = 0; i < nodes->n; ++i) {
 		fm128_t x;
 		fmnode_t *p;
+		//stretch_simple_circle(nodes, h, max_len, i);
 		p = &nodes->a[i];
 		if (p->l > 0 && (p->nei[0].n > 1 || p->nei[1].n > 1)) {
 			x.x = i; x.y = nodes->a[i].l;
 			kv_push(fm128_t, tmp, x);
 		}
 	}
+		pop_complex_bubble(nodes, h, get_node_id(h, 817930), 1000, 100, aux);
+		return;
 	ks_introsort(128y, tmp.n, tmp.a);
 	for (i = 0; i < tmp.n; ++i) {
 		pop_complex_bubble(nodes, h, i<<1|0, max_len, max_nodes, aux);
 		pop_complex_bubble(nodes, h, i<<1|1, max_len, max_nodes, aux);
 	}
+	free(tmp.a);
 }
 
 static void pop_simple_bubble(fmnode_v *nodes, hash64_t *h, size_t id, double min_bub_ratio, double min_bub_cov)
@@ -703,6 +756,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	paux.kept = kh_init(64);
 	if (0) {
 		pop_complex_bubble(nodes, h, get_node_id(h, 3220676), 1000, 100, &paux);
+		pop_complex_bubble(nodes, h, get_node_id(h, 817930), 1000, 100, &paux);
 		return;
 	}
 	for (j = 0; j < opt->n_iter; ++j) {
