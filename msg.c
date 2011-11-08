@@ -385,7 +385,7 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 	fm128_v *r;
 	khint_t k;
 	uint64_t tmp, term = (uint64_t)-1;
-	int i, j, ret, is_bubble = 0;
+	int i, j, ret;
 
 	if (p->l < 0 || p->nei[idd&1].n < 2) return;
 	// initialize the aux structure
@@ -718,9 +718,9 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		for (i = 0; i < nodes->n; ++i)
 			drop_arc1(nodes, h, i, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
 		rmtip(nodes, h, opt->min_tip_len * r);
-		if (opt->aggressive_pop) pop_all_complex_bubble(nodes, h, 1000, 100, &paux);
 		msg_join_unambi(g);
 	}
+	if (opt->aggressive_pop) pop_all_complex_bubble(nodes, h, 1000, 100, &paux);
 	if (!opt->aggressive_pop && opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
 			pop_simple_bubble(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
