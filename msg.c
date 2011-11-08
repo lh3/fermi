@@ -561,8 +561,6 @@ static void pop_all_complex_bubble(fmnode_v *nodes, hash64_t *h, int max_len, in
 			kv_push(fm128_t, tmp, x);
 		}
 	}
-		pop_complex_bubble(nodes, h, get_node_id(h, 817930), 1000, 100, aux);
-		return;
 	ks_introsort(128y, tmp.n, tmp.a);
 	for (i = 0; i < tmp.n; ++i) {
 		pop_complex_bubble(nodes, h, i<<1|0, max_len, max_nodes, aux);
