@@ -32,7 +32,7 @@ typedef struct {
 typedef struct {
 	float min_weak_cov, min_bub_ratio, min_bub_cov, min_ovlp_ratio;
 	int min_tip_len, min_ovlp;
-	int n_iter;
+	int n_iter, aggressive_pop;
 } fmclnopt_t;
 
 typedef struct {

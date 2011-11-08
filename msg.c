@@ -368,49 +368,6 @@ static void rmtip(fmnode_v *nodes, hash64_t *h, int min_len)
 	}
 }
 
-static uint64_t pop_bubble(fmnode_v *nodes, hash64_t *h, size_t id_dir, int max_len, fm64_v *stack)
-{
-	int beg = 0, end = 1, i, j;
-	fmnode_t *p = &nodes->a[id_dir>>1], *q;
-	fm128_v *r;
-	uint64_t x, z, ret = nodes->n;
-	if (p->l < 0 || p->nei[id_dir&1].n < 2) return ret;
-	p->aux[id_dir&1] = 0;
-	stack->n = 0;
-	kv_push(uint64_t, *stack, id_dir);
-	while (beg < end) {
-		for (i = beg; i < end; ++i) {
-			x = stack->a[i];
-			p = &nodes->a[x>>1];
-			if (p->aux[x&1] >= max_len) continue; // stop searching
-			r = &p->nei[x&1];
-			for (j = 0; j < r->n; ++j) {
-				z = get_node_id(h, r->a[j].x);
-				if (z == (uint64_t)-1) continue;
-				q = &nodes->a[z>>1];
-				if (q->l < 0) continue;
-				if (q->aux[z&1] >= 0) goto end_db;
-				q->aux[z&1] = p->aux[x&1] - r->a[j].y + q->l;
-				kv_push(uint64_t, *stack, z^1);
-			}
-		}
-		beg = end; end = stack->n;
-	}
-end_db:
-	if (beg < end && z != id_dir) { // bubble but not a loop
-		double min_cov = 1e100;
-		int min_i = -1;
-		for (i = 0; i < stack->n; ++i) {
-			fmnode_t *p = &nodes->a[stack->a[i]>>1];
-			if (p->avg_cov < min_cov) min_cov = p->avg_cov, min_i = i;
-		}
-		ret = stack->a[min_i]>>1;
-	}
-	for (i = 0; i < stack->n; ++i) // reset aux[]
-		nodes->a[stack->a[i]>>1].aux[0] = nodes->a[stack->a[i]>>1].aux[1] = -1;
-	return ret;
-}
-
 /******************
  * Bubble popping *
  ******************/
@@ -751,28 +708,20 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	memset(&paux, 0, sizeof(popaux_t));
 	paux.h = kh_init(64);
 	paux.kept = kh_init(64);
+	if (opt->min_weak_cov > 1.) {
+		for (i = 0; i < nodes->n; ++i)
+			if (nodes->a[i].avg_cov < opt->min_weak_cov)
+				rmnode(nodes, h, i);
+	}
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		for (i = 0; i < nodes->n; ++i)
 			drop_arc1(nodes, h, i, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
 		rmtip(nodes, h, opt->min_tip_len * r);
+		if (opt->aggressive_pop) pop_all_complex_bubble(nodes, h, 1000, 100, &paux);
 		msg_join_unambi(g);
-		for (i = 0; i < nodes->n; ++i) {
-			uint64_t x = pop_bubble(nodes, h, i<<1, MAX_POP_EXTENSION, &stack);
-			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov && nodes->a[x].l < opt->min_tip_len) rmnode(nodes, h, x);
-			x = pop_bubble(nodes, h, i<<1|1, MAX_POP_EXTENSION, &stack);
-			if (x != nodes->n && nodes->a[x].avg_cov < opt->min_weak_cov && nodes->a[x].l < opt->min_tip_len) rmnode(nodes, h, x);
-		}
-		msg_join_unambi(g);
-		for (i = 0; i < nodes->n; ++i) {
-			rm_dup_arc(&nodes->a[i]);
-			msg_shrink_node(nodes, h, i);
-		}
 	}
-	for (i = 0; i < nodes->n; ++i)
-		if (nodes->a[i].avg_cov < opt->min_weak_cov/2. && nodes->a[i].l < opt->min_tip_len)
-			rmnode(nodes, h, i);
-	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
+	if (!opt->aggressive_pop && opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
 			pop_simple_bubble(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
 		rmtip(nodes, h, opt->min_tip_len);
