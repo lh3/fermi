@@ -373,7 +373,7 @@ static void rmtip(fmnode_v *nodes, hash64_t *h, int min_len)
  ******************/
 
 typedef struct {
-	fm64_v visited;
+	fm64_v visited, order;
 	fm128_v heap;
 	hash64_t *h, *kept;
 } popaux_t;
@@ -385,7 +385,7 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 	fm128_v *r;
 	khint_t k;
 	uint64_t tmp, term = (uint64_t)-1;
-	int i, j, ret;
+	int i, j, ret, has_loop;
 
 	if (p->l < 0 || p->nei[idd&1].n < 2) return;
 	// initialize the aux structure
@@ -413,11 +413,14 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 				if (term != u.x) goto end_popcomp; // multiple dead-end; stop
 			} else term = u.x; // the first dead-end
 		} else { // try to extend
+			kv_push(uint64_t, aux->order, u.x);
 			for (i = 0; i < r->n; ++i) {
 				v.x = get_node_id(h, r->a[i].x);
 				if (v.x == (uint64_t)-1) continue;
 				v.x ^= 1;
 				q = &nodes->a[v.x>>1];
+				//fprintf(stderr, "[%c] %lld[%lld,%lld] -> %lld[%lld,%lld]\n", "-+"[q->aux[v.x&1]<0], u.x,
+				//	nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1], v.x^1, nodes->a[v.x>>1].k[0], nodes->a[v.x>>1].k[1]);
 				if (q->aux[v.x&1] < 0) { // has not been visited
 					v.y = q->aux[v.x&1] = p->aux[u.x&1] - r->a[i].y + q->l;
 					kv_push(fm128_t, aux->heap, v);
@@ -425,8 +428,6 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 					kv_push(uint64_t, aux->visited, v.x);
 					kh_put(64, aux->h, q->k[0], &ret);
 					kh_put(64, aux->h, q->k[1], &ret);
-					//fprintf(stderr, "*** %lld[%lld,%lld] -> %lld[%lld,%lld]\n", u.x,
-					//	nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1], v.x^1, nodes->a[v.x>>1].k[0], nodes->a[v.x>>1].k[1]);
 				}
 			}
 		}
@@ -441,44 +442,36 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 			if (k == kh_end(aux->h)) goto end_popcomp;
 		}
 	}
-	// prepare for the 2nd round of traversal
+	// prepare for finding the longest path
 	for (i = 0; i < aux->visited.n; ++i) {
 		p = &nodes->a[aux->visited.a[i]>>1];
-		p->aux[0] = p->aux[1] = 1;
+		p->aux[0] = p->aux[1] = 0;
 	}
-	p = &nodes->a[idd>>1];
-	aux->heap.n = 0;
 	kh_clear(64, aux->h);
-	p->aux[idd&1] = 0;
-	v.x = idd; v.y = 0;
-	kv_push(fm128_t, aux->heap, v);
-	// the second round of the Dijkstra-like traversal to get the most covered path
-	while (aux->heap.n) {
-		// take the shortest extension from the top of the heap
-		u = aux->heap.a[0];
-		p = &nodes->a[u.x>>1];
-		//fprintf(stderr, "%lld,%lld; [%lld,%lld]\n", u.x, u.y, nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1]);
-		aux->heap.a[0] = aux->heap.a[--aux->heap.n];
-		ks_heapdown_128y(0, aux->heap.n, aux->heap.a);
-
-		if (u.x == term) break;
-		r = &p->nei[u.x&1];
-		assert(r->n && p->aux[u.x&1] <= max_len);
-		for (i = 0; i < r->n; ++i) {
-			v.x = get_node_id(h, r->a[i].x);
-			if (v.x == (uint64_t)-1) continue;
-			v.x ^= 1;
-			q = &nodes->a[v.x>>1];
-			if (q->aux[v.x&1] > 0) { // has not been visited
-				v.y = q->aux[v.x&1] = p->aux[u.x&1] - (int)(q->avg_cov * q->l + .499);
-				kv_push(fm128_t, aux->heap, v);
-				ks_heapup_128y(aux->heap.n, aux->heap.a);
-				//fprintf(stderr, "%lld -> %lld\n", u.x, v.x^1);
-				k = kh_put(64, aux->h, v.x^1, &ret);
-				kh_val(aux->h, k) = u.x;
+	kh_clear(64, aux->kept);
+	// find the longest path. FIXME: this is an approximate implementation and may FAIL!
+	for (i = 0, has_loop = 0; i < aux->order.n; ++i) {
+		uint64_t x = aux->order.a[i];
+		kh_put(64, aux->kept, x>>1, &ret); // here aux->kept is used to break loop(s)
+		p = &nodes->a[x>>1];
+		r = &p->nei[x&1];
+		for (j = 0; j < r->n; ++j) {
+			uint64_t y = get_node_id(h, r->a[j].x);
+			int d;
+			if (y == (uint64_t)-1) continue;
+			y ^= 1;
+			q = &nodes->a[y>>1];
+			d = (int)(q->avg_cov * q->l + .499);
+			if (q->aux[y&1] < p->aux[x&1] + d) {
+				q->aux[y&1] = p->aux[x&1] + d;
+				if (kh_get(64, aux->kept, y>>1) == kh_end(aux->kept)) { // do not set if there is a loop
+					k = kh_put(64, aux->h, y^1, &ret);
+					kh_val(aux->h, k) = x;
+				} else has_loop = 1;
 			}
 		}
 	}
+	if (has_loop) goto end_popcomp;
 	// backtrack
 	aux->heap.n = 0;
 	tmp = term;
@@ -494,7 +487,7 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 		khint_t k = kh_get(64, aux->kept, aux->visited.a[j]>>1);
 		if (k == kh_end(aux->kept)) {
 			rmnode(nodes, h, aux->visited.a[j]>>1);
-			//fprintf(stderr, "bbb %lld[%lld,%lld]\n", aux->visited.a[j]>>1, nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
+			//fprintf(stderr, "bbb %lld[%lld,%lld]\n", aux->visited.a[j], nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
 		}
 	}
 end_popcomp:
@@ -708,10 +701,9 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	memset(&paux, 0, sizeof(popaux_t));
 	paux.h = kh_init(64);
 	paux.kept = kh_init(64);
-	if (opt->min_weak_cov > 1.) {
-		for (i = 0; i < nodes->n; ++i)
-			if (nodes->a[i].avg_cov < opt->min_weak_cov)
-				rmnode(nodes, h, i);
+	if (0) {
+		pop_complex_bubble(nodes, h, get_node_id(h, 3220676), 1000, 100, &paux);
+		return;
 	}
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
@@ -720,11 +712,18 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		rmtip(nodes, h, opt->min_tip_len * r);
 		msg_join_unambi(g);
 	}
+	if (opt->min_weak_cov > 1.) {
+		for (i = 0; i < nodes->n; ++i)
+			if (nodes->a[i].avg_cov < opt->min_weak_cov)
+				rmnode(nodes, h, i);
+		rmtip(nodes, h, opt->min_tip_len);
+		msg_join_unambi(g);
+	}
 	if (opt->aggressive_pop) {
 		pop_all_complex_bubble(nodes, h, 1000, 100, &paux);
 		msg_join_unambi(g);
 	}
-	if (!opt->aggressive_pop && opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
+	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		for (i = 0; i < nodes->n; ++i)
 			pop_simple_bubble(nodes, h, i, opt->min_bub_ratio, opt->min_bub_cov);
 		rmtip(nodes, h, opt->min_tip_len);
