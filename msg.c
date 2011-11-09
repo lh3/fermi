@@ -438,7 +438,7 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 
 	if (p->l < 0 || p->nei[idd&1].n < 2) return;
 	// initialize the aux structure
-	aux->heap.n = aux->visited.n = 0;
+	aux->heap.n = aux->visited.n = aux->order.n = 0;
 	kh_clear(64, aux->h);
 	p->aux[idd&1] = 0;
 	v.x = idd; v.y = 0;
@@ -446,6 +446,7 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 	kh_put(64, aux->h, p->k[idd&1], &ret);
 	// Dijkstra-like graph traversal
 	while (aux->heap.n) {
+		if (aux->heap.n > max_nodes) goto end_popcomp;
 		// take the shortest extension from the top of the heap
 		u = aux->heap.a[0];
 		p = &nodes->a[u.x>>1];
@@ -454,6 +455,7 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 		ks_heapdown_128y(0, aux->heap.n, aux->heap.a);
 
 		r = &p->nei[u.x&1];
+		if (r->n > max_nodes) goto end_popcomp;
 		if (term == (uint64_t)-1 && aux->heap.n == 0 && u.x != idd) {
 			term = u.x;
 			break;
@@ -536,7 +538,7 @@ static void pop_complex_bubble(fmnode_v *nodes, hash64_t *h, size_t idd, int max
 		khint_t k = kh_get(64, aux->kept, aux->visited.a[j]>>1);
 		if (k == kh_end(aux->kept)) {
 			rmnode(nodes, h, aux->visited.a[j]>>1);
-			//fprintf(stderr, "bbb %lld[%lld,%lld]\n", aux->visited.a[j], nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
+			//fprintf(stderr, "del %lld[%lld,%lld]\n", aux->visited.a[j], nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
 		}
 	}
 end_popcomp:
@@ -563,8 +565,11 @@ static void pop_all_complex_bubble(fmnode_v *nodes, hash64_t *h, int max_len, in
 	}
 	ks_introsort(128y, tmp.n, tmp.a);
 	for (i = 0; i < tmp.n; ++i) {
-		pop_complex_bubble(nodes, h, i<<1|0, max_len, max_nodes, aux);
-		pop_complex_bubble(nodes, h, i<<1|1, max_len, max_nodes, aux);
+		fmnode_t *p = &nodes->a[tmp.a[i].x];
+		if (p->l < max_len) break;
+		fprintf(stderr, "%ld,%lld,%d\n", i, tmp.a[i].x, nodes->a[tmp.a[i].x].l);
+		pop_complex_bubble(nodes, h, tmp.a[i].x<<1|0, max_len, max_nodes, aux);
+		pop_complex_bubble(nodes, h, tmp.a[i].x<<1|1, max_len, max_nodes, aux);
 	}
 	free(tmp.a);
 }
@@ -753,8 +758,11 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	paux.h = kh_init(64);
 	paux.kept = kh_init(64);
 	if (0) {
-		pop_complex_bubble(nodes, h, get_node_id(h, 3220676), 1000, 100, &paux);
-		pop_complex_bubble(nodes, h, get_node_id(h, 817930), 1000, 100, &paux);
+		//pop_complex_bubble(nodes, h, get_node_id(h, 16052204), 1000, 30, &paux);
+		//pop_complex_bubble(nodes, h, get_node_id(h, 42165839), 1000, 30, &paux);
+
+		//pop_complex_bubble(nodes, h, get_node_id(h, 3220676), 1000, 30, &paux);
+		//pop_complex_bubble(nodes, h, get_node_id(h, 817930), 1000, 30, &paux);
 		return;
 	}
 	for (j = 0; j < opt->n_iter; ++j) {
@@ -772,7 +780,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	if (opt->aggressive_pop) {
-		pop_all_complex_bubble(nodes, h, 1000, 100, &paux);
+		pop_all_complex_bubble(nodes, h, 500, 11, &paux);
 		msg_join_unambi(g);
 	}
 	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
