@@ -565,9 +565,6 @@ static void pop_all_complex_bubble(fmnode_v *nodes, hash64_t *h, int max_len, in
 	}
 	ks_introsort(128y, tmp.n, tmp.a);
 	for (i = 0; i < tmp.n; ++i) {
-		fmnode_t *p = &nodes->a[tmp.a[i].x];
-		if (p->l < max_len) break;
-		fprintf(stderr, "%ld,%lld,%d\n", i, tmp.a[i].x, nodes->a[tmp.a[i].x].l);
 		pop_complex_bubble(nodes, h, tmp.a[i].x<<1|0, max_len, max_nodes, aux);
 		pop_complex_bubble(nodes, h, tmp.a[i].x<<1|1, max_len, max_nodes, aux);
 	}
@@ -757,14 +754,6 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	memset(&paux, 0, sizeof(popaux_t));
 	paux.h = kh_init(64);
 	paux.kept = kh_init(64);
-	if (0) {
-		//pop_complex_bubble(nodes, h, get_node_id(h, 16052204), 1000, 30, &paux);
-		//pop_complex_bubble(nodes, h, get_node_id(h, 42165839), 1000, 30, &paux);
-
-		//pop_complex_bubble(nodes, h, get_node_id(h, 3220676), 1000, 30, &paux);
-		//pop_complex_bubble(nodes, h, get_node_id(h, 817930), 1000, 30, &paux);
-		return;
-	}
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		for (i = 0; i < nodes->n; ++i)
@@ -780,7 +769,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	if (opt->aggressive_pop) {
-		pop_all_complex_bubble(nodes, h, 500, 11, &paux);
+		pop_all_complex_bubble(nodes, h, 500, 20, &paux);
 		msg_join_unambi(g);
 	}
 	if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
