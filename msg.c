@@ -772,7 +772,7 @@ void msg_join_unambi(msg_t *g)
 		while (merge(g, i) == 0);
 	}
 	if (fm_verbose >= 2)
-		fprintf(stderr, "[%s] joined unambiguous arcs in %.2f sec\n", __func__, cputime() - tcpu);
+		fprintf(stderr, "[M::%s] joined unambiguous arcs in %.2f sec\n", __func__, cputime() - tcpu);
 }
 
 void msg_clean(msg_t *g, const fmclnopt_t *opt)

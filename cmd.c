@@ -544,7 +544,7 @@ int main_clean(int argc, char *argv[])
 	opt.min_tip_len = 200;
 	opt.min_weak_cov= 1.01;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
-	opt.min_ovlp    = 70;  opt.min_ovlp_ratio=0.8;
+	opt.min_ovlp    = 60;  opt.min_ovlp_ratio=0.8;
 	opt.n_iter = 3;
 	while ((c = getopt(argc, argv, "CAl:c:T:r:w:o:R:n:N:d:")) >= 0) {
 		switch (c) {
