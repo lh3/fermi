@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-dev (r387)"
+#define FERMI_VERSION "0.0-dev (r389)"
 
 #define FM_MASK30 0x3fffffff
 
@@ -49,6 +49,7 @@ typedef struct { size_t n, m; fmnode_t *a; } fmnode_v;
 typedef struct {
 	fmnode_v nodes;
 	void *h;
+	int min_ovlp;
 } msg_t;
 
 #ifndef KSTRING_T
@@ -130,6 +131,7 @@ extern "C" {
 	void msg_join_unambi(msg_t *g);
 	void msg_clean(msg_t *g, const fmclnopt_t *opt);
 	void msg_print(const fmnode_v *nodes);
+	void msg_destroy(msg_t *g);
 
 #ifdef __cplusplus
 }

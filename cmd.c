@@ -408,14 +408,14 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		}
 		if (argc == optind) {
 			fprintf(stderr, "\n");
-			fprintf(stderr, "Usage:   fermi build [-fPN] [-i inBWT] [-b sbits] [-o outFile] [-s blkSize] <in.fa>\n\n");
+			fprintf(stderr, "Usage:   fermi build [options] <in.fa>\n\n");
 			fprintf(stderr, "Options: -b INT    use a small marker per 2^(INT+3) bytes [%d]\n", sbits);
 			fprintf(stderr, "         -f        force to overwrite the output file (effective with -o)\n");
 			fprintf(stderr, "         -i FILE   append the FM-index to the existing FILE [null]\n");
 			fprintf(stderr, "         -N        do NOT discard sequences containing 'N' (after trimming)\n");
 			fprintf(stderr, "         -o FILE   output file name [null]\n");
 			fprintf(stderr, "         -P        output BWT to stdout; do not dump the FM-index\n");
-			fprintf(stderr, "         -q INT    convert base with base quality smaller than INT to 'N' [0]\n");
+			fprintf(stderr, "         -q INT    convert base with base quality smaller than INT to 'N' [%d]\n", min_q);
 			fprintf(stderr, "         -s INT    number of symbols to process at a time [%ld]\n", (long)block_size);
 			fprintf(stderr, "         -T        do NOT trim 'N' at 5'- or 3'-end\n");
 			fprintf(stderr, "\n");
@@ -544,7 +544,7 @@ int main_clean(int argc, char *argv[])
 	opt.min_tip_len = 200;
 	opt.min_weak_cov= 1.01;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
-	opt.min_ovlp    = 30;  opt.min_ovlp_ratio=0.8;
+	opt.min_ovlp    = 70;  opt.min_ovlp_ratio=0.8;
 	opt.n_iter = 3;
 	while ((c = getopt(argc, argv, "CAl:c:T:r:w:o:R:n:N:d:")) >= 0) {
 		switch (c) {
@@ -582,5 +582,6 @@ int main_clean(int argc, char *argv[])
 	msg_join_unambi(g);
 	if (do_clean) msg_clean(g, &opt);
 	msg_print(&g->nodes);
+	msg_destroy(g);
 	return 0;
 }
