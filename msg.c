@@ -314,7 +314,6 @@ static void add_arc(fmnode_v *nodes, hash64_t *h, uint64_t u, uint64_t v, int ov
 	r = &nodes->a[x>>1].nei[x&1];
 	z.x = v; z.y = ovlp;
 	kv_push(fm128_t, *r, z);
-	assert(r->n < 10000);
 }
 
 static void rmnode(fmnode_v *nodes, hash64_t *h, size_t id)
