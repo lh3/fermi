@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <stdio.h>
 
-// 1: error; 2: warning; 3: message; 4: progress; 5: debugging
+// 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
 int fm_verbose = 4;
 
 void *xmalloc_core(size_t s, const char *func)
