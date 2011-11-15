@@ -378,7 +378,7 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0, min_q = 3, trim_end_N = 1;
+	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0, min_q = 3, trim_end_N = 1, min_tl = 2;
 	int64_t i, sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
@@ -387,7 +387,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "NPfb:o:i:s:q:T")) >= 0) {
+		while ((c = getopt(argc, argv, "NPfb:o:i:s:q:Tl:")) >= 0) {
 			switch (c) {
 				case 'i':
 					e = rld_restore(optarg);
@@ -396,6 +396,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 						return 1;
 					}
 					break;
+				case 'l': min_tl = atoi(optarg); break;
 				case 'q': min_q = atoi(optarg); break;
 				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
@@ -412,7 +413,8 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 			fprintf(stderr, "Options: -b INT    use a small marker per 2^(INT+3) bytes [%d]\n", sbits);
 			fprintf(stderr, "         -f        force to overwrite the output file (effective with -o)\n");
 			fprintf(stderr, "         -i FILE   append the FM-index to the existing FILE [null]\n");
-			fprintf(stderr, "         -N        do NOT discard sequences containing 'N' (after trimming)\n");
+			fprintf(stderr, "         -l INT    discard trimmed reads shorted than INT [%d]\n", min_tl);
+			fprintf(stderr, "         -N        keep sequences containing 'N' after trimming\n");
 			fprintf(stderr, "         -o FILE   output file name [null]\n");
 			fprintf(stderr, "         -P        output BWT to stdout; do not dump the FM-index\n");
 			fprintf(stderr, "         -q INT    convert base with base quality smaller than INT to 'N' [%d]\n", min_q);
@@ -472,7 +474,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 					str.s[str.l++] = '.';
 					str.s[str.l] = 0;
 				}
-				if (min_l < 2) continue; // 1bp read? skip
+				if (min_l < min_tl) continue; // 1bp read? skip
 				str.s[str.l-1] = 0;
 				memcpy(seq->seq.s, str.s, str.l);
 				seq->seq.l = str.l - 1;
@@ -544,7 +546,7 @@ int main_clean(int argc, char *argv[])
 	opt.min_tip_len = 200;
 	opt.min_weak_cov= 1.01;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
-	opt.min_ovlp    = 60;  opt.min_ovlp_ratio=0.8;
+	opt.min_ovlp    = 9060;  opt.min_ovlp_ratio=0.8;
 	opt.n_iter = 3;
 	while ((c = getopt(argc, argv, "CAl:c:T:r:w:o:R:n:N:d:")) >= 0) {
 		switch (c) {
