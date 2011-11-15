@@ -26,6 +26,7 @@ static volatile int g_stdout_lock;
 static double g_tc, g_tr;
 
 void seq_reverse(int l, unsigned char *s);
+void seq_revcomp6(int l, unsigned char *s);
 
 static inline double genpar_aux(double x, int64_t k)
 { // compute 1-(1-x)^k, where x<<1 and k is not so large
@@ -61,7 +62,7 @@ void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T)
 	*_w = w; *_T = k;
 }
 
-static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq, shash_t *solid, int64_t cnt[2], uint32_t tmp)
+static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq, shash_t *solid, int64_t cnt[2])
 {
 	int i, ret, shift = (opt->w - len - 1) * 2;
 	kstring_t str;
@@ -120,25 +121,6 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 	free(stack.a); free(str.s);
 }
 
-void fm_print_buffer(kstring_t *buf, volatile int *lock, int force)
-{ // note that according to the POSIX thread specification, fputs() is thread safe.
-	fputs(buf->s, stdout); // NB: this segfaults when buf->s == 0
-	buf->s[0] = 0; buf->l = 0;
-	/*
-	static const int MAX_OUT_BUF = 0x10000;
-	if (force || buf->l >= MAX_OUT_BUF) { // lock stdout and output
-		while (__sync_lock_test_and_set(lock, 1));
-		fputs(buf->s, stdout);
-		__sync_lock_release(lock);
-		buf->l = 0;
-	} else if (buf->l >= MAX_OUT_BUF>>2 && __sync_bool_compare_and_swap(lock, 0, 1)) {
-		fputs(buf->s, stdout);
-		__sync_lock_release(lock);
-		buf->l = 0;
-	}
-	*/
-}
-
 static int ec_fix1(shash_t *const* solid, int w, kstring_t *s)
 {
 	int i, l, cnt = 0, shift = (w - 1) * 2, mod = 0;
@@ -182,23 +164,23 @@ static void ec_fix(const rld_t *e, shash_t *const* solid, int w, int start, int 
 		j = ec_fix1(solid, w, &str);
 		seq_revcomp6(str.l, (uint8_t*)str.s);
 		j = ec_fix1(solid, w, &str);
-		if (0&&i>>1 == 3399) {
+		/*if (i>>1 == 3399) {
 			fm_verbose = 4;
 			fprintf(stderr, "n_corr=%d\t", j);
 			for (j = 0; j < str.l; ++j) fputc("$ACGTN"[(int)str.s[j]], stderr); fputc('\n', stderr);
-		}
+		}*/
 		kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
 		ks_resize(&out, out.l + str.l + 2);
 		for (j = 0; j < str.l; ++j)
 			out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
 		out.s[out.l++] = '\n';
 		out.s[out.l] = 0;
-		fm_print_buffer(&out, &g_stdout_lock, 0);
+		fputs(out.s, stdout);
+		out.s[0] = 0; out.l = 0;
 		++sum;
 		if (fm_verbose >= 3 && sum % 1000000 == 0)
 			fprintf(stderr, "[M::%s@%d] processed %ld sequences\n", __func__, start, (long)sum);
 	}
-	fm_print_buffer(&out, &g_stdout_lock, 1);
 	free(str.s); free(out.s);
 }
 
@@ -219,7 +201,7 @@ static void *worker1(void *data)
 		uint8_t seq[SUF_LEN+1];
 		for (j = 0; j < SUF_LEN; ++j)
 			seq[j] = (w->seqs[i]>>(j*2)&0x3) + 1;
-		ec_collect(w->e, w->opt, SUF_LEN, seq, w->solid[i], w->cnt, i);
+		ec_collect(w->e, w->opt, SUF_LEN, seq, w->solid[i], w->cnt);
 	}
 	return 0;
 }

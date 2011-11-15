@@ -12,8 +12,6 @@
 #include "ksort.h"
 KSORT_INIT(infocmp, fmintv_t, info_lt)
 
-static volatile int g_out_lock;
-
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
 	uint64_t *p = bits + (x>>6);
@@ -287,7 +285,6 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited)
 {
 	extern void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
-	extern void fm_print_buffer(kstring_t *buf, volatile int *lock, int force);
 	uint64_t i;
 	int max_l = 0;
 	aux_t a;
@@ -317,10 +314,10 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 			memcpy(z.seq, str.s, z.l);
 			memcpy(z.cov, cov.s, z.l + 1);
 			msg_write_node(&z, i, &out);
-			fm_print_buffer(&out, &g_out_lock, 0);
+			fputs(out.s, stdout);
+			out.s[0] = 0; out.l = 0;
 		}
 	}
-	fm_print_buffer(&out, &g_out_lock, 1);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
 	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
 	free(a.str.s); free(str.s); free(cov.s); free(out.s);
