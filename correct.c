@@ -100,13 +100,13 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 			if (max < opt->T) continue;
 			++cnt[0];
 			rest = ik.x[2] - max;
-			r = rest == 0? 31. : (double)(max + rest) / rest;
+			r = rest == 0? 31. : (double)max / rest;
 			if (r > 31.) r = 31.;
 			if (rest <= 7 && r >= opt->T) ++cnt[1];
 			for (i = 0, key = 0; i < str.l; ++i) key = (uint32_t)str.s[i]<<shift | key>>2;
 			key = key<<2 | (max_c - 1);
 			k = kh_put(solid, solid, key, &ret);
-			kh_val(solid, k) = (rest > 7 || r < opt->T)? 0 : ((int)(r + .499)) << 3 | (rest < 7? rest : 7);
+			kh_val(solid, k) = rest > 7? 0 : ((int)(r + .499)) << 3 | rest; // if more than 7, do not make corrections in future
 			//kh_val(solid, k) = (int)(r + .499) << 3 | (rest < 7? rest : 7);
 		} else { // descend
 			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases are skipped
@@ -121,20 +121,23 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 	free(stack.a); free(str.s);
 }
 
-static int ec_fix1(shash_t *const* solid, int w, kstring_t *s)
+static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, int *_cov)
 {
-	int i, l, cnt = 0, shift = (w - 1) * 2, mod = 0;
+	int i, l, cnt = 0, shift = (opt->w - 1) * 2, mod = 0, beg, end, cov;
 	uint64_t x;
-	if (s->l <= w) return -1; // correction failed
+	if (s->l <= opt->w) return -1; // correction failed
+	beg = end = s->l; cov = 0;
 	for (i = s->l - 1, l = 0, x = 0; i >= 0; --i) {
 		if (s->s[i] == 5) {
 			if (mod == 0) {
 				x = 0, l = 0;
+				cov += end - beg;
+				beg = end = i;
 				continue;
 			} else s->s[i] = mod;
 		}
 		x = (uint64_t)(s->s[i]-1)<<shift | x>>2;
-		if (++l >= w) {
+		if (++l >= opt->w) {
 			khint_t k;
 			const shash_t *h = solid[x & SUF_MASK];
 			k = kh_get(solid, h, x>>SUF_SHIFT<<2);
@@ -145,38 +148,47 @@ static int ec_fix1(shash_t *const* solid, int w, kstring_t *s)
 				k = kh_get(solid, h, x>>SUF_SHIFT<<2);
 				++cnt;
 			}
-			mod = (k != kh_end(h) && kh_val(h, k) && i && s->s[i-1] != (kh_key(h, k)&3) + 1)? (kh_key(h, k)&3) + 1 : 0;
+			if (k == kh_end(h)) {
+				mod = 0;
+				cov += end - beg;
+				end = beg = i;
+			} else {
+				mod = (kh_val(h, k)>>3 >= opt->min_ratio && i && s->s[i-1] != (kh_key(h, k)&3) + 1)? (kh_key(h, k)&3) + 1 : 0;
+				beg = i;
+			}
 		} else mod = 0;
 	}
+	*_cov = (cov += end - beg);
+	assert(*_cov <= s->l);
 	return cnt;
 }
 
-static void ec_fix(const rld_t *e, shash_t *const* solid, int w, int start, int step)
+static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int start, int step)
 {
 	int64_t i, k, sum;
-	int j;
+	int j, cov[2], cnt[2];
 	kstring_t str, out;
 
 	str.s = out.s = 0; str.l = str.m = out.l = out.m = 0;
 	for (i = start<<1, sum = 0; i < e->mcnt[1]; i += step<<1) {
+		double coverage;
 		k = fm_retrieve(e, i + 1, &str);
 		seq_reverse(str.l, (uint8_t*)str.s);
-		j = ec_fix1(solid, w, &str);
+		cnt[0] = ec_fix1(opt, solid, &str, &cov[0]);
 		seq_revcomp6(str.l, (uint8_t*)str.s);
-		j = ec_fix1(solid, w, &str);
-		/*if (i>>1 == 3399) {
-			fm_verbose = 4;
-			fprintf(stderr, "n_corr=%d\t", j);
-			for (j = 0; j < str.l; ++j) fputc("$ACGTN"[(int)str.s[j]], stderr); fputc('\n', stderr);
-		}*/
-		kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
-		ks_resize(&out, out.l + str.l + 2);
-		for (j = 0; j < str.l; ++j)
-			out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
-		out.s[out.l++] = '\n';
-		out.s[out.l] = 0;
-		fputs(out.s, stdout);
-		out.s[0] = 0; out.l = 0;
+		cnt[1] = ec_fix1(opt, solid, &str, &cov[1]);
+		coverage = (double)(cov[0] > cov[1]? cov[0] : cov[1]) / str.l;
+		fprintf(stderr, "%d\t%f\n", cnt[0]+cnt[1], coverage);
+		if (coverage >= opt->min_cov && (double)(cnt[0] + cnt[1]) / str.l <= opt->max_corr) {
+			kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
+			ks_resize(&out, out.l + str.l + 2);
+			for (j = 0; j < str.l; ++j)
+				out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
+			out.s[out.l++] = '\n';
+			out.s[out.l] = 0;
+			fputs(out.s, stdout);
+			out.s[0] = 0; out.l = 0;
+		}
 		++sum;
 		if (fm_verbose >= 3 && sum % 1000000 == 0)
 			fprintf(stderr, "[M::%s@%d] processed %ld sequences\n", __func__, start, (long)sum);
@@ -208,14 +220,15 @@ static void *worker1(void *data)
 
 typedef struct {
 	const rld_t *e;
+	const fmecopt_t *opt;
 	shash_t *const* solid;
-	int start, step, w;
+	int start, step;
 } worker2_t;
 
 static void *worker2(void *data)
 {
 	worker2_t *w = (worker2_t*)data;
-	ec_fix(w->e, w->solid, w->w, w->start, w->step);
+	ec_fix(w->e, w->opt, w->solid, w->start, w->step);
 	return 0;
 }
 
@@ -271,7 +284,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	g_tc = cputime(); g_tr = realtime();
 	w2 = calloc(n_threads, sizeof(worker2_t));
 	for (j = 0; j < n_threads; ++j)
-		w2[j].e = e, w2[j].solid = solid, w2[j].step = n_threads, w2[j].start = j, w2[j].w = opt->w;
+		w2[j].e = e, w2[j].solid = solid, w2[j].step = n_threads, w2[j].start = j, w2[j].opt = opt;
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(w2);

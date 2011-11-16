@@ -256,18 +256,20 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1, _w, _T;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.cov = 30.0; opt.t = 3; opt.T = opt.w = 0; opt.err = 0.01; opt.max_pre_mm = 8;
-	while ((c = getopt(argc, argv, "A:Mt:k:T:c:m:e:v:")) >= 0) {
+	opt.cov = 30.0; opt.T = opt.w = 0; opt.err = 0.01;
+	opt.max_corr = 0.1; opt.min_cov = 0.9; opt.min_ratio = 5;
+	while ((c = getopt(argc, argv, "Mt:k:T:c:e:v:r:C:S:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
-			case 'm': opt.t = atoi(optarg); break;
 			case 'c': opt.cov = atof(optarg); break;
 			case 'e': opt.err = atof(optarg); break;
 			case 't': n_threads = atoi(optarg); break;
 			case 'k': opt.w = atoi(optarg); break;
 			case 'T': opt.T = atoi(optarg); break;
 			case 'v': fm_verbose = atoi(optarg); break;
-			case 'A': opt.max_pre_mm = atoi(optarg); break;
+			case 'r': opt.min_ratio = atoi(optarg); break;
+			case 'C': opt.min_cov  = atof(optarg); break;
+			case 'S': opt.max_corr = atof(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
@@ -275,11 +277,12 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "Usage:   fermi correct [options] <reads.bwt>\n\n");
 		fprintf(stderr, "Options: -c FLOAT    expected coverage [%.1f]\n", opt.cov);
 		fprintf(stderr, "         -e FLOAT    expected per-base error rate [%.2f]\n", opt.err);
-		fprintf(stderr, "         -m INT      do not correct an error appearing more than INT times [%d]\n", opt.t);
 		fprintf(stderr, "         -k INT      k-mer length [inferred from -c/-e]\n");
 		fprintf(stderr, "         -T INT      threshold for a correct base [inferred from -c/-e]\n");
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
-		fprintf(stderr, "         -A INT      max #clustered errors in prefix [%d]\n\n", opt.max_pre_mm);
+		fprintf(stderr, "         -C FLOAT    drop if the solid-mer coverage below FLOAT [%.2f]\n", opt.min_cov);
+		fprintf(stderr, "         -S FLOAT    drop if the fraction of corrected bases above FLOAT [%.2f]\n", opt.max_corr);
+		fprintf(stderr, "         -r INT      min max_width:2nd_max_width (advanced) [%d]\n\n", opt.min_ratio);
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);

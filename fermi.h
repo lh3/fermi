@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-dev (r391)"
+#define FERMI_VERSION "0.0-dev (r394)"
 
 #define FM_MASK30 0x3fffffff
 
@@ -25,8 +25,8 @@ typedef struct { size_t n, m; fm128_t  *a; } fm128_v;
 struct __rld_t; // defined in rld.h
 
 typedef struct {
-	int T, t, w, max_pre_mm;
-	float cov, err;
+	int T, w, min_ratio;
+	float cov, err, min_cov, max_corr;
 } fmecopt_t;
 
 typedef struct {
