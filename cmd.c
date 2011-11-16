@@ -257,7 +257,7 @@ int main_correct(int argc, char *argv[])
 	rld_t *e;
 	fmecopt_t opt;
 	opt.cov = 30.0; opt.T = opt.w = 0; opt.err = 0.01;
-	opt.max_corr = 0.1; opt.min_cov = 0.9; opt.min_ratio = 5;
+	opt.max_corr = 0.25; opt.min_cov = 0.75; opt.min_ratio = 5;
 	while ((c = getopt(argc, argv, "Mt:k:T:c:e:v:r:C:S:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;

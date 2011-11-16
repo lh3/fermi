@@ -175,10 +175,10 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 		k = fm_retrieve(e, i + 1, &str);
 		seq_reverse(str.l, (uint8_t*)str.s);
 		cnt[0] = ec_fix1(opt, solid, &str, &cov[0]);
+		if (cnt[0] < 0) continue;
 		seq_revcomp6(str.l, (uint8_t*)str.s);
 		cnt[1] = ec_fix1(opt, solid, &str, &cov[1]);
 		coverage = (double)(cov[0] > cov[1]? cov[0] : cov[1]) / str.l;
-		fprintf(stderr, "%d\t%f\n", cnt[0]+cnt[1], coverage);
 		if (coverage >= opt->min_cov && (double)(cnt[0] + cnt[1]) / str.l <= opt->max_corr) {
 			kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
 			ks_resize(&out, out.l + str.l + 2);
