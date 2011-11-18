@@ -3,6 +3,7 @@
 #include <string.h>
 #include <math.h>
 #include <pthread.h>
+#include <ctype.h>
 #include "utils.h"
 #include "fermi.h"
 #include "rld.h"
@@ -15,6 +16,10 @@ KSORT_INIT_GENERIC(uint32_t)
 #define SUF_SHIFT (SUF_LEN<<1)
 #define SUF_NUM   (1<<SUF_SHIFT)
 #define SUF_MASK  (SUF_NUM-1)
+
+#include <zlib.h>
+#include "kseq.h"
+KSEQ_INIT(gzFile, gzread)
 
 #define solid_hash(a) ((a)>>2)
 #define solid_eq(a, b) ((a)>>2 == (b)>>2)
@@ -163,37 +168,30 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, in
 	return cnt;
 }
 
-static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int start, int step)
+static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual)
 {
-	int64_t i, k, sum;
-	int j, cov[2], cnt[2];
-	kstring_t str, out;
+	extern unsigned char seq_nt6_table[];
+	int i, j, cov[2], cnt[2];
+	kstring_t str;
 
-	str.s = out.s = 0; str.l = str.m = out.l = out.m = 0;
-	for (i = start<<1, sum = 0; i < e->mcnt[1]; i += step<<1) {
+	str.s = 0; str.l = str.m = 0;
+	for (i = 0; i < n_seqs; ++i) {
 		double coverage;
-		k = fm_retrieve(e, i + 1, &str);
-		seq_reverse(str.l, (uint8_t*)str.s);
+		str.l = 0;
+		kputs(seq[i], &str);
+		for (j = 0; j < str.l; ++j)
+			str.s[j] = seq_nt6_table[(int)str.s[j]];
+		seq_revcomp6(str.l, (uint8_t*)str.s);
 		cnt[0] = ec_fix1(opt, solid, &str, &cov[0]);
 		if (cnt[0] < 0) continue;
 		seq_revcomp6(str.l, (uint8_t*)str.s);
 		cnt[1] = ec_fix1(opt, solid, &str, &cov[1]);
 		coverage = (double)(cov[0] > cov[1]? cov[0] : cov[1]) / str.l;
-		if (coverage >= opt->min_cov && (double)(cnt[0] + cnt[1]) / str.l <= opt->max_corr) {
-			kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
-			ks_resize(&out, out.l + str.l + 2);
-			for (j = 0; j < str.l; ++j)
-				out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
-			out.s[out.l++] = '\n';
-			out.s[out.l] = 0;
-			fputs(out.s, stdout);
-			out.s[0] = 0; out.l = 0;
-		}
-		++sum;
-		if (fm_verbose >= 3 && sum % 1000000 == 0)
-			fprintf(stderr, "[M::%s@%d] processed %ld sequences\n", __func__, start, (long)sum);
+		if (coverage >= opt->min_cov && (double)(cnt[0] + cnt[1]) / str.l <= opt->max_corr);
+		for (j = 0; j < str.l; ++j)
+			seq[i][j] = seq_nt6_table[(int)seq[i][j]] == str.s[j]? toupper(seq[i][j]) : "$acgtn"[(int)str.s[j]];
 	}
-	free(str.s); free(out.s);
+	free(str.s);
 }
 
 typedef struct {
@@ -218,27 +216,29 @@ static void *worker1(void *data)
 	return 0;
 }
 
+#define BATCH_SIZE 1000000
+
 typedef struct {
 	const rld_t *e;
 	const fmecopt_t *opt;
 	shash_t *const* solid;
-	int start, step;
+	int n_seqs;
+	char **seq, **qual;
+	uint64_t *id; // this wastes memory, but should not be a big deal
 } worker2_t;
 
 static void *worker2(void *data)
 {
 	worker2_t *w = (worker2_t*)data;
-	ec_fix(w->e, w->opt, w->solid, w->start, w->step);
+	ec_fix(w->e, w->opt, w->solid, w->n_seqs, w->seq, w->qual);
 	return 0;
 }
 
-int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
+int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads)
 {
-	int j, max_seqs;
+	int j;
 	int64_t i, cnt[2];
 	shash_t **solid;
-	worker1_t *w1;
-	worker2_t *w2;
 	pthread_t *tid;
 	pthread_attr_t attr;
 
@@ -255,39 +255,97 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	for (j = 0; j < SUF_NUM; ++j) solid[j] = kh_init(solid);
 	cnt[0] = cnt[1] = 0;
 
-	// initialize and launch worker1
-	g_tc = cputime(); g_tr = realtime();
-	w1 = calloc(n_threads, sizeof(worker1_t));
-	max_seqs = (SUF_NUM + n_threads - 1) / n_threads;
-	for (j = 0; j < n_threads; ++j) {
-		w1[j].seqs = calloc(max_seqs, 4);
-		w1[j].solid = calloc(max_seqs, sizeof(void*));
-		w1[j].e = e, w1[j].opt = opt, w1[j].tid = j;
+	{ // initialize and launch worker1
+		worker1_t *w1;
+		int max_seqs;
+		g_tc = cputime(); g_tr = realtime();
+		w1 = calloc(n_threads, sizeof(worker1_t));
+		max_seqs = (SUF_NUM + n_threads - 1) / n_threads;
+		for (j = 0; j < n_threads; ++j) {
+			w1[j].seqs = calloc(max_seqs, 4);
+			w1[j].solid = calloc(max_seqs, sizeof(void*));
+			w1[j].e = e, w1[j].opt = opt, w1[j].tid = j;
+		}
+		for (i = 0, j = 0; i < SUF_NUM; ++i) { // assign seqs and hash tables
+			w1[j].solid[w1[j].n_seqs] = solid[i];
+			w1[j].seqs[w1[j].n_seqs++] = i;
+			if (++j == n_threads) j = 0;
+		}
+		for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker1, w1 + j);
+		for (j = 0; j < n_threads; ++j) {
+			pthread_join(tid[j], 0);
+			free(w1[j].seqs); free(w1[j].solid);
+			cnt[0] += w1[j].cnt[0], cnt[1] += w1[j].cnt[1];
+		}
+		free(w1);
+		if (fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] collected %ld informative and %ld ambiguous k-mers in %.3f sec (%.3f wall clock)\n",
+					__func__, (long)cnt[1], (long)(cnt[0] - cnt[1]), cputime() - g_tc, realtime() - g_tr);
 	}
-	for (i = 0, j = 0; i < SUF_NUM; ++i) { // assign seqs and hash tables
-		w1[j].solid[w1[j].n_seqs] = solid[i];
-		w1[j].seqs[w1[j].n_seqs++] = i;
-		if (++j == n_threads) j = 0;
-	}
-	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker1, w1 + j);
-	for (j = 0; j < n_threads; ++j) {
-		pthread_join(tid[j], 0);
-		free(w1[j].seqs); free(w1[j].solid);
-		cnt[0] += w1[j].cnt[0], cnt[1] += w1[j].cnt[1];
-	}
-	free(w1);
-	if (fm_verbose >= 3)
-		fprintf(stderr, "[M::%s] collected %ld informative and %ld ambiguous k-mers in %.3f sec (%.3f wall clock)\n",
-				__func__, (long)cnt[1], (long)(cnt[0] - cnt[1]), cputime() - g_tc, realtime() - g_tr);
 
-	// initialize and launch worker2
-	g_tc = cputime(); g_tr = realtime();
-	w2 = calloc(n_threads, sizeof(worker2_t));
-	for (j = 0; j < n_threads; ++j)
-		w2[j].e = e, w2[j].solid = solid, w2[j].step = n_threads, w2[j].start = j, w2[j].opt = opt;
-	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
-	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
-	free(w2);
+	{ // initialize and launch worker2
+		gzFile fp;
+		kseq_t *seq;
+		worker2_t *w2;
+		int max_seqs;
+		uint64_t k, id = 0, pre_id = 0;
+		kstring_t out;
+
+		g_tc = cputime(); g_tr = realtime();
+		out.m = out.l = 0; out.s = 0;
+		fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
+		seq = kseq_init(fp);
+		w2 = calloc(n_threads, sizeof(worker2_t));
+		max_seqs = ((BATCH_SIZE < e->mcnt[1]/2? BATCH_SIZE : e->mcnt[1]/2) + n_threads - 1) / n_threads;
+		for (j = 0; j < n_threads; ++j) {
+			w2[j].e = e, w2[j].solid = solid, w2[j].opt = opt;
+			w2[j].seq  = calloc(max_seqs, sizeof(void*));
+			w2[j].qual = calloc(max_seqs, sizeof(void*));
+			w2[j].id   = calloc(max_seqs, 8);
+		}
+		for (;;) {
+			int ret;
+			worker2_t *w;
+			ret = kseq_read(seq);
+			if (ret < 0 || (id && id%BATCH_SIZE == 0)) {
+				for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
+				for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
+				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
+				for (k = pre_id; k < id; ++k) {
+					w = &w2[k%n_threads];
+					out.l = 0;
+					kputc('@', &out); kputw(w->id[w->n_seqs]>>1, &out); kputc('\n', &out);
+					kputs(w->seq[w->n_seqs], &out);
+					kputsn("\n+\n", 3, &out); kputs(w->qual[w->n_seqs], &out);
+					puts(out.s);
+					free(w->seq[w->n_seqs]); free(w->qual[w->n_seqs]);
+					++w->n_seqs;
+				}
+				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
+				if (fm_verbose >= 3)
+					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock)\n",
+							__func__, (long)id, cputime() - g_tc, realtime() - g_tr);
+				pre_id = id;
+			}
+			if (ret < 0) break;
+			w = &w2[id%n_threads];
+			w->seq[w->n_seqs] = strdup(seq->seq.s);
+			if (seq->qual.l == 0) { // if no quality, set to 20
+				w->qual[w->n_seqs] = malloc(seq->seq.l + 1);
+				for (j = 0; j < seq->seq.l; ++j)
+					w->qual[w->n_seqs][j] = 33 + 15;
+				w->qual[w->n_seqs][j] = 0;
+			} else w->qual[w->n_seqs] = strdup(seq->qual.s);
+			w->id[w->n_seqs++] = id<<1;
+			++id;
+		}
+		for (j = 0; j < n_threads; ++j) {
+			free(w2[j].seq); free(w2[j].qual); free(w2[j].id);
+		}
+		free(w2); free(out.s);
+		kseq_destroy(seq);
+		gzclose(fp);
+	}
 
 	// free
 	for (j = 0; j < SUF_NUM; ++j) kh_destroy(solid, solid[j]);

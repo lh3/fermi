@@ -43,7 +43,7 @@ int main_splitfa(int argc, char *argv[])
 	fp = strcmp(argv[1], "-")? gzopen(argv[1], "r") : gzdopen(fileno(stdin), "r");
 	seq = kseq_init(fp);
 	while (kseq_read(seq) >= 0) {
-		i = n_seqs % n_files;
+		i = (n_seqs>>1) % n_files;
 		kputc(seq->qual.l? '@' : '>', &ss[i]); kputsn(seq->name.s, seq->name.l, &ss[i]); kputc('\n', &ss[i]);
 		kputsn(seq->seq.s, seq->seq.l, &ss[i]); kputc('\n', &ss[i]);
 		if (seq->qual.l) {
@@ -272,9 +272,9 @@ int main_correct(int argc, char *argv[])
 			case 'S': opt.max_corr = atof(optarg); break;
 		}
 	}
-	if (optind + 1 > argc) {
+	if (optind + 2 > argc) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi correct [options] <reads.bwt>\n\n");
+		fprintf(stderr, "Usage:   fermi correct [options] <reads.fmd> <reads.fq>\n\n");
 		fprintf(stderr, "Options: -c FLOAT    expected coverage [%.1f]\n", opt.cov);
 		fprintf(stderr, "         -e FLOAT    expected per-base error rate [%.2f]\n", opt.err);
 		fprintf(stderr, "         -k INT      k-mer length [inferred from -c/-e]\n");
@@ -289,7 +289,7 @@ int main_correct(int argc, char *argv[])
 	fm_ec_genpar(e->mcnt[1]/2, (int)((double)e->mcnt[0] / e->mcnt[1] - 1 + 0.5), opt.cov, opt.err, &_w, &_T);
 	if (opt.w <= 0) opt.w = _w;
 	if (opt.T <= 0) opt.T = _T;
-	fm6_ec_correct(e, &opt, n_threads);
+	fm6_ec_correct(e, &opt, argv[optind+1], n_threads);
 	rld_destroy(e);
 	return 0;
 }
@@ -381,7 +381,7 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0, min_q = 3, trim_end_N = 1, min_tl = 2;
+	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0, min_q = 0, trim_end_N = 1, min_tl = 2;
 	int64_t i, sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
