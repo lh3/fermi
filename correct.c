@@ -243,7 +243,7 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int n_seqs, uint64_t *id
 		assert(k >= 0 && k < e->mcnt[1]);
 		seq_reverse(str.l, (uint8_t*)str.s); // str.s is reversed (but not complemented)
 		ec_get_changes(ec, k, &a);
-		for (j = 0; j < str.l; ++j) str.s[j] = "$ACGTN"[str.s[j]];
+		for (j = 0; j < str.l; ++j) str.s[j] = "$ACGTN"[(int)(str.s[j])];
 		for (j = 0; j < a.n; ++j) { // apply the changes
 			assert((a.a[j]&0xffff) < str.l);
 			str.s[a.a[j]&0xffff] = "$acgtn"[(a.a[j]>>16&3) + 1];
