@@ -270,9 +270,9 @@ int main_correct(int argc, char *argv[])
 			case 'A': opt.max_pre_mm = atoi(optarg); break;
 		}
 	}
-	if (optind + 1 > argc) {
+	if (optind + 2 > argc) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi correct [options] <reads.bwt>\n\n");
+		fprintf(stderr, "Usage:   fermi correct [options] <reads.fmd> <reads.fq>\n\n");
 		fprintf(stderr, "Options: -c FLOAT    expected coverage [%.1f]\n", opt.cov);
 		fprintf(stderr, "         -e FLOAT    expected per-base error rate [%.2f]\n", opt.err);
 		fprintf(stderr, "         -m INT      do not correct an error appearing more than INT times [%d]\n", opt.t);
@@ -286,7 +286,7 @@ int main_correct(int argc, char *argv[])
 	fm_ec_genpar(e->mcnt[1]/2, (int)((double)e->mcnt[0] / e->mcnt[1] - 1 + 0.5), opt.cov, opt.err, &_w, &_T);
 	if (opt.w <= 0) opt.w = _w;
 	if (opt.T <= 0) opt.T = _T;
-	fm6_ec_correct(e, &opt, n_threads);
+	fm6_ec_correct(e, &opt, argv[optind+1], n_threads);
 	rld_destroy(e);
 	return 0;
 }

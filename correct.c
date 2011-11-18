@@ -11,6 +11,10 @@
 #include "ksort.h"
 KSORT_INIT_GENERIC(uint32_t)
 
+#include <zlib.h>
+#include "kseq.h"
+KSEQ_INIT(gzFile, gzread)
+
 #define B_SHIFT 10
 #define B_MASK ((1U<<B_SHIFT)-1)
 
@@ -215,43 +219,38 @@ void fm_print_buffer(kstring_t *buf, volatile int *lock, int force)
 	*/
 }
 
-static void ec_fix(const rld_t *e, const errcorr_t *ec, int start, int step)
+static void ec_fix(const rld_t *e, const errcorr_t *ec, int n_seqs, uint64_t *id, char **seq, char **qual)
 {
-	int64_t i, k, sum;
-	int j;
-	kstring_t str, out;
+	int64_t k;
+	int i, j;
+	kstring_t str;
 	vec32_t a;
 
 	kv_init(a);
-	str.s = out.s = 0; str.l = str.m = out.l = out.m = 0;
-	for (i = start<<1, sum = 0; i < e->mcnt[1]; i += step<<1) {
+	str.s = 0; str.l = str.m = 0;
+	for (i = 0; i < n_seqs; ++i) {
+		int len = strlen(seq[i]);
 		a.n = 0;
-		k = fm_retrieve(e, i + 1, &str);
-		assert(k >= 0 && k < e->mcnt[1]);
+		k = fm_retrieve(e, id[i] + 1, &str);
+		if (fm_verbose >= 1 && len != str.l) {
+			fprintf(stderr, "[E::%s] index and sequence are mismatch for %ld\n", __func__, (long)id[i]);
+			abort();
+		}
 		ec_get_changes(ec, k, &a);
 		for (j = 0; j < a.n; ++j) // lift to the forward strand
 			a.a[j] = (str.l - 1 - (a.a[j]&0xffff)) | ((3 - (a.a[j]>>16&3)) << 16);
-		k = fm_retrieve(e, i, &str);
+		k = fm_retrieve(e, id[i], &str);
 		assert(k >= 0 && k < e->mcnt[1]);
 		seq_reverse(str.l, (uint8_t*)str.s); // str.s is reversed (but not complemented)
 		ec_get_changes(ec, k, &a);
+		for (j = 0; j < str.l; ++j) str.s[j] = "$ACGTN"[str.s[j]];
 		for (j = 0; j < a.n; ++j) { // apply the changes
 			assert((a.a[j]&0xffff) < str.l);
-			str.s[a.a[j]&0xffff] = (a.a[j]>>16&3) + 1;
+			str.s[a.a[j]&0xffff] = "$acgtn"[(a.a[j]>>16&3) + 1];
 		}
-		kputc('>', &out); kputl((long)(i>>1), &out); kputc('\n', &out);
-		ks_resize(&out, out.l + str.l + 2);
-		for (j = 0; j < str.l; ++j)
-			out.s[out.l++] = "$ACGTN"[(int)str.s[j]];
-		out.s[out.l++] = '\n';
-		out.s[out.l] = 0;
-		fm_print_buffer(&out, &g_stdout_lock, 0);
-		++sum;
-		if (fm_verbose >= 3 && sum % 1000000 == 0)
-			fprintf(stderr, "[M::%s@%d] processed %ld sequences\n", __func__, start, (long)sum);
+		strcpy(seq[i], str.s);
 	}
-	fm_print_buffer(&out, &g_stdout_lock, 1);
-	free(a.a); free(str.s); free(out.s);
+	free(a.a); free(str.s);
 }
 
 #define MAX_DEPTH 5
@@ -276,33 +275,35 @@ static void *worker1(void *data)
 		ec_collect(w->e, w->opt, MAX_DEPTH, seq, w->ec);
 		for (j = 0; j < MAX_DEPTH; ++j) seq[j] = "$ACGTN"[(int)seq[j]];
 		seq[MAX_DEPTH] = 0;
-		if (fm_verbose >= 4)
+		if (0 && fm_verbose >= 4)
 			fprintf(stderr, "[M::%s@%d] collected errors for suffix '%s' (accumulative real time: %.3f; CPU: %.3f)\n",
 					__func__, w->tid, seq, realtime() - g_tr, cputime() - g_tc);
 	}
 	return 0;
 }
 
+#define BATCH_SIZE 1000000
+
 typedef struct {
 	const rld_t *e;
 	const errcorr_t *ec;
-	int start, step;
+	int n_seqs;
+	char **seq, **qual;
+	uint64_t *id; // this wastes memory, but should not be a big deal
 } worker2_t;
 
 static void *worker2(void *data)
 {
 	worker2_t *w = (worker2_t*)data;
-	ec_fix(w->e, w->ec, w->start, w->step);
+	ec_fix(w->e, w->ec, w->n_seqs, w->id, w->seq, w->qual);
 	return 0;
 }
 
-int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
+int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads)
 {
 	int j;
 	int64_t i, avg_bucket_size, sum;
 	errcorr_t *ec;
-	worker1_t *w1;
-	worker2_t *w2;
 	pthread_t *tid;
 	pthread_attr_t attr;
 
@@ -323,36 +324,90 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, int n_threads)
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-	// initialize and launch worker1
-	g_tc = cputime(); g_tr = realtime();
-	w1 = calloc(n_threads, sizeof(worker1_t));
-	for (j = 0; j < n_threads; ++j)
-		w1[j].ec = ec, w1[j].e = e, w1[j].opt = opt, w1[j].tid = j;
-	for (i = 0, j = 0; i < MAX_SEQS; ++i) { // assign seqs
-		w1[j].seqs[w1[j].n_seqs++] = i;
-		if (++j == n_threads) j = 0;
+	{ // initialize and launch worker1
+		worker1_t *w1;
+		g_tc = cputime(); g_tr = realtime();
+		w1 = calloc(n_threads, sizeof(worker1_t));
+		for (j = 0; j < n_threads; ++j)
+			w1[j].ec = ec, w1[j].e = e, w1[j].opt = opt, w1[j].tid = j;
+		for (i = 0, j = 0; i < MAX_SEQS; ++i) { // assign seqs
+			w1[j].seqs[w1[j].n_seqs++] = i;
+			if (++j == n_threads) j = 0;
+		}
+		for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker1, w1 + j);
+		for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
+		free(w1);
+		// sort the "ec" arrays for binary search; can be multi-threaded, but should be fast enough with a single thread
+		for (i = 0, sum = 0; i < ec->n; ++i) {
+			ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
+			sum += ec->b[i].n;
+		}
+		if (fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] collected %ld errors in %.3f CPU seconds (%.3f wall clock)\n", __func__, (long)sum, cputime() - g_tc, realtime() - g_tr);
 	}
-	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker1, w1 + j);
-	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
-	free(w1);
-	// sort the "ec" arrays for binary search; can be multi-threaded, but should be fast enough with a single thread
-	for (i = 0, sum = 0; i < ec->n; ++i) {
-		ks_introsort(uint32_t, ec->b[i].n, ec->b[i].a);
-		sum += ec->b[i].n;
-	}
-	if (fm_verbose >= 3)
-		fprintf(stderr, "[M::%s] collected %ld errors in %.3f CPU seconds (%.3f wall clock)\n", __func__, (long)sum, cputime() - g_tc, realtime() - g_tr);
 
-	// initialize and launch worker2
-	g_tc = cputime(); g_tr = realtime();
-	w2 = calloc(n_threads, sizeof(worker2_t));
-	for (j = 0; j < n_threads; ++j)
-		w2[j].e = e, w2[j].ec = ec, w2[j].step = n_threads, w2[j].start = j;
-	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
-	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
-	free(w2);
-	if (fm_verbose >= 3)
-		fprintf(stderr, "[M::%s] corrected errors in %.3f CPU seconds (%.3f wall clock)\n", __func__, cputime() - g_tc, realtime() - g_tr);
+	{ // initialize and launch worker2
+		gzFile fp;
+		kseq_t *seq;
+		worker2_t *w2;
+		int max_seqs;
+		uint64_t k, id = 0;
+		kstring_t out;
+
+		g_tc = cputime(); g_tr = realtime();
+		out.m = out.l = 0; out.s = 0;
+		fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
+		seq = kseq_init(fp);
+		w2 = calloc(n_threads, sizeof(worker2_t));
+		max_seqs = ((BATCH_SIZE < e->mcnt[1]/2? BATCH_SIZE : e->mcnt[1]/2) + n_threads - 1) / n_threads;
+		for (j = 0; j < n_threads; ++j) {
+			w2[j].e = e, w2[j].ec = ec;
+			w2[j].seq  = calloc(max_seqs, sizeof(void*));
+			w2[j].qual = calloc(max_seqs, sizeof(void*));
+			w2[j].id   = calloc(max_seqs, 8);
+		}
+		for (;;) {
+			int ret;
+			worker2_t *w;
+			ret = kseq_read(seq);
+			if (ret < 0 || (id && id%BATCH_SIZE == 0)) {
+				uint64_t pre_id = id >= BATCH_SIZE? (id%BATCH_SIZE - 1) * BATCH_SIZE : 0;
+				for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
+				for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
+				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
+				for (k = pre_id; k < id; ++k) {
+					w = &w2[k%n_threads];
+					out.l = 0;
+					kputc('>', &out); kputw(w->id[w->n_seqs]>>1, &out); kputc('\n', &out);
+					kputs(w->seq[w->n_seqs], &out);
+					puts(out.s);
+					free(w->seq[w->n_seqs]); free(w->qual[w->n_seqs]);
+					++w->n_seqs;
+				}
+				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
+				if (fm_verbose >= 3)
+					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock)\n",
+							__func__, (long)id, cputime() - g_tc, realtime() - g_tr);
+			}
+			if (ret == -1) break;
+			w = &w2[id%n_threads];
+			w->seq[w->n_seqs] = strdup(seq->seq.s);
+			if (seq->qual.l == 0) { // if no quality, set to 20
+				w->qual[w->n_seqs] = malloc(seq->seq.l + 1);
+				for (j = 0; j < seq->seq.l; ++j)
+					w->qual[w->n_seqs][j] = 33 + 15;
+				w->qual[w->n_seqs][j] = 0;
+			} else w->qual[w->n_seqs] = strdup(seq->qual.s);
+			w->id[w->n_seqs++] = id<<1;
+			++id;
+		}
+		for (j = 0; j < n_threads; ++j) {
+			free(w2[j].seq); free(w2[j].qual); free(w2[j].id);
+		}
+		free(w2); free(out.s);
+		kseq_destroy(seq);
+		gzclose(fp);
+	}
 
 	// free
 	free(tid);
