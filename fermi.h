@@ -26,7 +26,7 @@ struct __rld_t; // defined in rld.h
 
 typedef struct {
 	int T, w, min_ratio;
-	float cov, err, min_cov, max_corr;
+	float cov, err, max_corr;
 } fmecopt_t;
 
 typedef struct {

@@ -257,8 +257,8 @@ int main_correct(int argc, char *argv[])
 	rld_t *e;
 	fmecopt_t opt;
 	opt.cov = 30.0; opt.T = opt.w = 0; opt.err = 0.01;
-	opt.max_corr = 0.25; opt.min_cov = 0.75; opt.min_ratio = 5;
-	while ((c = getopt(argc, argv, "Mt:k:T:c:e:v:r:C:S:")) >= 0) {
+	opt.max_corr = 0.25; opt.min_ratio = 5;
+	while ((c = getopt(argc, argv, "Mt:k:T:c:e:v:r:S:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
 			case 'c': opt.cov = atof(optarg); break;
@@ -268,7 +268,6 @@ int main_correct(int argc, char *argv[])
 			case 'T': opt.T = atoi(optarg); break;
 			case 'v': fm_verbose = atoi(optarg); break;
 			case 'r': opt.min_ratio = atoi(optarg); break;
-			case 'C': opt.min_cov  = atof(optarg); break;
 			case 'S': opt.max_corr = atof(optarg); break;
 		}
 	}
@@ -280,7 +279,6 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "         -k INT      k-mer length [inferred from -c/-e]\n");
 		fprintf(stderr, "         -T INT      threshold for a correct base [inferred from -c/-e]\n");
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
-		fprintf(stderr, "         -C FLOAT    drop if the solid-mer coverage below FLOAT [%.2f]\n", opt.min_cov);
 		fprintf(stderr, "         -S FLOAT    drop if the fraction of corrected bases above FLOAT [%.2f]\n", opt.max_corr);
 		fprintf(stderr, "         -r INT      min max_width:2nd_max_width (advanced) [%d]\n\n", opt.min_ratio);
 		return 1;

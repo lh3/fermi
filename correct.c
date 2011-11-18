@@ -126,18 +126,15 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 	free(stack.a); free(str.s);
 }
 
-static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, int *_cov)
+static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s)
 {
-	int i, l, cnt = 0, shift = (opt->w - 1) * 2, mod = 0, beg, end, cov;
+	int i, l, cnt = 0, shift = (opt->w - 1) * 2, mod = 0;
 	uint64_t x;
 	if (s->l <= opt->w) return -1; // correction failed
-	beg = end = s->l; cov = 0;
 	for (i = s->l - 1, l = 0, x = 0; i >= 0; --i) {
 		if (s->s[i] == 5) {
 			if (mod == 0) {
 				x = 0, l = 0;
-				cov += end - beg;
-				beg = end = i;
 				continue;
 			} else s->s[i] = mod;
 		}
@@ -153,41 +150,29 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, in
 				k = kh_get(solid, h, x>>SUF_SHIFT<<2);
 				++cnt;
 			}
-			if (k == kh_end(h)) {
-				mod = 0;
-				cov += end - beg;
-				end = beg = i;
-			} else {
-				mod = (kh_val(h, k)>>3 >= opt->min_ratio && i && s->s[i-1] != (kh_key(h, k)&3) + 1)? (kh_key(h, k)&3) + 1 : 0;
-				beg = i;
-			}
+			mod = (k != kh_end(h) && kh_val(h, k)>>3 >= opt->min_ratio && i && s->s[i-1] != (kh_key(h, k)&3) + 1)? (kh_key(h, k)&3) + 1 : 0;
 		} else mod = 0;
 	}
-	*_cov = (cov += end - beg);
-	assert(*_cov <= s->l);
 	return cnt;
 }
 
 static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual)
 {
 	extern unsigned char seq_nt6_table[];
-	int i, j, cov[2], cnt[2];
+	int i, j, cnt[2];
 	kstring_t str;
 
 	str.s = 0; str.l = str.m = 0;
 	for (i = 0; i < n_seqs; ++i) {
-		double coverage;
 		str.l = 0;
 		kputs(seq[i], &str);
 		for (j = 0; j < str.l; ++j)
 			str.s[j] = seq_nt6_table[(int)str.s[j]];
 		seq_revcomp6(str.l, (uint8_t*)str.s);
-		cnt[0] = ec_fix1(opt, solid, &str, &cov[0]);
+		cnt[0] = ec_fix1(opt, solid, &str);
 		if (cnt[0] < 0) continue;
 		seq_revcomp6(str.l, (uint8_t*)str.s);
-		cnt[1] = ec_fix1(opt, solid, &str, &cov[1]);
-		coverage = (double)(cov[0] > cov[1]? cov[0] : cov[1]) / str.l;
-		if (coverage >= opt->min_cov && (double)(cnt[0] + cnt[1]) / str.l <= opt->max_corr);
+		cnt[1] = ec_fix1(opt, solid, &str);
 		for (j = 0; j < str.l; ++j)
 			seq[i][j] = seq_nt6_table[(int)seq[i][j]] == str.s[j]? toupper(seq[i][j]) : "$acgtn"[(int)str.s[j]];
 	}
