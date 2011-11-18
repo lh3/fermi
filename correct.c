@@ -102,7 +102,7 @@ static void ec_save_changes(const rld_t *e, const fmintv_t *p, kstring_t *s, err
 			int i, mm, l = (int)(ik.info&0xffff) + 1;
 			if (l > oldl) l = oldl;
 			for (i = mm = 0; i < l; ++i)
-				if (s->s[i] != s->s[i + oldl]) ++mm;
+				if (s->s[i] != 5 && s->s[i] != s->s[i + oldl]) ++mm;
 			//for(i=0;i<l;++i)putchar("$ACGTN"[(int)s->s[i]]);printf(" %d %d %d\n",oldl,(int)(ik.info&0xffff)+1,mm); for (i=0;i<l;++i)putchar(s->s[i+oldl]==s->s[i]?'.':"$ACGTN"[(int)s->s[i+oldl]]);putchar('\n');
 			if (mm <= max_pre_mm || mm <= MM_RATIO * l) {
 				for (i = 0; i < l; ++i)
@@ -201,22 +201,9 @@ static void ec_get_changes(const errcorr_t *ec, int64_t k, vec32_t *a)
 }
 
 void fm_print_buffer(kstring_t *buf, volatile int *lock, int force)
-{ // note that according to the POSIX thread specification, fputs() is thread safe.
+{
 	fputs(buf->s, stdout); // NB: this segfaults when buf->s == 0
 	buf->s[0] = 0; buf->l = 0;
-	/*
-	static const int MAX_OUT_BUF = 0x10000;
-	if (force || buf->l >= MAX_OUT_BUF) { // lock stdout and output
-		while (__sync_lock_test_and_set(lock, 1));
-		fputs(buf->s, stdout);
-		__sync_lock_release(lock);
-		buf->l = 0;
-	} else if (buf->l >= MAX_OUT_BUF>>2 && __sync_bool_compare_and_swap(lock, 0, 1)) {
-		fputs(buf->s, stdout);
-		__sync_lock_release(lock);
-		buf->l = 0;
-	}
-	*/
 }
 
 static void ec_fix(const rld_t *e, const errcorr_t *ec, int n_seqs, uint64_t *id, char **seq, char **qual)
@@ -233,7 +220,7 @@ static void ec_fix(const rld_t *e, const errcorr_t *ec, int n_seqs, uint64_t *id
 		a.n = 0;
 		k = fm_retrieve(e, id[i] + 1, &str);
 		if (fm_verbose >= 1 && len != str.l) {
-			fprintf(stderr, "[E::%s] index and sequence are mismatch for %ld\n", __func__, (long)id[i]);
+			fprintf(stderr, "[E::%s] index and sequence mismatching for %ld: %d!=%d\n", __func__, (long)id[i], str.l, len);
 			abort();
 		}
 		ec_get_changes(ec, k, &a);
@@ -351,7 +338,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 		kseq_t *seq;
 		worker2_t *w2;
 		int max_seqs;
-		uint64_t k, id = 0;
+		uint64_t k, id = 0, pre_id = 0;
 		kstring_t out;
 
 		g_tc = cputime(); g_tr = realtime();
@@ -371,7 +358,6 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 			worker2_t *w;
 			ret = kseq_read(seq);
 			if (ret < 0 || (id && id%BATCH_SIZE == 0)) {
-				uint64_t pre_id = id >= BATCH_SIZE? (id%BATCH_SIZE - 1) * BATCH_SIZE : 0;
 				for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
 				for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
@@ -388,8 +374,9 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 				if (fm_verbose >= 3)
 					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock)\n",
 							__func__, (long)id, cputime() - g_tc, realtime() - g_tr);
+				pre_id = id;
 			}
-			if (ret == -1) break;
+			if (ret < 0) break;
 			w = &w2[id%n_threads];
 			w->seq[w->n_seqs] = strdup(seq->seq.s);
 			if (seq->qual.l == 0) { // if no quality, set to 20
