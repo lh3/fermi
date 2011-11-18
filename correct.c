@@ -366,7 +366,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 					out.l = 0;
 					kputc('@', &out); kputw(w->id[w->n_seqs]>>1, &out); kputc('\n', &out);
 					kputs(w->seq[w->n_seqs], &out);
-					kputsn("+\n", 2, &out); kputs(w->qual[w->n_seqs], &out);
+					kputsn("\n+\n", 3, &out); kputs(w->qual[w->n_seqs], &out);
 					puts(out.s);
 					free(w->seq[w->n_seqs]); free(w->qual[w->n_seqs]);
 					++w->n_seqs;
