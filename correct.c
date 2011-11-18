@@ -158,15 +158,15 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 				if (ok[c].x[2] >= opt->T) ++np;
 				else if (ok[c].x[2]) ++nn;
 			}
-			if (np == 1 && nn) { // has one good branch and at least one bad branch(es)
+			if (np == 1 && (ok[5].x[2] || nn)) { // has one good branch and at least one bad branch(es)
 				int b;
 				for (b = 1; b <= 4; ++b) // base to correct to
 					if (ok[b].x[2] >= opt->T) break;
-				str.l = 0; kputc(b, &str); ec_retrieve(e, &ok[b], opt->T, &str); // sequence on the good branch
+				str.l = 0; kputc(b, &str); ec_retrieve(e, &ok[b], opt->T - 1, &str); // sequence on the good branch
 				for (c = 1; c <= 4; ++c) // to fix bad branch(es)
 					if (ok[c].x[2] && ok[c].x[2] < opt->T && ok[c].x[2] <= opt->t && (double)ok[c].x[2] / ok[b].x[2] <= drop_ratio)
 						ec_save_changes(e, &ok[c], &str, ec, &stack, opt->max_pre_mm);
-			} else if (np == 2); //	fprintf(stderr, "[E::%s] Not implemented!!!\n", __func__); // FIXME: perhaps this is necessary
+			} // else if (np == 2) fprintf(stderr, "[E::%s] Not implemented!!!\n", __func__); // FIXME: perhaps this is necessary
 		} else {
 			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases are skipped
 				if (ok[c].x[2] >= opt->T + 1) {
@@ -364,8 +364,9 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 				for (k = pre_id; k < id; ++k) {
 					w = &w2[k%n_threads];
 					out.l = 0;
-					kputc('>', &out); kputw(w->id[w->n_seqs]>>1, &out); kputc('\n', &out);
+					kputc('@', &out); kputw(w->id[w->n_seqs]>>1, &out); kputc('\n', &out);
 					kputs(w->seq[w->n_seqs], &out);
+					kputsn("+\n", 2, &out); kputs(w->qual[w->n_seqs], &out);
 					puts(out.s);
 					free(w->seq[w->n_seqs]); free(w->qual[w->n_seqs]);
 					++w->n_seqs;
