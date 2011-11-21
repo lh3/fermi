@@ -162,12 +162,12 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 
 #define TIMES_FACTOR 10
 #define DIFF_FACTOR  13
-#define MISS_PENALTY 50
+#define MISS_PENALTY 40
 #define MAX_HEAP     64
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
-	int i, l, shift = (opt->w - 1) << 1, n_rst = 0;
+	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, first = 0;
 	fm128_t z, rst[2];
 
 	if (s->l <= opt->w) return -1;
@@ -201,6 +201,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		h = solid[z.x & SUF_MASK];
 		k = kh_get(solid, h, z.x>>SUF_SHIFT<<2);
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
+			first = 1;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
 				int tmp, score, max = (kh_val(h, k)&7)? (kh_val(h, k)&7) * (kh_val(h, k)>>3) : kh_val(h, k)>>3;
 				score = (max - (kh_val(h, k)&7)) * DIFF_FACTOR; // score for the best stack path
@@ -214,14 +215,21 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > qual[i]-33)
 					save_state(fa, &z, kh_key(h, k)&3, qual[i]-33, shift); // the stack path
 			} else save_state(fa, &z, s->s[i] - 1, 0, shift);
-		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - (qual[i] - 33), shift);
+		} else {
+			int score = first? MISS_PENALTY - (qual[i] - 33) : 0;
+			save_state(fa, &z, s->s[i] - 1, score > 0? score : 0, shift);
+		}
 	}
 	assert(n_rst == 1 || n_rst == 2);
 	if (rst[0].y>>48 == 0) return 0x10000000; // no corrections are made
 	// backtrack
 	i = 0; l = (uint32_t)(rst[0].y>>16);
 	while (l) {
-		s->s[i++] = (fa->stack.a[l]>>28) + 1;
+		if (s->s[i] - 1 != fa->stack.a[l]>>28) {
+			s->s[i] = (fa->stack.a[l]>>28) + 1;
+			qual[i] = 34; // reduce the base quality
+		}
+		++i;
 		l = fa->stack.a[l]<<4>>4;
 	}
 	return rst[0].y>>48 | (n_rst == 2? (rst[1].y>>48) - (rst[0].y>>48) : 0x1000)<<16;
