@@ -149,12 +149,15 @@ typedef struct {
 	fm32_v stack;
 } fixaux_t;
 
-static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, int shift)
+static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, int shift, int has_match)
 {
 	fm128_t w;
 	if (score < 0) score = 0;
+	if (c >= 4) c = 0;
 	w.x = (uint64_t)c<<shift | p->x>>2;
-	w.y = (uint64_t)((p->y>>48) + score)<<48 | fa->stack.n<<16 | ((p->y&0xffff) - 1);
+	// the structure of w.y - score:15, k_match:1, pos_in_stack:32, seq_pos:16
+	w.y = (uint64_t)((p->y>>49) + score)<<49 | (uint64_t)has_match<<48 | fa->stack.n<<16 | ((p->y&0xffff) - 1);
+	// structure of a heap element - base:4, parent_pos_in_stack:28
 	kv_push(uint32_t, fa->stack, c<<28 | (uint32_t)(p->y>>16));
 	kv_push(fm128_t, fa->heap, w);
 	ks_heapup_128y(fa->heap.n, fa->heap.a);
@@ -167,10 +170,10 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
-	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, first = 0, qsum;
+	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum;
 	fm128_t z, rst[2];
 
-	if (s->l <= opt->w) return -1;
+	if (s->l <= opt->w) return 0xffff;
 	// get the initial k-mer
 	fa->heap.n = fa->stack.n = 0;
 	z.x = z.y = 0;
@@ -201,7 +204,6 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		h = solid[z.x & SUF_MASK];
 		k = kh_get(solid, h, z.x>>SUF_SHIFT<<2);
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
-			first = 1;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
 				int tmp, score, max = (kh_val(h, k)&7)? (kh_val(h, k)&7) * (kh_val(h, k)>>3) : kh_val(h, k)>>3;
 				score = (max - (kh_val(h, k)&7)) * DIFF_FACTOR; // score for the best stack path
@@ -209,19 +211,17 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 				if (tmp < score) score = tmp;
 				tmp = (7 - (kh_val(h, k)&7)) * DIFF_FACTOR;
 				if (tmp < score) score = tmp;
+				if (score < 1) score = 1;
 				// if we have too many possibilities, keep the better path among the two
 				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || score < qual[i]-33))
-					save_state(fa, &z, s->s[i] - 1, score, shift); // the read path
+					save_state(fa, &z, s->s[i] - 1, score, shift, 1); // the read path
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > qual[i]-33)
-					save_state(fa, &z, kh_key(h, k)&3, qual[i]-33, shift); // the stack path
-			} else save_state(fa, &z, s->s[i] - 1, 0, shift);
-		} else {
-			int score = first? MISS_PENALTY - (qual[i] - 33) : 0;
-			save_state(fa, &z, s->s[i] - 1, score > 0? score : 0, shift);
-		}
+					save_state(fa, &z, kh_key(h, k)&3, qual[i]>33? qual[i]-33 : 1, shift, 1); // the stack path
+			} else save_state(fa, &z, s->s[i] - 1, 0, shift, 1);
+		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - (qual[i] - 33), shift, 0);
 	}
 	assert(n_rst == 1 || n_rst == 2);
-	if (rst[0].y>>48 == 0) return 0x10000000; // no corrections are made
+	if (rst[0].y>>49 == 0) return 0xfff<<18 | 1<<16; // no corrections are made
 	// backtrack
 	i = 0; qsum = 0; l = (uint32_t)(rst[0].y>>16);
 	while (l) {
@@ -233,9 +233,10 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		++i;
 		l = fa->stack.a[l]<<4>>4;
 	}
-	l = n_rst == 2? (rst[1].y>>48) - (rst[0].y>>48) : 0xfff;
+	l = n_rst == 2? (rst[1].y>>49) - (rst[0].y>>49) : 0xfff;
 	if (l > 0xfff) l = 0xfff;
-	return qsum | l<<18;
+	// return value: score_diff:14, end_k_match:2, sum_modified_qual:16
+	return qsum | (rst[0].y>>48&1)<<16 | l<<18;
 }
 
 static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
@@ -261,18 +262,23 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 			uint64_t k, l;
 			ret1 = ec_fix1(opt, solid, &str, qual[i], &fa);
 			info[i] = ((ret0&0xffff) + (ret1&0xffff)) | (ret0>>18 < ret1>>18? ret0>>18 : ret1>>18)<<18;
-			// FIXME: the following can be accelerated because we may know if the last k-mer has a match
-			for (j = 0; j < opt->w; ++j)
-				if (str.s[j] == 5) break;
-			if (j == opt->w) {
-				fm_backward_search(e, opt->w, (uint8_t*)str.s, &k, &l);
-				if (l - k > 1) info[i] |= 1<<16;
+			info[i] |= ((ret0>>16)&1)<<17 | ((ret1>>16)&1)<<16;
+			// check if the first and last k-mer is unique
+			if ((info[i]>>16&1) == 0) {
+				for (j = 0; j < opt->w; ++j)
+					if (str.s[j] == 5) break;
+				if (j == opt->w) {
+					fm_backward_search(e, opt->w, (uint8_t*)str.s, &k, &l);
+					if (l - k > 1) info[i] |= 1<<16;
+				}
 			}
-			for (j = str.l - opt->w; j < str.l; ++j)
-				if (str.s[j] == 5) break;
-			if (j == str.l) {
-				fm_backward_search(e, opt->w, (uint8_t*)str.s + (str.l - opt->w), &k, &l);
-				if (l - k > 1) info[i] |= 1<<17;
+			if ((info[i]>>17&1) == 0) {
+				for (j = str.l - opt->w; j < str.l; ++j)
+					if (str.s[j] == 5) break;
+				if (j == str.l) {
+					fm_backward_search(e, opt->w, (uint8_t*)str.s + (str.l - opt->w), &k, &l);
+					if (l - k > 1) info[i] |= 1<<17;
+				}
 			}
 		} else info[i] = ret0;
 		for (j = 0; j < str.l; ++j)
@@ -330,9 +336,9 @@ static void *worker2(void *data)
  * The key portal *
  ******************/
 
-int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads)
+int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_threads)
 {
-	int j;
+	int j, n_threads;
 	int64_t i, cnt[2];
 	shash_t **solid;
 	pthread_t *tid;
@@ -343,8 +349,8 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 		return 1;
 	}
 	// initialize "solid" and "tid"
-	assert(n_threads <= SUF_NUM);
-	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
+	assert(_n_threads <= SUF_NUM);
+	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	solid = calloc(SUF_NUM, sizeof(void*));
@@ -354,6 +360,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 	{ // initialize and launch worker1
 		worker1_t *w1;
 		int max_seqs;
+		n_threads = _n_threads%2? _n_threads : _n_threads - 1;
 		g_tc = cputime(); g_tr = realtime();
 		w1 = calloc(n_threads, sizeof(worker1_t));
 		max_seqs = (SUF_NUM + n_threads - 1) / n_threads;
@@ -387,6 +394,8 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 		uint64_t k, id = 0, pre_id = 0;
 		kstring_t out;
 
+		//n_threads = _n_threads;
+		n_threads = 1;
 		g_tc = cputime(); g_tr = realtime();
 		out.m = out.l = 0; out.s = 0;
 		fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
