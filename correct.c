@@ -9,13 +9,12 @@
 #include "rld.h"
 #include "kvec.h"
 #include "kstring.h"
-#include "ksort.h"
-KSORT_INIT_GENERIC(uint32_t)
 
 #define SUF_LEN   8
 #define SUF_SHIFT (SUF_LEN<<1)
 #define SUF_NUM   (1<<SUF_SHIFT)
 #define SUF_MASK  (SUF_NUM-1)
+#define MAX_KMER  (SUF_LEN + 15)
 
 #include <zlib.h>
 #include "kseq.h"
@@ -32,6 +31,9 @@ static double g_tc, g_tr;
 
 void seq_reverse(int l, unsigned char *s);
 void seq_revcomp6(int l, unsigned char *s);
+void ks_introsort_128y(size_t n, fm128_t *a); // in msg.c
+void ks_heapup_128y(size_t n, fm128_t *a);
+void ks_heapdown_128y(size_t i, size_t n, fm128_t *a);
 
 static inline double genpar_aux(double x, int64_t k)
 { // compute 1-(1-x)^k, where x<<1 and k is not so large
@@ -105,7 +107,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 			if (max < opt->T) continue;
 			++cnt[0];
 			rest = ik.x[2] - max;
-			r = rest == 0? 31. : (double)max / rest;
+			r = rest == 0? max : (double)max / rest;
 			if (r > 31.) r = 31.;
 			if (rest <= 7 && r >= opt->T) ++cnt[1];
 			for (i = 0, key = 0; i < str.l; ++i) key = (uint32_t)str.s[i]<<shift | key>>2;
@@ -126,34 +128,82 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 	free(stack.a); free(str.s);
 }
 
-static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s)
+typedef struct {
+	fm128_v heap;
+	fm32_v stack;
+} fixaux_t;
+
+static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, int shift)
 {
-	int i, l, cnt = 0, shift = (opt->w - 1) * 2, mod = 0;
-	uint64_t x;
-	if (s->l <= opt->w) return -1; // correction failed
-	for (i = s->l - 1, l = 0, x = 0; i >= 0; --i) {
-		if (s->s[i] == 5) {
-			if (mod == 0) {
-				x = 0, l = 0;
-				continue;
-			} else s->s[i] = mod;
+	fm128_t w;
+	if (score < 0) score = 0;
+	w.x = (uint64_t)c<<shift | p->x>>2;
+	w.y = (uint64_t)((p->y>>48) + score)<<48 | fa->stack.n<<16 | ((p->y&0xffff) - 1);
+	kv_push(uint32_t, fa->stack, c<<28 | (uint32_t)(p->y>>16));
+	kv_push(fm128_t, fa->heap, w);
+	ks_heapup_128y(fa->heap.n, fa->heap.a);
+}
+
+#define TIMES_FACTOR 10
+#define DIFF_FACTOR  13
+#define MISS_PENALTY 50
+#define MAX_HEAP     64
+
+static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
+{
+	int i, l, shift = (opt->w - 1) << 1, n_rst = 0;
+	fm128_t z, rst[2];
+
+	if (s->l <= opt->w) return -1;
+	// get the initial k-mer
+	fa->heap.n = fa->stack.n = 0;
+	z.x = z.y = 0;
+	for (i = s->l - 1, l = 0; i > 0 && l < opt->w; --i)
+		if (s->s[i] == 5) z.x = 0, l = 0;
+		else z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2, ++l;
+	if (i == 0) return -1; // no good k-mer
+	// the first element in the heap
+	kv_push(uint32_t, fa->stack, 0);
+	z.y = i;
+	kv_push(fm128_t, fa->heap, z);
+	// traverse
+	while (fa->heap.n) {
+		const shash_t *h;
+		khint_t k;
+		int parent;
+		// get the best so far
+		z = fa->heap.a[0];
+		fa->heap.a[0] = kv_pop(fa->heap);
+		ks_heapdown_128y(0, fa->heap.n, fa->heap.a);
+		if ((z.y&0xffff) == 0) {
+			rst[n_rst++] = z;
+			if (n_rst == 2) break;
+			continue;
 		}
-		x = (uint64_t)(s->s[i]-1)<<shift | x>>2;
-		if (++l >= opt->w) {
-			khint_t k;
-			const shash_t *h = solid[x & SUF_MASK];
-			k = kh_get(solid, h, x>>SUF_SHIFT<<2);
-//			if (fm_verbose >= 10) fprintf(stderr, "%d\t%c\t%d\t%c\t%c\n", i, "$ACGTN"[s->s[i]], k == kh_end(h)?-1:kh_val(h,k)>>3, "$ACGTN"[mod], k==kh_end(h)?'?':"ACGTN"[kh_key(h, k)&3]);
-			if (k == kh_end(h) && mod) {
-				s->s[i] = mod;
-				x = (x & ((1LLU<<shift) - 1)) | (uint64_t)(mod - 1) << shift;
-				k = kh_get(solid, h, x>>SUF_SHIFT<<2);
-				++cnt;
-			}
-			mod = (k != kh_end(h) && kh_val(h, k)>>3 >= opt->min_ratio && i && s->s[i-1] != (kh_key(h, k)&3) + 1)? (kh_key(h, k)&3) + 1 : 0;
-		} else mod = 0;
+		i = (z.y&0xffff) - 1; parent = (int)(z.y>>16);
+		// check the hash table
+		h = solid[z.x & SUF_MASK];
+		k = kh_get(solid, h, z.x>>SUF_SHIFT<<2);
+		if (k != kh_end(h)) {
+			if (s->s[i] != (kh_key(h, k)&3) + 1) {
+				int tmp, score, max = (kh_val(h, k)&7)? (kh_val(h, k)&7) * (kh_val(h, k)>>3) : kh_val(h, k)>>3;
+				score = (max - (kh_val(h, k)&7)) * DIFF_FACTOR;
+				tmp = (kh_val(h, k)&7)? (kh_val(h, k)>>3) * TIMES_FACTOR : 10000;
+				if (tmp < score) score = tmp;
+				if (fa->heap.n + 2 <= MAX_HEAP || score < qual[i]-33)
+					save_state(fa, &z, s->s[i] - 1, score, shift);
+				if (fa->heap.n + 2 <= MAX_HEAP || score > qual[i]-33)
+					save_state(fa, &z, kh_key(h, k)&3, qual[i]-33, shift);
+			} else save_state(fa, &z, s->s[i] - 1, 0, shift);
+		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - (qual[i] - 33), shift);
 	}
-	return cnt;
+	if (rst[0].y>>48 == 0) return 0; // no corrections are made
+	i = 0; l = (uint32_t)(rst[0].y>>16);
+	while (l) {
+		s->s[i++] = (fa->stack.a[l]>>28) + 1;
+		l = fa->stack.a[l]<<4>>4;
+	}
+	return rst[0].y>>48;
 }
 
 static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual)
@@ -161,7 +211,9 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 	extern unsigned char seq_nt6_table[];
 	int i, j, cnt[2];
 	kstring_t str;
+	fixaux_t fa;
 
+	memset(&fa, 0, sizeof(fixaux_t));
 	str.s = 0; str.l = str.m = 0;
 	for (i = 0; i < n_seqs; ++i) {
 		str.l = 0;
@@ -169,14 +221,17 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 		for (j = 0; j < str.l; ++j)
 			str.s[j] = seq_nt6_table[(int)str.s[j]];
 		seq_revcomp6(str.l, (uint8_t*)str.s);
-		cnt[0] = ec_fix1(opt, solid, &str);
+		seq_reverse(str.l, (uint8_t*)qual);
+		cnt[0] = ec_fix1(opt, solid, &str, qual[i], &fa);
 		if (cnt[0] < 0) continue;
 		seq_revcomp6(str.l, (uint8_t*)str.s);
-		cnt[1] = ec_fix1(opt, solid, &str);
+		seq_reverse(str.l, (uint8_t*)qual);
+		cnt[1] = ec_fix1(opt, solid, &str, qual[i], &fa);
 		for (j = 0; j < str.l; ++j)
 			seq[i][j] = seq_nt6_table[(int)seq[i][j]] == str.s[j]? toupper(seq[i][j]) : "$acgtn"[(int)str.s[j]];
 	}
 	free(str.s);
+	free(fa.heap.a); free(fa.stack.a);
 }
 
 typedef struct {
