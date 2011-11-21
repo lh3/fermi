@@ -256,7 +256,7 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1, _w, _T;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.cov = 30.0; opt.w = 0; opt.min_occ = 3; opt.err = 0.01;
+	opt.cov = 30.0; opt.w = 0; opt.min_occ = 4; opt.err = 0.01;
 	opt.max_corr = 0.25;
 	while ((c = getopt(argc, argv, "Mt:k:c:e:v:S:O:")) >= 0) {
 		switch (c) {

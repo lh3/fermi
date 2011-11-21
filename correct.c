@@ -167,7 +167,7 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
-	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, first = 0;
+	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, first = 0, qsum;
 	fm128_t z, rst[2];
 
 	if (s->l <= opt->w) return -1;
@@ -223,16 +223,19 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	assert(n_rst == 1 || n_rst == 2);
 	if (rst[0].y>>48 == 0) return 0x10000000; // no corrections are made
 	// backtrack
-	i = 0; l = (uint32_t)(rst[0].y>>16);
+	i = 0; qsum = 0; l = (uint32_t)(rst[0].y>>16);
 	while (l) {
 		if (s->s[i] - 1 != fa->stack.a[l]>>28) {
 			s->s[i] = (fa->stack.a[l]>>28) + 1;
+			qsum += qual[i] - 33;
 			qual[i] = 34; // reduce the base quality
 		}
 		++i;
 		l = fa->stack.a[l]<<4>>4;
 	}
-	return rst[0].y>>48 | (n_rst == 2? (rst[1].y>>48) - (rst[0].y>>48) : 0x1000)<<16;
+	l = n_rst == 2? (rst[1].y>>48) - (rst[0].y>>48) : 0xfff;
+	if (l > 0xfff) l = 0xfff;
+	return qsum | l<<18;
 }
 
 static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
@@ -255,8 +258,22 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 		seq_reverse(str.l, (uint8_t*)qual[i]); // back to the forward strand
 		seq_revcomp6(str.l, (uint8_t*)str.s);
 		if (ret0 != 0xffff) { // then we need to correct in the reverse direction
+			uint64_t k, l;
 			ret1 = ec_fix1(opt, solid, &str, qual[i], &fa);
-			info[i] = ((ret0&0xffff) + (ret1&0xffff)) | (ret0>>16 < ret1>>16? ret0>>16 : ret1>>16)<<16;
+			info[i] = ((ret0&0xffff) + (ret1&0xffff)) | (ret0>>18 < ret1>>18? ret0>>18 : ret1>>18)<<18;
+			// FIXME: the following can be accelerated because we may know if the last k-mer has a match
+			for (j = 0; j < opt->w; ++j)
+				if (str.s[j] == 5) break;
+			if (j == opt->w) {
+				fm_backward_search(e, opt->w, (uint8_t*)str.s, &k, &l);
+				if (l - k > 1) info[i] |= 1<<16;
+			}
+			for (j = str.l - opt->w; j < str.l; ++j)
+				if (str.s[j] == 5) break;
+			if (j == str.l) {
+				fm_backward_search(e, opt->w, (uint8_t*)str.s + (str.l - opt->w), &k, &l);
+				if (l - k > 1) info[i] |= 1<<17;
+			}
 		} else info[i] = ret0;
 		for (j = 0; j < str.l; ++j)
 			seq[i][j] = seq_nt6_table[(int)seq[i][j]] == str.s[j]? toupper(seq[i][j]) : "$acgtn"[(int)str.s[j]];
@@ -395,8 +412,9 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 					w = &w2[k%n_threads];
 					out.l = 0;
 					kputc('@', &out); kputl(w->id[w->n_seqs]>>1, &out);
+					kputc('_', &out); kputw(w->info[w->n_seqs]>>16&3, &out);
 					kputc('_', &out); kputw(w->info[w->n_seqs]&0xffff, &out);
-					kputc('_', &out); kputw(w->info[w->n_seqs]>>16, &out); kputc('\n', &out);
+					kputc('_', &out); kputw(w->info[w->n_seqs]>>18, &out); kputc('\n', &out);
 					kputs(w->seq[w->n_seqs], &out);
 					kputsn("\n+\n", 3, &out); kputs(w->qual[w->n_seqs], &out);
 					puts(out.s);
