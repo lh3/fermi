@@ -256,19 +256,18 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1, _w, _T;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.cov = 30.0; opt.T = opt.w = 0; opt.err = 0.01;
-	opt.max_corr = 0.25; opt.min_ratio = 5;
-	while ((c = getopt(argc, argv, "Mt:k:T:c:e:v:r:S:")) >= 0) {
+	opt.cov = 30.0; opt.w = 0; opt.min_occ = 3; opt.err = 0.01;
+	opt.max_corr = 0.25;
+	while ((c = getopt(argc, argv, "Mt:k:c:e:v:S:O:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
 			case 'c': opt.cov = atof(optarg); break;
 			case 'e': opt.err = atof(optarg); break;
 			case 't': n_threads = atoi(optarg); break;
 			case 'k': opt.w = atoi(optarg); break;
-			case 'T': opt.T = atoi(optarg); break;
 			case 'v': fm_verbose = atoi(optarg); break;
-			case 'r': opt.min_ratio = atoi(optarg); break;
 			case 'S': opt.max_corr = atof(optarg); break;
+			case 'O': opt.min_occ = atoi(optarg); break;
 		}
 	}
 	if (optind + 2 > argc) {
@@ -277,16 +276,15 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "Options: -c FLOAT    expected coverage [%.1f]\n", opt.cov);
 		fprintf(stderr, "         -e FLOAT    expected per-base error rate [%.2f]\n", opt.err);
 		fprintf(stderr, "         -k INT      k-mer length [inferred from -c/-e]\n");
-		fprintf(stderr, "         -T INT      threshold for a correct base [inferred from -c/-e]\n");
+		fprintf(stderr, "         -O INT      minimum (k+1)-mer occurrences [%d]\n", opt.min_occ);
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
 		fprintf(stderr, "         -S FLOAT    drop if the fraction of corrected bases above FLOAT [%.2f]\n", opt.max_corr);
-		fprintf(stderr, "         -r INT      min max_width:2nd_max_width (advanced) [%d]\n\n", opt.min_ratio);
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	fm_ec_genpar(e->mcnt[1]/2, (int)((double)e->mcnt[0] / e->mcnt[1] - 1 + 0.5), opt.cov, opt.err, &_w, &_T);
 	if (opt.w <= 0) opt.w = _w;
-	if (opt.T <= 0) opt.T = _T;
 	fm6_ec_correct(e, &opt, argv[optind+1], n_threads);
 	rld_destroy(e);
 	return 0;

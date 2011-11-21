@@ -35,6 +35,10 @@ void ks_introsort_128y(size_t n, fm128_t *a); // in msg.c
 void ks_heapup_128y(size_t n, fm128_t *a);
 void ks_heapdown_128y(size_t i, size_t n, fm128_t *a);
 
+/****************************
+ * Compute HiTEC parameters *
+ ****************************/
+
 static inline double genpar_aux(double x, int64_t k)
 { // compute 1-(1-x)^k, where x<<1 and k is not so large
 	int64_t i;
@@ -65,9 +69,17 @@ void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T)
 	for (k = 1; k < (int)cov + 1; ++k)
 		if (pow(qc, k) * pow(1 - qc, n - k) > pow(qe, k) * pow(1 - qe, n - k)) break;
 	k += 2;
-	fprintf(stderr, "[M::%s] HiTEC parameters for n=%ld, l=%d and c=%.1f: w_M=%d, T(w_M)=%d\n", __func__, (long)n, l, cov, w, k);
+	if (fm_verbose >= 3) fprintf(stderr, "[M::%s] HiTEC parameters for n=%ld, l=%d and c=%.1f: w_M=%d, T(w_M)=%d\n", __func__, (long)n, l, cov, w, k);
+	if (k > MAX_KMER) {
+		k = MAX_KMER;
+		if (fm_verbose >= 2) fprintf(stderr, "[W::%s] Set k-mer length to the maximum length %d\n", __func__, MAX_KMER);
+	}
 	*_w = w; *_T = k;
 }
+
+/***********************
+ * Collect good k-mers *
+ ***********************/
 
 static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq, shash_t *solid, int64_t cnt[2])
 {
@@ -104,20 +116,20 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 			for (c = 1, max = 0, max_c = 6; c <= 4; ++c)
 				if (ok[c].x[2] > max)
 					max = ok[c].x[2], max_c = c;
-			if (max < opt->T) continue;
+			if (max < opt->min_occ) continue; // then in the following max_c<6
 			++cnt[0];
-			rest = ik.x[2] - max;
+			rest = ik.x[2] - max - ok[0].x[2] - ok[5].x[2];
 			r = rest == 0? max : (double)max / rest;
-			if (r > 31.) r = 31.;
-			if (rest <= 7 && r >= opt->T) ++cnt[1];
-			for (i = 0, key = 0; i < str.l; ++i) key = (uint32_t)str.s[i]<<shift | key>>2;
+			if (r > 31.) r = 31.; // we have maximally 5 bits of information (i.e. [0,31])
+			if (rest <= 7 && r >= opt->min_occ) ++cnt[1];
+			for (i = 0, key = 0; i < str.l; ++i)
+				key = (uint32_t)str.s[i]<<shift | key>>2;
 			key = key<<2 | (max_c - 1);
 			k = kh_put(solid, solid, key, &ret);
-			kh_val(solid, k) = rest > 7? 0 : ((int)(r + .499)) << 3 | rest; // if more than 7, do not make corrections in future
-			//kh_val(solid, k) = (int)(r + .499) << 3 | (rest < 7? rest : 7);
+			kh_val(solid, k) = (int)(r + .499) << 3 | (rest < 7? rest : 7);
 		} else { // descend
-			for (c = 4; c >= 1; --c) { // FIXME: ambiguous bases are skipped
-				if (ok[c].x[2] >= opt->T + 1) {
+			for (c = 4; c >= 1; --c) { // ambiguous bases are skipped
+				if (ok[c].x[2] >= opt->min_occ) {
 					ok[c].info = ((ik.info>>4) + 1)<<4 | (c - 1);
 					kv_push(fmintv_t, stack, ok[c]);
 				}
@@ -127,6 +139,10 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 
 	free(stack.a); free(str.s);
 }
+
+/******************
+ * Correct errors *
+ ******************/
 
 typedef struct {
 	fm128_v heap;
@@ -184,12 +200,15 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		// check the hash table
 		h = solid[z.x & SUF_MASK];
 		k = kh_get(solid, h, z.x>>SUF_SHIFT<<2);
-		if (k != kh_end(h)) {
-			if (s->s[i] != (kh_key(h, k)&3) + 1) {
+		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
+			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
 				int tmp, score, max = (kh_val(h, k)&7)? (kh_val(h, k)&7) * (kh_val(h, k)>>3) : kh_val(h, k)>>3;
-				score = (max - (kh_val(h, k)&7)) * DIFF_FACTOR;
+				score = (max - (kh_val(h, k)&7)) * DIFF_FACTOR; // score for the best stack path
 				tmp = (kh_val(h, k)&7)? (kh_val(h, k)>>3) * TIMES_FACTOR : 10000;
 				if (tmp < score) score = tmp;
+				tmp = (7 - (kh_val(h, k)&7)) * DIFF_FACTOR;
+				if (tmp < score) score = tmp;
+				// if we have too many possibilities, keep the better path among the two
 				if (fa->heap.n + 2 <= MAX_HEAP || score < qual[i]-33)
 					save_state(fa, &z, s->s[i] - 1, score, shift);
 				if (fa->heap.n + 2 <= MAX_HEAP || score > qual[i]-33)
@@ -234,6 +253,10 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 	free(fa.heap.a); free(fa.stack.a);
 }
 
+/************************
+ * Multi-thread workers *
+ ************************/
+
 typedef struct {
 	const rld_t *e;
 	const fmecopt_t *opt;
@@ -273,6 +296,10 @@ static void *worker2(void *data)
 	ec_fix(w->e, w->opt, w->solid, w->n_seqs, w->seq, w->qual);
 	return 0;
 }
+
+/******************
+ * The key portal *
+ ******************/
 
 int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads)
 {
