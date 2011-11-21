@@ -164,7 +164,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	if (i == 0) return -1; // no good k-mer
 	// the first element in the heap
 	kv_push(uint32_t, fa->stack, 0);
-	z.y = i;
+	z.y = i + 1;
 	kv_push(fm128_t, fa->heap, z);
 	// traverse
 	while (fa->heap.n) {
@@ -221,11 +221,11 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 		for (j = 0; j < str.l; ++j)
 			str.s[j] = seq_nt6_table[(int)str.s[j]];
 		seq_revcomp6(str.l, (uint8_t*)str.s);
-		seq_reverse(str.l, (uint8_t*)qual);
+		seq_reverse(str.l, (uint8_t*)qual[i]);
 		cnt[0] = ec_fix1(opt, solid, &str, qual[i], &fa);
+		seq_reverse(str.l, (uint8_t*)qual[i]);
 		if (cnt[0] < 0) continue;
 		seq_revcomp6(str.l, (uint8_t*)str.s);
-		seq_reverse(str.l, (uint8_t*)qual);
 		cnt[1] = ec_fix1(opt, solid, &str, qual[i], &fa);
 		for (j = 0; j < str.l; ++j)
 			seq[i][j] = seq_nt6_table[(int)seq[i][j]] == str.s[j]? toupper(seq[i][j]) : "$acgtn"[(int)str.s[j]];
