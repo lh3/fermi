@@ -177,7 +177,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	for (i = s->l - 1, l = 0; i > 0 && l < opt->w; --i)
 		if (s->s[i] == 5) z.x = 0, l = 0;
 		else z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2, ++l;
-	if (i == 0) return -1; // no good k-mer
+	if (i == 0) return 0xffff; // no good k-mer
 	// the first element in the heap
 	kv_push(uint32_t, fa->stack, 0);
 	z.y = i + 1;
@@ -209,26 +209,28 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 				tmp = (7 - (kh_val(h, k)&7)) * DIFF_FACTOR;
 				if (tmp < score) score = tmp;
 				// if we have too many possibilities, keep the better path among the two
-				if (fa->heap.n + 2 <= MAX_HEAP || score < qual[i]-33)
-					save_state(fa, &z, s->s[i] - 1, score, shift);
-				if (fa->heap.n + 2 <= MAX_HEAP || score > qual[i]-33)
-					save_state(fa, &z, kh_key(h, k)&3, qual[i]-33, shift);
+				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || score < qual[i]-33))
+					save_state(fa, &z, s->s[i] - 1, score, shift); // the read path
+				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > qual[i]-33)
+					save_state(fa, &z, kh_key(h, k)&3, qual[i]-33, shift); // the stack path
 			} else save_state(fa, &z, s->s[i] - 1, 0, shift);
 		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - (qual[i] - 33), shift);
 	}
-	if (rst[0].y>>48 == 0) return 0; // no corrections are made
+	assert(n_rst == 1 || n_rst == 2);
+	if (rst[0].y>>48 == 0) return 0x10000000; // no corrections are made
+	// backtrack
 	i = 0; l = (uint32_t)(rst[0].y>>16);
 	while (l) {
 		s->s[i++] = (fa->stack.a[l]>>28) + 1;
 		l = fa->stack.a[l]<<4>>4;
 	}
-	return rst[0].y>>48;
+	return rst[0].y>>48 | (n_rst == 2? (rst[1].y>>48) - (rst[0].y>>48) : 0x1000)<<16;
 }
 
-static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual)
+static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
 {
 	extern unsigned char seq_nt6_table[];
-	int i, j, cnt[2];
+	int i, j, ret0, ret1;
 	kstring_t str;
 	fixaux_t fa;
 
@@ -239,13 +241,15 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 		kputs(seq[i], &str);
 		for (j = 0; j < str.l; ++j)
 			str.s[j] = seq_nt6_table[(int)str.s[j]];
-		seq_revcomp6(str.l, (uint8_t*)str.s);
+		seq_revcomp6(str.l, (uint8_t*)str.s); // to the reverse complement strand
 		seq_reverse(str.l, (uint8_t*)qual[i]);
-		cnt[0] = ec_fix1(opt, solid, &str, qual[i], &fa);
-		seq_reverse(str.l, (uint8_t*)qual[i]);
-		if (cnt[0] < 0) continue;
+		ret0 = ec_fix1(opt, solid, &str, qual[i], &fa); // 0x7fff0000 if no correction; 0xffff if too short
+		seq_reverse(str.l, (uint8_t*)qual[i]); // back to the forward strand
 		seq_revcomp6(str.l, (uint8_t*)str.s);
-		cnt[1] = ec_fix1(opt, solid, &str, qual[i], &fa);
+		if (ret0 != 0xffff) { // then we need to correct in the reverse direction
+			ret1 = ec_fix1(opt, solid, &str, qual[i], &fa);
+			info[i] = ((ret0&0xffff) + (ret1&0xffff)) | (ret0>>16 < ret1>>16? ret0>>16 : ret1>>16)<<16;
+		} else info[i] = ret0;
 		for (j = 0; j < str.l; ++j)
 			seq[i][j] = seq_nt6_table[(int)seq[i][j]] == str.s[j]? toupper(seq[i][j]) : "$acgtn"[(int)str.s[j]];
 	}
@@ -285,7 +289,7 @@ typedef struct {
 	const rld_t *e;
 	const fmecopt_t *opt;
 	shash_t *const* solid;
-	int n_seqs;
+	int n_seqs, *info;
 	char **seq, **qual;
 	uint64_t *id; // this wastes memory, but should not be a big deal
 } worker2_t;
@@ -293,7 +297,7 @@ typedef struct {
 static void *worker2(void *data)
 {
 	worker2_t *w = (worker2_t*)data;
-	ec_fix(w->e, w->opt, w->solid, w->n_seqs, w->seq, w->qual);
+	ec_fix(w->e, w->opt, w->solid, w->n_seqs, w->seq, w->qual, w->info);
 	return 0;
 }
 
@@ -368,6 +372,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 			w2[j].e = e, w2[j].solid = solid, w2[j].opt = opt;
 			w2[j].seq  = calloc(max_seqs, sizeof(void*));
 			w2[j].qual = calloc(max_seqs, sizeof(void*));
+			w2[j].info = calloc(max_seqs, sizeof(int));
 			w2[j].id   = calloc(max_seqs, 8);
 		}
 		for (;;) {
@@ -381,7 +386,9 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 				for (k = pre_id; k < id; ++k) {
 					w = &w2[k%n_threads];
 					out.l = 0;
-					kputc('@', &out); kputw(w->id[w->n_seqs]>>1, &out); kputc('\n', &out);
+					kputc('@', &out); kputl(w->id[w->n_seqs]>>1, &out);
+					kputc('_', &out); kputw(w->info[w->n_seqs]&0xffff, &out);
+					kputc('_', &out); kputw(w->info[w->n_seqs]>>16, &out); kputc('\n', &out);
 					kputs(w->seq[w->n_seqs], &out);
 					kputsn("\n+\n", 3, &out); kputs(w->qual[w->n_seqs], &out);
 					puts(out.s);
@@ -407,7 +414,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int n_t
 			++id;
 		}
 		for (j = 0; j < n_threads; ++j) {
-			free(w2[j].seq); free(w2[j].qual); free(w2[j].id);
+			free(w2[j].seq); free(w2[j].qual); free(w2[j].id); free(w2[j].info);
 		}
 		free(w2); free(out.s);
 		kseq_destroy(seq);
