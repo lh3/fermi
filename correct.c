@@ -269,7 +269,7 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 					if (str.s[j] == 5) break;
 				if (j == opt->w) {
 					fm_backward_search(e, opt->w, (uint8_t*)str.s, &k, &l);
-					if (l - k > 1) info[i] |= 1<<16;
+					if (l - k >= 1) info[i] |= 1<<16;
 				}
 			}
 			if ((info[i]>>17&1) == 0) {
@@ -277,7 +277,7 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 					if (str.s[j] == 5) break;
 				if (j == str.l) {
 					fm_backward_search(e, opt->w, (uint8_t*)str.s + (str.l - opt->w), &k, &l);
-					if (l - k > 1) info[i] |= 1<<17;
+					if (l - k >= 1) info[i] |= 1<<17;
 				}
 			}
 		} else info[i] = ret0;
@@ -394,8 +394,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 		uint64_t k, id = 0, pre_id = 0;
 		kstring_t out;
 
-		//n_threads = _n_threads;
-		n_threads = 1;
+		n_threads = _n_threads;
 		g_tc = cputime(); g_tr = realtime();
 		out.m = out.l = 0; out.s = 0;
 		fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
