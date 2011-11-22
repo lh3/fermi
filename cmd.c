@@ -256,10 +256,11 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.w = 23; opt.min_occ = 4;
-	while ((c = getopt(argc, argv, "Mt:k:v:O:")) >= 0) {
+	opt.w = 23; opt.min_occ = 4; opt.keep_bad = 0;
+	while ((c = getopt(argc, argv, "MKt:k:v:O:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
+			case 'K': opt.keep_bad = 1; break;
 			case 't': n_threads = atoi(optarg); break;
 			case 'k': opt.w = atoi(optarg); break;
 			case 'v': fm_verbose = atoi(optarg); break;
@@ -272,6 +273,7 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "Options: -k INT      k-mer length [%d]\n", opt.w);
 		fprintf(stderr, "         -O INT      minimum (k+1)-mer occurrences [%d]\n", opt.min_occ);
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
+		fprintf(stderr, "         -K          keep bad/unfixable reads\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}

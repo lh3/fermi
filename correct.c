@@ -306,6 +306,10 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 		fprintf(stderr, "[E::%s] excessively small `-w'. Please increase manually to at least %d.\n", __func__, SUF_LEN + 1);
 		return 1;
 	}
+	if (opt->w > MAX_KMER) {
+		fprintf(stderr, "[E::%s] k-mer length cannot exceed %d\n", __func__, MAX_KMER);
+		return 1;
+	}
 	// initialize "solid" and "tid"
 	assert(_n_threads <= SUF_NUM);
 	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
@@ -375,15 +379,20 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 				for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
 				for (k = pre_id; k < id; ++k) {
+					int is_bad = 0;
 					w = &w2[k%n_threads];
-					out.l = 0;
-					kputc('@', &out); kputl(w->id[w->n_seqs]>>1, &out);
-					kputc('_', &out); kputw(w->info[w->n_seqs]>>16&3, &out);
-					kputc('_', &out); kputw(w->info[w->n_seqs]&0xffff, &out);
-					kputc('_', &out); kputw(w->info[w->n_seqs]>>18, &out); kputc('\n', &out);
-					kputs(w->seq[w->n_seqs], &out);
-					kputsn("\n+\n", 3, &out); kputs(w->qual[w->n_seqs], &out);
-					puts(out.s);
+					if ((w->info[w->n_seqs]>>16&3) != 3) is_bad = 1;
+					if (w->info[w->n_seqs]>>18 <= 10) is_bad = 1;
+					if (!is_bad || opt->keep_bad) {
+						out.l = 0;
+						kputc('@', &out); kputl(w->id[w->n_seqs]>>1, &out);
+						kputc('_', &out); kputw(w->info[w->n_seqs]>>16&3, &out);
+						kputc('_', &out); kputw(w->info[w->n_seqs]&0xffff, &out);
+						kputc('_', &out); kputw(w->info[w->n_seqs]>>18, &out); kputc('\n', &out);
+						kputs(w->seq[w->n_seqs], &out);
+						kputsn("\n+\n", 3, &out); kputs(w->qual[w->n_seqs], &out);
+						puts(out.s);
+					}
 					free(w->seq[w->n_seqs]); free(w->qual[w->n_seqs]);
 					++w->n_seqs;
 				}
