@@ -28,7 +28,6 @@ struct __rld_t; // defined in rld.h
 
 typedef struct {
 	int w, min_occ;
-	float cov, err, max_corr;
 } fmecopt_t;
 
 typedef struct {
@@ -125,7 +124,6 @@ extern "C" {
 
 	int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads);
 
-	void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T);
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads);
 
 	msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio);

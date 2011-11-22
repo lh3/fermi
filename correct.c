@@ -35,48 +35,6 @@ void ks_introsort_128y(size_t n, fm128_t *a); // in msg.c
 void ks_heapup_128y(size_t n, fm128_t *a);
 void ks_heapdown_128y(size_t i, size_t n, fm128_t *a);
 
-/****************************
- * Compute HiTEC parameters *
- ****************************/
-
-static inline double genpar_aux(double x, int64_t k)
-{ // compute 1-(1-x)^k, where x<<1 and k is not so large
-	int64_t i;
-	double sum = 0., p = x, y = k;
-	for (i = 1; i < k; ++i) {
-		sum += p * y;
-		p *= -x; y *= (double)(k - i) / (i + 1);
-		if (p * y / sum < 1e-6) break;
-	}
-	return sum;
-}
-
-void fm_ec_genpar(int64_t n, int l, double cov, double p, int *_w, int *_T)
-{
-	int w, k;
-	int64_t L;
-	double e, qc, qe;
-	L = (int64_t)((double)n * l / cov + .499);
-	e = genpar_aux(p, l) * n;
-	for (w = 8; w < l; ++w) {
-		double q, D;
-		q = genpar_aux(p, w) * (1 - p) * genpar_aux(pow(.25, w), L) * .75;
-		D = genpar_aux(q, l - w) * pow(1 - p, l) * n;
-		if (D < 0.0001 * e) break;
-	}
-	qc = (double)(l - w) / L * pow(1 - p, w + 1);
-	qe = (double)(l - w) / L * (1./3.) * p * pow(1 - p, w);
-	for (k = 1; k < (int)cov + 1; ++k)
-		if (pow(qc, k) * pow(1 - qc, n - k) > pow(qe, k) * pow(1 - qe, n - k)) break;
-	k += 2;
-	if (fm_verbose >= 3) fprintf(stderr, "[M::%s] HiTEC parameters for n=%ld, l=%d and c=%.1f: w_M=%d, T(w_M)=%d\n", __func__, (long)n, l, cov, w, k);
-	if (k > MAX_KMER) {
-		k = MAX_KMER;
-		if (fm_verbose >= 2) fprintf(stderr, "[W::%s] Set k-mer length to the maximum length %d\n", __func__, MAX_KMER);
-	}
-	*_w = w; *_T = k;
-}
-
 /***********************
  * Collect good k-mers *
  ***********************/
