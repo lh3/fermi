@@ -125,11 +125,11 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 #define DIFF_FACTOR  13
 #define MISS_PENALTY 40
 #define MAX_HEAP     64
-#define MAX_CORR     0.2
+#define MAX_CORR     0.3
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
-	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum;
+	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1;
 	fm128_t z, rst[2];
 
 	if (s->l <= opt->w) return 0xffff;
@@ -163,6 +163,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		h = solid[z.x & SUF_MASK];
 		k = kh_get(solid, h, z.x>>SUF_SHIFT<<2);
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
+			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
 				int tmp, score, max = (kh_val(h, k)&7)? (kh_val(h, k)&7) * (kh_val(h, k)>>3) : kh_val(h, k)>>3;
 				score = (max - (kh_val(h, k)&7)) * DIFF_FACTOR; // score for the best stack path
@@ -188,15 +189,14 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		if (s->s[i] - 1 != fa->stack.a[l]>>29) {
 			s->s[i] = (fa->stack.a[l]>>29) + 1;
 			qsum += qual[i] - 33;
-			qual[i] = 34;
-		}
+		} else if ((fa->stack.a[l]>>28&1) && qual[i] < 37) qual[i] = 37;
 		++i;
 		l = fa->stack.a[l]<<4>>4;
 	}
 	l = n_rst == 2? (rst[1].y>>49) - (rst[0].y>>49) : 0xfff;
 	if (l > 0xfff) l = 0xfff;
 	// return value: score_diff:14, (empty):2, sum_modified_qual:16
-	return qsum | l<<18;
+	return qsum | l<<18 | no_hits<<17;
 }
 
 static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
@@ -221,10 +221,11 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 		if (ret0 != 0xffff) { // then we need to correct in the reverse direction
 			ret1 = ec_fix1(opt, solid, &str, qual[i], &fa);
 			info[i] = ((ret0&0xffff) + (ret1&0xffff)) | (ret0>>18 < ret1>>18? ret0>>18 : ret1>>18)<<18;
+			if ((ret0>>17&1) && (ret1>>17&1)) info[i] |= 1<<16;
 		} else info[i] = ret0;
 		for (j = 0, n_lower = 0; j < str.l; ++j) {
 			seq[i][j] = seq_nt6_table[(int)seq[i][j]] == str.s[j]? toupper(seq[i][j]) : "$acgtn"[(int)str.s[j]];
-			if (islower(seq[i][j])) ++n_lower;
+			if (islower(seq[i][j])) ++n_lower, qual[i][j] = 36;
 		}
 		if ((double)n_lower / str.l > MAX_CORR) info[i] |= 1<<16;
 		if (info[i]>>18 <= 10) info[i] |= 1<<16;

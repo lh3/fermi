@@ -230,7 +230,7 @@ int main_unitig(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1, min_match = 30;
 	rld_t *e;
-	while ((c = getopt(argc, argv, "SMDl:t:r:m:L:")) >= 0) {
+	while ((c = getopt(argc, argv, "Ml:t:")) >= 0) {
 		switch (c) {
 			case 'l': min_match = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
@@ -256,7 +256,7 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.w = 23; opt.min_occ = 4; opt.keep_bad = 0; opt.is_paired = 0;
+	opt.w = 23; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0;
 	while ((c = getopt(argc, argv, "MKt:k:v:O:p")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
@@ -539,7 +539,7 @@ int main_clean(int argc, char *argv[])
 	opt.min_tip_len = 200;
 	opt.min_weak_cov= 1.01;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
-	opt.min_ovlp    = 9060;  opt.min_ovlp_ratio=0.8;
+	opt.min_ovlp    = 60;  opt.min_ovlp_ratio=0.8;
 	opt.n_iter = 3;
 	while ((c = getopt(argc, argv, "CAl:c:T:r:w:o:R:n:N:d:")) >= 0) {
 		switch (c) {
