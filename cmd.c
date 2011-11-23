@@ -256,8 +256,8 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.w = 23; opt.min_occ = 4; opt.keep_bad = 0;
-	while ((c = getopt(argc, argv, "MKt:k:v:O:")) >= 0) {
+	opt.w = 23; opt.min_occ = 4; opt.keep_bad = 0; opt.is_paired = 0;
+	while ((c = getopt(argc, argv, "MKt:k:v:O:p")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
 			case 'K': opt.keep_bad = 1; break;
@@ -265,6 +265,7 @@ int main_correct(int argc, char *argv[])
 			case 'k': opt.w = atoi(optarg); break;
 			case 'v': fm_verbose = atoi(optarg); break;
 			case 'O': opt.min_occ = atoi(optarg); break;
+			case 'p': opt.is_paired = 1; break;
 		}
 	}
 	if (optind + 2 > argc) {

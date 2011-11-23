@@ -27,7 +27,7 @@ typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
 struct __rld_t; // defined in rld.h
 
 typedef struct {
-	int w, min_occ, keep_bad;
+	int w, min_occ, keep_bad, is_paired;
 } fmecopt_t;
 
 typedef struct {
