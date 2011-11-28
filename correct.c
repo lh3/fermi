@@ -125,7 +125,6 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 #define DIFF_FACTOR  13
 #define MISS_PENALTY 40
 #define MAX_HEAP     64
-#define MAX_CORR     0.3
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
@@ -227,7 +226,7 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 			seq[i][j] = seq_nt6_table[(int)seq[i][j]] == str.s[j]? toupper(seq[i][j]) : "$acgtn"[(int)str.s[j]];
 			if (islower(seq[i][j])) ++n_lower, qual[i][j] = 36;
 		}
-		if ((double)n_lower / str.l > MAX_CORR) info[i] |= 1<<16;
+		if ((double)n_lower / str.l > opt->max_corr) info[i] |= 1<<16;
 		if (info[i]>>18 <= 10) info[i] |= 1<<16;
 	}
 	free(str.s);
