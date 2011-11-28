@@ -5,7 +5,7 @@
 
 void fm_reverse_fmivec(fmintv_v *p);
 
-int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
+int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, int self_match)
 {
 	int i, j, c, ret;
 	fmintv_t ik, ok[6];
@@ -21,12 +21,12 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 		fm6_extend(e, &ik, ok, 0);
 		if (ok[c].x[2] != ik.x[2]) { // change of the interval size
 			if (ik.x[2] != ok[0].x[2]) kv_push(fmintv_t, *curr, ik);
-			if (ok[0].x[2]) { // some sequences come to an end
+			if (!self_match && ok[0].x[2]) { // some sequences come to an end
 				ok[0].info = i;
 				kv_push(fmintv_t, *curr, ok[0]);
 			}
 		}
-		if (ok[c].x[2] == 0) break; // cannot be extended
+		if ((!self_match && ok[c].x[2] == 0) || (self_match && ok[c].x[2] < 2)) break; // cannot be extended
 		ik = ok[c]; ik.info = i + 1;
 	}
 	if (i == len) kv_push(fmintv_t, *curr, ik); // push the last interval if we reach the end
@@ -40,10 +40,11 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 		c = i < 0? 0 : q[i];
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
-			int fl_match; // whether this leads to a full-length read match
+			int cont, fl_match; // whether this leads to a full-length read match
 			fm6_extend(e, p, ok, 1);
 			fl_match = (ok[0].x[2] && p->x[1] < e->mcnt[1]);
-			if (ok[c].x[2] == 0 || fl_match || i == -1) { // keep the hit if: full-length match, reaching the beginning or not extended further
+			cont = self_match? (ok[c].x[2] > 1) : (ok[c].x[2] != 0);
+			if (!cont || fl_match || i == -1) { // keep the hit if: full-length match, reaching the beginning or not extended further
 				if (curr->n == 0 || fl_match) { // curr->n to make sure there is no longer matches
 //					printf("%d, %lld, [%lld,%lld,%lld]\n", i+1, p->info, p->x[0], p->x[1], p->x[2]);
 					if (fl_match || mem->n == 0 || i + 1 < (mem->a[mem->n-1].info>>32&FM_MASK30)) { // skip contained matches
@@ -52,7 +53,7 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 					}
 				} // otherwise the match is contained in another longer match
 			}
-			if (ok[c].x[2] && (p->x[1] < e->mcnt[1] || curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2])) {
+			if (cont && (p->x[1] < e->mcnt[1] || curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2])) {
 				ok[c].info = p->info;
 				kv_push(fmintv_t, *curr, ok[c]);
 			}
@@ -67,14 +68,14 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem)
 	return ret;
 }
 
-int fm6_smem(const rld_t *e, int len, const uint8_t *q, fmintv_v *mem)
+int fm6_smem(const rld_t *e, int len, const uint8_t *q, fmintv_v *mem, int self_match)
 {
 	int x = 0, i;
 	fmintv_v tmp;
 	kv_init(tmp);
 	mem->n = 0;
 	do {
-		x = fm6_smem1(e, len, q, x, &tmp);
+		x = fm6_smem1(e, len, q, x, &tmp, self_match);
 		for (i = 0; i < tmp.n; ++i) {
 			kv_push(fmintv_t, *mem, tmp.a[i]);
 		}

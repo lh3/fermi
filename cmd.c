@@ -286,20 +286,21 @@ int main_correct(int argc, char *argv[])
 
 int main_exact(int argc, char *argv[])
 {
-	int c, i, use_mmap = 0;
+	int c, i, use_mmap = 0, self_match = 0;
 	rld_t *e;
 	kseq_t *seq;
 	gzFile fp;
 	kstring_t str;
 	fmintv_v a;
 
-	while ((c = getopt(argc, argv, "M")) >= 0) {
+	while ((c = getopt(argc, argv, "Ms")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
+			case 's': self_match = 1; break;
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi exact [-M] <idxbase.bwt> <src.fa>\n");
+		fprintf(stderr, "Usage: fermi exact [-Ms] <idxbase.bwt> <src.fa>\n");
 		return 1;
 	}
 	fp = strcmp(argv[optind+1], "-")? gzopen(argv[optind+1], "r") : gzdopen(fileno(stdin), "r");
@@ -310,7 +311,7 @@ int main_exact(int argc, char *argv[])
 	str.m = str.l = 0; str.s = 0;
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
-		fm6_smem(e, seq->seq.l, (uint8_t*)seq->seq.s, &a);
+		fm6_smem(e, seq->seq.l, (uint8_t*)seq->seq.s, &a, self_match);
 		str.l = 0; kputs("SQ\t", &str); kputs(seq->name.s, &str); kputc('\t', &str); kputw(seq->seq.l, &str); kputc('\t', &str); kputw(a.n, &str);
 		puts(str.s);
 		for (i = 0; i < a.n; ++i) {
