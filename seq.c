@@ -1,5 +1,6 @@
 #include <zlib.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <unistd.h>
 #include "utils.h"
 #include "kstring.h"
@@ -172,5 +173,85 @@ int main_fltuniq(int argc, char *argv[])
 	kseq_destroy(seq);
 	gzclose(fp);
 	free(flags); free(out.s);
+	return 0;
+}
+
+int main_cg2cofq(int argc, char *argv[])
+{
+	gzFile fp;
+	kseq_t *seq;
+	kstring_t str;
+
+	if (argc == 1) {
+		fprintf(stderr, "Usage: fermi cg2cofq <in.cgfq>\n");
+		return 1;
+	}
+	str.l = str.m = 0; str.s = 0;
+	fp = strcmp(argv[1], "-")? gzopen(argv[1], "r") : gzdopen(fileno(stdin), "r");
+	seq = kseq_init(fp);
+	while (kseq_read(seq) >= 0) {
+		int i;
+		str.l = 0;
+		ks_resize(&str, seq->name.l + seq->seq.l + seq->qual.l + 32);
+		kputc(seq->qual.l? '@' : '>', &str); kputsn(seq->name.s, seq->name.l, &str); kputc('\n', &str);
+		for (i = 0; i < seq->seq.l; ++i) 
+			if (!isalpha(seq->seq.s[i])) break;
+		kputsn(seq->seq.s, i, &str);
+		if (seq->qual.l) {
+			kputsn("\n+\n", 3, &str);
+			kputsn(seq->qual.s, i, &str);
+		}
+		kputc('\n', &str);
+		for (; seq->seq.l; ++i)
+			if (isalpha(seq->seq.s[i])) break;
+		if (i != seq->seq.l) {
+			kputc(seq->qual.l? '@' : '>', &str); kputsn(seq->name.s, seq->name.l, &str); kputc('\n', &str);
+			kputsn(seq->seq.s + i, seq->seq.l - i, &str);
+			if (seq->qual.l) {
+				kputsn("\n+\n", 3, &str);
+				kputsn(seq->qual.s + i, seq->qual.l - i, &str);
+			}
+			kputc('\n', &str);
+		}
+		fputs(str.s, stdout);
+	}
+	kseq_destroy(seq);
+	gzclose(fp);
+	free(str.s);
+	return 0;
+}
+
+int main_pe2cofq(int argc, char *argv[])
+{
+	gzFile fp1, fp2;
+	kseq_t *seq[2];
+	kstring_t str;
+
+	if (argc < 3) {
+		fprintf(stderr, "Usage: fermi pe2cofq <in1.fq> <in2.fq>\n");
+		return 1;
+	}
+	str.l = str.m = 0; str.s = 0;
+	fp1 = strcmp(argv[1], "-")? gzopen(argv[1], "r") : gzdopen(fileno(stdin), "r");
+	fp2 = strcmp(argv[2], "-")? gzopen(argv[2], "r") : gzdopen(fileno(stdin), "r");
+	seq[0] = kseq_init(fp1);
+	seq[1] = kseq_init(fp2);
+	while (kseq_read(seq[0]) >= 0) {
+		int j;
+		if (kseq_read(seq[1]) < 0) break; // one file ends
+		for (j = 0, str.l = 0; j < 2; ++j) {
+			kputc(seq[j]->qual.l? '@' : '>', &str); kputsn(seq[j]->name.s, seq[j]->name.l, &str); kputc('\n', &str);
+			kputsn(seq[j]->seq.s, seq[j]->seq.l, &str);
+			if (seq[j]->qual.l) {
+				kputsn("\n+\n", 3, &str);
+				kputsn(seq[j]->qual.s, seq[j]->qual.l, &str);
+			}
+			kputc('\n', &str);
+		}
+		fputs(str.s, stdout);
+	}
+	kseq_destroy(seq[0]); gzclose(fp1);
+	kseq_destroy(seq[1]); gzclose(fp2);
+	free(str.s);
 	return 0;
 }
