@@ -113,9 +113,9 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 	if (score < 0) score = 0;
 	if (c >= 4) c = 0;
 	w.x = (uint64_t)c<<shift | p->x>>2;
-	// the structure of w.y - score:15, (empty):1, pos_in_stack:32, seq_pos:16
-	w.y = (uint64_t)((p->y>>49) + score)<<49 | fa->stack.n<<16 | ((p->y&0xffff) - 1);
-	// structure of a heap element - base:4, parent_pos_in_stack:28
+	// the structure of w.y - score:16, pos_in_stack:32, seq_pos:16
+	w.y = (uint64_t)((p->y>>48) + score)<<48 | fa->stack.n<<16 | ((p->y&0xffff) - 1);
+	// structure of a stack element - base:3, has_match:1, parent_pos_in_stack:28
 	kv_push(uint32_t, fa->stack, c<<29 | has_match<<28 | (uint32_t)(p->y>>16));
 	kv_push(fm128_t, fa->heap, w);
 	ks_heapup_128y(fa->heap.n, fa->heap.a);
@@ -124,7 +124,7 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 #define TIMES_FACTOR 10
 #define DIFF_FACTOR  13
 #define MISS_PENALTY 40
-#define MAX_HEAP     64
+#define MAX_HEAP    256
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
@@ -181,7 +181,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - (qual[i] - 33), shift, 0);
 	}
 	assert(n_rst == 1 || n_rst == 2);
-	if (rst[0].y>>49 == 0) return 0xfff<<18; // no corrections are made
+	if (rst[0].y>>48 == 0) return 0xfff<<18; // no corrections are made
 	// backtrack
 	i = 0; qsum = 0; l = (uint32_t)(rst[0].y>>16);
 	while (l) {
@@ -192,7 +192,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		++i;
 		l = fa->stack.a[l]<<4>>4;
 	}
-	l = n_rst == 2? (rst[1].y>>49) - (rst[0].y>>49) : 0xfff;
+	l = n_rst == 2? (rst[1].y>>48) - (rst[0].y>>48) : 0xfff;
 	if (l > 0xfff) l = 0xfff;
 	// return value: score_diff:14, (empty):2, sum_modified_qual:16
 	return qsum | l<<18 | no_hits<<17;
