@@ -57,6 +57,23 @@ void seq_revcomp6(int l, unsigned char *s)
  * Command-line tools *
  **********************/
 
+static void write_seq(const kseq_t *seq, kstring_t *out)
+{
+	kputc(seq->qual.l? '@' : '>', out);
+	kputsn(seq->name.s, seq->name.l, out);
+	if (seq->comment.l) {
+		kputc(' ', out);
+		kputsn(seq->comment.s, seq->comment.l, out);
+	}
+	kputc('\n', out);
+	kputsn(seq->seq.s, seq->seq.l, out);
+	if (seq->qual.l) {
+		kputsn("\n+\n", 3, out);
+		kputsn(seq->qual.s, seq->qual.l, out);
+	}
+	kputc('\n', out);
+}
+
 int main_splitfa(int argc, char *argv[])
 {
 	int64_t n_seqs = 0;
@@ -82,11 +99,7 @@ int main_splitfa(int argc, char *argv[])
 	seq = kseq_init(fp);
 	while (kseq_read(seq) >= 0) {
 		i = (n_seqs>>1) % n_files;
-		kputc(seq->qual.l? '@' : '>', &ss[i]); kputsn(seq->name.s, seq->name.l, &ss[i]); kputc('\n', &ss[i]);
-		kputsn(seq->seq.s, seq->seq.l, &ss[i]); kputc('\n', &ss[i]);
-		if (seq->qual.l) {
-			kputsn("+\n", 2, &ss[i]); kputsn(seq->qual.s, seq->qual.l, &ss[i]); kputc('\n', &ss[i]);
-		}
+		write_seq(seq, &ss[i]);
 		if (ss[i].l > 64000) {
 			gzwrite(out[i], ss[i].s, ss[i].l);
 			ss[i].l = 0;
@@ -160,12 +173,7 @@ int main_fltuniq(int argc, char *argv[])
 		}
 		if (i == seq->seq.l) { // unfiltered
 			out.l = 0;
-			kputc('@', &out); kputsn(seq->name.s, seq->name.l, &out); kputc('\n', &out);
-			kputsn(seq->seq.s, seq->seq.l, &out); kputc('\n', &out);
-			if (seq->qual.l) {
-				kputsn("+\n", 2, &out);
-				kputsn(seq->qual.s, seq->qual.l, &out); kputc('\n', &out);
-			}
+			write_seq(seq, &out);
 			fputs(out.s, stdout);
 		}
 	}
@@ -237,17 +245,10 @@ int main_pe2cofq(int argc, char *argv[])
 	seq[0] = kseq_init(fp1);
 	seq[1] = kseq_init(fp2);
 	while (kseq_read(seq[0]) >= 0) {
-		int j;
 		if (kseq_read(seq[1]) < 0) break; // one file ends
-		for (j = 0, str.l = 0; j < 2; ++j) {
-			kputc(seq[j]->qual.l? '@' : '>', &str); kputsn(seq[j]->name.s, seq[j]->name.l, &str); kputc('\n', &str);
-			kputsn(seq[j]->seq.s, seq[j]->seq.l, &str);
-			if (seq[j]->qual.l) {
-				kputsn("\n+\n", 3, &str);
-				kputsn(seq[j]->qual.s, seq[j]->qual.l, &str);
-			}
-			kputc('\n', &str);
-		}
+		str.l = 0;
+		write_seq(seq[0], &str);
+		write_seq(seq[1], &str);
 		fputs(str.s, stdout);
 	}
 	kseq_destroy(seq[0]); gzclose(fp1);
@@ -255,3 +256,35 @@ int main_pe2cofq(int argc, char *argv[])
 	free(str.s);
 	return 0;
 }
+/*
+int main_trimseq(int argc, char *argv[])
+{
+	int c, min_l = 20, min_q = 3, do_trim = 1, drop_ambi = 1, prev_drop;
+	gzFile fp;
+	kseq_t *seq;
+	kstring_t prev_name;
+
+	while ((c = getopt(argc, argv, "q:NTl:")) >= 0) {
+		switch (c) {
+			case 'q': min_q = atoi(optarg); break;
+			case 'l': min_l = atoi(optarg); break;
+			case 'T': do_trim = 0; break;
+			case 'N': drop_ambi = 0; break;
+		}
+	}
+	if (argc == optind) {
+		fprintf(stderr, "Usage: fermi trimseq <in.fq>\n");
+		return 1;
+	}
+	str.l = str.m = 0; str.s = 0;
+	prev_name.l = prev_name.m = 0; prev_name.s = 0;
+	fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "r") : gzdopen(fileno(stdin), "r");
+	seq = kseq_init(fp);
+	while (kseq_read(seq) >= 0) {
+	}
+	kseq_destroy(seq);
+	gzclose(fp);
+	free(str.s);
+	return 0;
+}
+*/
