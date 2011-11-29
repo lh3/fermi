@@ -209,7 +209,7 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.w = 23; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0; opt.max_corr = 0.7;
+	opt.w = 23; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0; opt.max_corr = 0.3;
 	while ((c = getopt(argc, argv, "MKt:k:v:O:pC:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
