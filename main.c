@@ -3,12 +3,14 @@
 #include <sys/time.h>
 #include "fermi.h"
 
+int main_splitfa(int argc, char *argv[]);
+int main_fltuniq(int argc, char *argv[]);
+
 int main_chkbwt(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_exact(int argc, char *argv[]);
 int main_merge(int argc, char *argv[]);
 int main_build(int argc, char *argv[]);
-int main_splitfa(int argc, char *argv[]);
 int main_correct(int argc, char *argv[]);
 int main_unitig(int argc, char *argv[]);
 int main_clean(int argc, char *argv[]);
@@ -39,6 +41,9 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         unitig    Unitig\n");
 		fprintf(stderr, "         clean     Clean the graph\n");
 		fprintf(stderr, "\n");
+		fprintf(stderr, "         splitfa   Split FASTA/Q file\n");
+		fprintf(stderr, "         fltuniq   Filter out reads containing unique mer\n");
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	if (strcmp(argv[1], "build") == 0) ret = main_build(argc-1, argv+1);
@@ -46,11 +51,12 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
 	else if (strcmp(argv[1], "exact") == 0) ret = main_exact(argc-1, argv+1);
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
-	else if (strcmp(argv[1], "splitfa") == 0) ret = main_splitfa(argc-1, argv+1);
 	else if (strcmp(argv[1], "cnt2qual") == 0) ret = main_cnt2qual(argc-1, argv+1);
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);
+	else if (strcmp(argv[1], "splitfa") == 0) ret = main_splitfa(argc-1, argv+1);
+	else if (strcmp(argv[1], "fltuniq") == 0) ret = main_fltuniq(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;

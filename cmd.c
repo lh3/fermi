@@ -19,53 +19,6 @@ void seq_revcomp6(int l, unsigned char *s);
 
 double cputime();
 
-int main_splitfa(int argc, char *argv[])
-{
-	int64_t n_seqs = 0;
-	int i, n_files = 8;
-	gzFile fp, *out;
-	kseq_t *seq;
-	char *str;
-	kstring_t *ss;
-
-	if (argc < 3) {
-		fprintf(stderr, "Usage: fermi splitfa <in.fq> <out.prefix> [%d]\n", n_files);
-		return 1;
-	}
-	if (argc >= 4) n_files = atoi(argv[3]);
-	out = calloc(n_files, sizeof(gzFile));
-	str = calloc(strlen(argv[2]) + 20, 1);
-	ss = calloc(n_files, sizeof(kstring_t));
-	for (i = 0; i < n_files; ++i) {
-		sprintf(str, "%s.%.4d.fq.gz", argv[2], i);
-		out[i] = gzopen(str, "wb1");
-	}
-	fp = strcmp(argv[1], "-")? gzopen(argv[1], "r") : gzdopen(fileno(stdin), "r");
-	seq = kseq_init(fp);
-	while (kseq_read(seq) >= 0) {
-		i = (n_seqs>>1) % n_files;
-		kputc(seq->qual.l? '@' : '>', &ss[i]); kputsn(seq->name.s, seq->name.l, &ss[i]); kputc('\n', &ss[i]);
-		kputsn(seq->seq.s, seq->seq.l, &ss[i]); kputc('\n', &ss[i]);
-		if (seq->qual.l) {
-			kputsn("+\n", 2, &ss[i]); kputsn(seq->qual.s, seq->qual.l, &ss[i]); kputc('\n', &ss[i]);
-		}
-		if (ss[i].l > 64000) {
-			gzwrite(out[i], ss[i].s, ss[i].l);
-			ss[i].l = 0;
-		}
-		++n_seqs;
-	}
-	for (i = 0; i < n_files; ++i) {
-		gzwrite(out[i], ss[i].s, ss[i].l);
-		gzclose(out[i]);
-		free(ss[i].s);
-	}
-	free(out); free(ss); free(str);
-	kseq_destroy(seq);
-	gzclose(fp);
-	return 0;
-}
-
 int main_cnt2qual(int argc, char *argv[])
 {
 	int q = 17, i;
@@ -275,7 +228,7 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "Options: -k INT      k-mer length [%d]\n", opt.w);
 		fprintf(stderr, "         -O INT      minimum (k+1)-mer occurrences [%d]\n", opt.min_occ);
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
-		fprintf(stderr, "         -C FLOAT    max fraction of corrected bases\n");
+		fprintf(stderr, "         -C FLOAT    max fraction of corrected bases [%.2f]\n", opt.max_corr);
 		fprintf(stderr, "         -K          keep bad/unfixable reads\n");
 		fprintf(stderr, "\n");
 		return 1;
