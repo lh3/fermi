@@ -1,4 +1,4 @@
-.TH fermi 1 "29 August 2011" "fermi-r224" "Bioinformatics tools"
+.TH fermi 1 "30 November 2011" "fermi-r426" "Bioinformatics tools"
 
 .SH NAME
 .PP
@@ -6,26 +6,39 @@ fermi - FERragina-Manzini Index for DNA sequences
 
 .SH SYNOPSIS
 .PP
-fermi build seq1.fq > seq1.bwt
+fermi build seq1.fq > seq1.fmd
 .PP
-fermi merge -t 4 seq1.bwt seq2.bwt seq3.bwt > seq123.bwt
+fermi build seq2.fq > seq2.fmd
+.PP
+fermi merge -t 4 seq1.fmd seq2.fmd > seq12.fmd
+.PP
+cat seq1.fq seq2.fq | fermi correct seq12.fmd - > seq12.ec.fa
+.PP
+fermi build seq12.ec.fa > seq12.ec.fmd
+.PP
+fermi unitig seq12.ec.fmd > seq12.ec.msg
+.PP
+fermi clean -C seq12.ec.msg > seq12.contigs
 
 .SH DESCRIPTION
 .PP
 Fermi is a set of tools blablabla...
 
 .SH COMMANDS AND OPTIONS
+.sp
+\ 
+.SS Assembly related commands
 
 .TP 10
 .B build
 .B fermi build
-.RB [ \-fRPN ]
+.RB [ \-f ]
 .RB [ \-i
-.IR in.bwt ]
+.IR in.fmd ]
 .RB [ \-b
 .IR sbits ]
 .RB [ \-o
-.IR outFile ]
+.IR out.fmd ]
 .RB [ \-s
 .IR blkSize ]
 .I in.fa
@@ -33,7 +46,7 @@ Fermi is a set of tools blablabla...
 Construct the FM-index for file
 .I in.fa
 or append the constructed index to an existing FM-index
-.IR in.bwt .
+.IR in.fmd .
 For a small input file, all the sequences will be loaded into memory and the
 index is constructed altogether. For a large file, this command will load
 .I blkSize
@@ -46,19 +59,16 @@ where
 .I S
 is the size of the final FM-index.
 
-By default, the original sequence and the reverse complemented seuqence are
-concatenated together to enable the forward-backward search.
-
 
 .TP
 .B merge
 .B fermi merge
 .RB [ \-f ]
 .RB [ \-o
-.IR out.bwt ]
+.IR out.fmd ]
 .RB [ \-t
 .IR nThreads ]
-.I in0.bwt in1.bwt
+.I in0.fmd in1.fmd
 .RI [ ... ]
 
 Merge multiple FM-indexes. This step takes about
@@ -71,12 +81,129 @@ is the size of the final FM-index which is run-length-delta encoded.
 
 
 .TP
+.B correct
+.B fermi correct
+.RB [ \-K ]
+.RB [ \-k
+.IR kMerSize ]
+.RB [ \-O
+.IR minOcc ]
+.RB [ \-t
+.IR nThreads ]
+.RB [ \-C
+.IR maxCorr ]
+.I in.fmd in.fa
+
+Collect the k-mer count from
+.I in.fmd
+and use the collected informtion to fix sequencing errors in
+.IR in.fa .
+
+
+.TP
+.B unitig
+.B fermi unitig
+.BR [ \-l
+.IR minOvlp ]
+.BR [ \-t
+.IR nThreads ]
+.I in.fmd
+
+Construct the unitig graph from
+.I in.fmd
+by unambiguously and maximally extending each read.
+
+
+.TP
+.B clean
+.B fermi clean
+.BR [ \-CA ]
+.BR [ \-N
+.IR maxNei ]
+.BR [ \-d
+.IR minRatio1 ]
+.BR [ \-l
+.IR minTipLen ]
+.BR [ \-o
+.IR minOvlp ]
+.BR [ \-R
+.IR minRatio2 ]
+.BR [ \-n
+.IR nIters ]
+.BR [ \-w
+.IR minBblCov ]
+.BR [ \-r
+.IR minBblRatio ]
+.I in.msg
+
+Clean unitig graph
+.IR in.msg .
+
+.SS Sequence processing commands
+
+.TP 10
+.B pe2cofq
+.B fermi pe2cofq
+.I in1.fastq in2.fastq
+.B >
+.I collated.fastq
+
+Collate
+.I in1.fastq
+and
+.I in2.fastq
+produced from a paired-end run where the
+.IR i -th
+sequence in
+.I in1.fastq
+and the
+.IR i -th
+sequence in
+.I in2.fastq
+constitute a read pair.
+
+
+.TP
+.B trimseq
+.B fermi trimseq
+.RB [ \-N ]
+.RB [ \-q
+.IR minQual ]
+.RB [ \-l
+.IR minLen ]
+.I in.fastq
+
+Trim both low-quality ends of a read and possibly drop reads with low quality.
+For collated paired-end FASTQ files, if a read is dropped, its mate (judged from the read name) will also be dropped.
+
+.B OPTIONS:
+.RS
+.TP 10
+.B \-N
+Keep reads containing ambiguous bases after trimming. Such reads are dropped by default.
+.TP
+.BI \-q \ INT
+Minimum base quality. For 3'-end trimming, reads are trimmed down to
+.RI argmax_x{sum_{i=x}^l( INT -q_i)}
+where q_i is the base quality of the
+.IR i -th
+base. 5'-end trimming is similar. [3]
+.TP
+.BI \-l \ INT
+Discard a read if after trimming the read length is below
+.I INT
+[20]
+.RE
+
+.SS Other commands
+
+.TP 10
 .B unpack
 .B fermi unpack
 .RB [ \-M ]
 .RB [ \-i
 .IR index ]
-.I in.bwt
+.I in.fmd
 
 Extract multiple or all sequences stored in the FM-index.
 
@@ -85,16 +212,43 @@ Extract multiple or all sequences stored in the FM-index.
 .B chkbwt
 .B fermi chkbwt
 .RB [ \-MP ]
-.I in.bwt
+.I in.fmd
 
 Check the rank function or print the BWT in the text form.
 
 
-.RE
+.TP
+.B exact
+.B fermi exact
+.RB [ \-sM ]
+.I in.fmd in.fa
+
+Find the super-maximal exact matches against the FM-index.
+
+
+.SH NOTES
+.sp
+\ 
+
+.SS The goal of Fermi
+.PP
+Fermi aims to bring the power of de novo assembly to resequencing. (to be continued)
+
+.SS Fermi and SGA
+.PP
+Fermi is fundamentally influenced by the string graph assembler (SGA) written
+by Jared Simpson. Although initially I was planning something quite different,
+most of my ideas turned out to be wrong or impractical once I started to
+implement them. At the end of day, fermi takes a very similar overall approach
+to SGA. On the other hand, fermi after all is a fresh implementation. The
+FM-index data structure, the BWT construction algorithm, the error correction
+strategy, the overlap graph construction procedure are all different from those
+implemented in SGA.
+
 
 .SH AUTHOR
 .PP
-Heng Li <lh3@live.co.uk> implemented
+Heng Li <lh3@me.com> implemented
 .BR fermi .
 
 .SH SEE ALSO
