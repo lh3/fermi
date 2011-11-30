@@ -7,6 +7,7 @@ int main_splitfa(int argc, char *argv[]);
 int main_fltuniq(int argc, char *argv[]);
 int main_cg2cofq(int argc, char *argv[]);
 int main_pe2cofq(int argc, char *argv[]);
+int main_trimseq(int argc, char *argv[]);
 
 int main_chkbwt(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
@@ -43,7 +44,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         unitig    Unitig\n");
 		fprintf(stderr, "         clean     Clean the graph\n");
 		fprintf(stderr, "\n");
-		fprintf(stderr, "         splitfa   Split FASTA/Q file\n");
+		fprintf(stderr, "         splitfa   Split a FASTA/Q file\n");
+		fprintf(stderr, "         trimseq   Trim a FASTA/Q file\n");
 		fprintf(stderr, "         fltuniq   Filter out reads containing unique mer\n");
 		fprintf(stderr, "         pe2cofq   Convert split pefq to collate fastq\n");
 		fprintf(stderr, "         cg2cofq   Convert cgfq to collate fastq (deprecated)\n");
@@ -61,6 +63,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);
 	else if (strcmp(argv[1], "splitfa") == 0) ret = main_splitfa(argc-1, argv+1);
 	else if (strcmp(argv[1], "fltuniq") == 0) ret = main_fltuniq(argc-1, argv+1);
+	else if (strcmp(argv[1], "trimseq") == 0) ret = main_trimseq(argc-1, argv+1);
 	else if (strcmp(argv[1], "pe2cofq") == 0) ret = main_pe2cofq(argc-1, argv+1);
 	else if (strcmp(argv[1], "cg2cofq") == 0) ret = main_cg2cofq(argc-1, argv+1);
 	else {

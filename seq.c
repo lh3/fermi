@@ -256,24 +256,23 @@ int main_pe2cofq(int argc, char *argv[])
 	free(str.s);
 	return 0;
 }
-/*
+
 int main_trimseq(int argc, char *argv[])
 {
-	int c, min_l = 20, min_q = 3, do_trim = 1, drop_ambi = 1, prev_drop;
+	int c, min_l = 20, min_q = 3, drop_ambi = 1;
 	gzFile fp;
 	kseq_t *seq;
-	kstring_t prev_name;
+	kstring_t prev_name, str;
 
-	while ((c = getopt(argc, argv, "q:NTl:")) >= 0) {
+	while ((c = getopt(argc, argv, "q:Nl:")) >= 0) {
 		switch (c) {
 			case 'q': min_q = atoi(optarg); break;
 			case 'l': min_l = atoi(optarg); break;
-			case 'T': do_trim = 0; break;
 			case 'N': drop_ambi = 0; break;
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: fermi trimseq <in.fq>\n");
+		fprintf(stderr, "Usage: fermi trimseq [-N] [-q qual=%d] [-l minLen=%d] <in.fq>\n", min_q, min_l);
 		return 1;
 	}
 	str.l = str.m = 0; str.s = 0;
@@ -281,10 +280,66 @@ int main_trimseq(int argc, char *argv[])
 	fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "r") : gzdopen(fileno(stdin), "r");
 	seq = kseq_init(fp);
 	while (kseq_read(seq) >= 0) {
+		int i, is_paired = 0, left, right, drop = 0;
+		if (seq->name.l == prev_name.l && prev_name.l) { // test pairing
+			if (strncmp(seq->name.s, prev_name.s, seq->name.l - 1) == 0) {
+				int c2 = seq->name.s[prev_name.l-1], c1 = prev_name.s[prev_name.l-1];
+				if (c1 == c2) is_paired = 1;
+				else if (prev_name.l >= 2 && prev_name.s[prev_name.l-2] == '/') {
+					if (isdigit(c1) && isdigit(c2))
+						is_paired = 1;
+				}
+			}
+		}
+		if (is_paired) {
+			if (str.l == 0) continue; // do not process this sequence
+		} else { // output the previous sequence(s)
+			if (str.l) fputs(str.s, stdout);
+			str.l = 0;
+		}
+		// process the current sequence
+		left = 0; right = seq->seq.l;
+		if (min_q > 0 && seq->qual.l) { // trim
+			int s, max, max_i;
+			// trim from 3'-end
+			for (i = right - 1, max = s = 0, max_i = right; i >= left; --i) {
+				s += min_q - (seq->qual.s[i] - 33);
+				if (s < 0) break;
+				if (max < s) max = s, max_i = i;
+			}
+			right = max_i;
+			// trim from 5'-end
+			for (i = 0, max = s = 0, max_i = -1; i < right; ++i) {
+				s += min_q - (seq->qual.s[i] - 33);
+				if (s < 0) break;
+				if (max < s) max = s, max_i = i;
+			}
+			left = max_i + 1;
+			if (right - left < min_l) drop = 1;
+		}
+		if (!drop && drop_ambi) {
+			for (i = left; i < right; ++i)
+				if (seq_nt6_table[(int)seq->seq.s[i]] >= 5)
+					break;
+			if (i != right) drop = 1;
+		}
+		if (!drop) {
+			if (left) {
+				memmove(seq->seq.s, seq->seq.s + left, right - left);
+				if (seq->qual.l)
+					memmove(seq->qual.s, seq->qual.s + left, right - left);
+			}
+			seq->seq.l = right - left;
+			if (seq->qual.l) seq->qual.l = right - left;
+			write_seq(seq, &str);
+		} else if (is_paired) str.l = 0;
+		prev_name.l = 0;
+		kputsn(seq->name.s, seq->name.l, &prev_name);
 	}
+	if (str.l) fputs(str.s, stdout);
 	kseq_destroy(seq);
 	gzclose(fp);
-	free(str.s);
+	free(str.s); free(prev_name.s);
 	return 0;
 }
-*/
+
