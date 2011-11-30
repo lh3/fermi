@@ -57,22 +57,22 @@ int main_chkbwt(int argc, char *argv[])
 {
 	rld_t *e;
 	rlditr_t itr;
-	int i, j, l, c = 0, plain = 1, use_mmap = 0, check_rank = 0;
+	int i, j, l, c = 0, plain = 0, use_mmap = 0, check_rank = 0;
 	uint64_t *cnt, *rank, sum = 0;
 	double t;
-	while ((c = getopt(argc, argv, "PMr")) >= 0) {
+	while ((c = getopt(argc, argv, "pMr")) >= 0) {
 		switch (c) {
-			case 'P': plain = 0; break;
+			case 'p': plain = 1; break;
 			case 'r': check_rank = 1; break;
 			case 'M': use_mmap = 1; break;
 		}
 	}
 	if (argc == optind) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi chkbwt [-MPrR] <idxbase.bwt>\n\n");
+		fprintf(stderr, "Usage:   fermi chkbwt [options] <idxbase.bwt>\n\n");
 		fprintf(stderr, "Options: -M        load the FM-index as a memory mapped file\n");
 		fprintf(stderr, "         -r        check rank\n");
-		fprintf(stderr, "         -P        do not print the BWT to the stdout\n\n");
+		fprintf(stderr, "         -p        print the BWT to the stdout\n\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
