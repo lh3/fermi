@@ -327,8 +327,8 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, plain = 0, force = 0, asize = 6, inc_N = 0, min_q = 0, trim_end_N = 1, min_tl = 2;
-	int64_t i, sum_l = 0, l, max, block_size = 250000000;
+	int sbits = 3, force = 0, asize = 6;
+	int64_t sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
 	double t;
@@ -336,7 +336,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "NPfb:o:i:s:q:Tl:")) >= 0) {
+		while ((c = getopt(argc, argv, "fb:o:i:s:")) >= 0) {
 			switch (c) {
 				case 'i':
 					e = rld_restore(optarg);
@@ -345,15 +345,10 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 						return 1;
 					}
 					break;
-				case 'l': min_tl = atoi(optarg); break;
-				case 'q': min_q = atoi(optarg); break;
-				case 'P': plain = 1; break;
 				case 'f': force = 1; break;
 				case 'b': sbits = atoi(optarg); break;
 				case 'o': idxfn = strdup(optarg); break;
 				case 's': block_size = atol(optarg); break;
-				case 'N': inc_N = 1; break;
-				case 'T': trim_end_N = 0; break;
 			}
 		}
 		if (argc == optind) {
@@ -362,26 +357,19 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 			fprintf(stderr, "Options: -b INT    use a small marker per 2^(INT+3) bytes [%d]\n", sbits);
 			fprintf(stderr, "         -f        force to overwrite the output file (effective with -o)\n");
 			fprintf(stderr, "         -i FILE   append the FM-index to the existing FILE [null]\n");
-			fprintf(stderr, "         -l INT    discard trimmed reads shorted than INT [%d]\n", min_tl);
-			fprintf(stderr, "         -N        keep sequences containing 'N' after trimming\n");
 			fprintf(stderr, "         -o FILE   output file name [null]\n");
-			fprintf(stderr, "         -P        output BWT to stdout; do not dump the FM-index\n");
-			fprintf(stderr, "         -q INT    convert base with base quality smaller than INT to 'N' [%d]\n", min_q);
 			fprintf(stderr, "         -s INT    number of symbols to process at a time [%ld]\n", (long)block_size);
-			fprintf(stderr, "         -T        do NOT trim 'N' at 5'- or 3'-end\n");
 			fprintf(stderr, "\n");
 			return 1;
 		}
-		if (!plain) {
-			if (idxfn) {
-				FILE *fp;
-				if (!force && (fp = fopen(idxfn, "rb")) != 0) {
-					fclose(fp);
-					fprintf(stderr, "[E::%s] File `%s' exists. Please use `-f' to overwrite.\n", __func__, idxfn);
-					return 1;
-				}
-			} else idxfn = strdup("-");
-		}
+		if (idxfn) {
+			FILE *fp;
+			if (!force && (fp = fopen(idxfn, "rb")) != 0) {
+				fclose(fp);
+				fprintf(stderr, "[E::%s] File `%s' exists. Please use `-f' to overwrite.\n", __func__, idxfn);
+				return 1;
+			}
+		} else idxfn = strdup("-");
 	}
 	
 	{ // read sequences
@@ -400,48 +388,6 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		s = malloc(max);
 		t = cputime();
 		while (kseq_read(seq) >= 0) {
-			int j, k;
-			if (min_q > 0 && seq->qual.l) // convert low-quality bases to 'N'
-				for (j = 0; j < seq->seq.l; ++j)
-					if (isalpha(seq->seq.s[j]) && seq->qual.s[j] - 33 < min_q)
-						seq->seq.s[j] = 'N';
-			if (trim_end_N) {
-				int end, start, ostart, oend = -1, min_l = seq->seq.l;
-				ks_resize(&str, seq->seq.m);
-				str.l = 0;
-				while (1) {
-					for (j = oend + 1; j < seq->seq.l && !isalpha(seq->seq.s[j]); ++j); // skip leading rubbish
-					if ((ostart = j) >= seq->seq.l) break; // start of the sequence
-					for (j = ostart; toupper(seq->seq.s[j]) == 'N'; ++j); // skip leading N
-					start = j;
-					for (j = start; isalpha(seq->seq.s[j]); ++j); // find the end
-					oend = j;
-					for (j = oend - 1; j >= ostart && toupper(seq->seq.s[j]) == 'N'; --j); // skip trailing N
-					end = j + 1;
-					for (j = start; j < end; ++j) str.s[str.l++] = seq->seq.s[j]; // copy sequence; can be done in place actually
-					if (min_l > end - start) min_l = end - start;
-					str.s[str.l++] = '.';
-					str.s[str.l] = 0;
-				}
-				if (min_l < min_tl) continue; // 1bp read? skip
-				str.s[str.l-1] = 0;
-				memcpy(seq->seq.s, str.s, str.l);
-				seq->seq.l = str.l - 1;
-			}
-			if (!inc_N) { // skip reads containing 'N'
-				for (j = 0; j < seq->seq.l; ++j)
-					if (toupper(seq->seq.s[j]) == 'N') break;
-				if (j != seq->seq.l) continue;
-			}
-			for (j = k = 0; j < seq->seq.l; ++j) // skip leading non-alphabet characters
-				if (isalpha(seq->seq.s[j])) break;
-			for (; j < seq->seq.l; ++j) {
-				int c = seq->seq.s[j];
-				if (!isalpha(c)) c = seq->seq.s[j] = 0;
-				if (c || seq->seq.s[k-1]) seq->seq.s[k++] = c;
-			}
-			seq->seq.l = k; // NB: quality is untouched
-			seq->seq.s[k] = 0;
 			if (l && l + (seq->seq.l + 1) * 2 > block_size) {
 				e = fm_build(e, asize, sbits, l, s);
 				fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
@@ -453,16 +399,11 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 				s = realloc(s, max);
 			}
 			seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
-			for (j = k = 0; j <= seq->seq.l; ++j) {
-				if (seq->seq.s[j] == 0) {
-					memcpy(s + l, seq->seq.s + k, j - k + 1);
-					l += j - k + 1;
-					seq_revcomp6(j - k, (uint8_t*)seq->seq.s + k);
-					memcpy(s + l, seq->seq.s + k, j - k + 1);
-					l += j - k + 1;
-					k = j + 1;
-				}
-			}
+			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
+			l += seq->seq.l + 1;
+			seq_revcomp6(seq->seq.l, (uint8_t*)seq->seq.s);
+			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
+			l += seq->seq.l + 1;
 			sum_l += (seq->seq.l + 1) * 2;
 		}
 		kseq_destroy(seq);
@@ -474,13 +415,8 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		}
 	}
 
-	if (plain) {
-		for (i = 0; i < l; ++i) putchar("$ACGTN"[s[i]]);
-		putchar('\n');
-	} else {
-		rld_dump(e, idxfn);
-		rld_destroy(e);
-	}
+	rld_dump(e, idxfn);
+	rld_destroy(e);
 	free(s); free(idxfn);
 	return 0;
 }
