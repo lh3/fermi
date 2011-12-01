@@ -378,7 +378,7 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 					} else if (w->info[w->n_seqs]>>16&1) is_bad = 1;
 					if (!is_bad || opt->keep_bad) {
 						out.l = 0;
-						kputc('@', &out); kputl(k, &out);
+						kputc('@', &out); kputl(opt->is_paired? k>>1 : k, &out);
 						kputc('_', &out); kputw(w->info[w->n_seqs]&0xffff, &out);
 						kputc('_', &out); kputw(w->info[w->n_seqs]>>18, &out); kputc('\n', &out);
 						kputs(w->seq[w->n_seqs], &out);

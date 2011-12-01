@@ -121,7 +121,7 @@ int main_fltuniq(int argc, char *argv[])
 {
 	int c, k = 17;
 	uint64_t *flags, mask;
-	kstring_t out;
+	kstring_t out, prev_name;
 	gzFile fp;
 	kseq_t *seq;
 
@@ -135,7 +135,6 @@ int main_fltuniq(int argc, char *argv[])
 		return 1;
 	}
 
-	out.l = out.m = 0; out.s = 0;
 	fp = gzopen(argv[optind], "r");
 	if (fp == 0) {
 		fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, argv[optind]);
@@ -160,10 +159,19 @@ int main_fltuniq(int argc, char *argv[])
 	kseq_destroy(seq);
 	gzrewind(fp);
 	seq = kseq_init(fp);
+	out.l = out.m = 0; out.s = 0;
+	prev_name.l = prev_name.m = 0; prev_name.s = 0;
 	fprintf(stderr, "[M::%s] filtering the reads...\n", __func__);
 	while (kseq_read(seq) >= 0) {
-		int i, l;
+		int i, l, is_paired;
 		uint64_t z;
+		is_paired = (prev_name.l && strcmp(prev_name.s, seq->name.s) == 0);
+		if (is_paired) { // see trimseq() for more comments
+			if (out.l == 0) continue;
+		} else {
+			if (out.l) fputs(out.s, stdout);
+			out.l = 0;
+		}
 		for (i = l = 0, z = 0; i < seq->seq.l; ++i) {
 			c = seq_nt6_table[(int)seq->seq.s[i]] - 1;
 			if (c < 4) {
@@ -171,12 +179,12 @@ int main_fltuniq(int argc, char *argv[])
 				if (l >= k && (flags[z>>5]>>((z&31)<<1)&3) != 3) break;
 			} else break;
 		}
-		if (i == seq->seq.l) { // unfiltered
-			out.l = 0;
-			write_seq(seq, &out);
-			fputs(out.s, stdout);
-		}
+		if (i == seq->seq.l) write_seq(seq, &out);
+		else if (is_paired) out.l = 0;
+		prev_name.l = 0;
+		kputsn(seq->name.s, seq->name.l, &prev_name);
 	}
+	if (out.l) fputs(out.s, stdout);
 
 	kseq_destroy(seq);
 	gzclose(fp);
@@ -247,6 +255,10 @@ int main_pe2cofq(int argc, char *argv[])
 	while (kseq_read(seq[0]) >= 0) {
 		if (kseq_read(seq[1]) < 0) break; // one file ends
 		str.l = 0;
+		if (seq[0]->name.l > 2 && seq[0]->name.s[seq[0]->name.l-2] == '/' && isdigit(seq[0]->name.s[seq[0]->name.l-1]))
+			seq[0]->name.s[(seq[0]->name.l -= 2)] = 0; // trim tailing "/[0-9]$"
+		seq[1]->name.l = 0;
+		kputsn(seq[0]->name.s, seq[0]->name.l, &seq[1]->name); // make sure two ends having the same name
 		write_seq(seq[0], &str);
 		write_seq(seq[1], &str);
 		fputs(str.s, stdout);
