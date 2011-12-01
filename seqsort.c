@@ -18,7 +18,7 @@ void *worker(void *data)
 	int64_t i;
 	kstring_t s;
 	s.l = s.m = 0; s.s = 0;
-	for (i = w->start; i < w->e->mcnt[1]; i += w->step<<1) {
+	for (i = w->start<<1; i < w->e->mcnt[1]; i += w->step<<1) {
 		fmintv_t k2;
 		uint64_t k, l;
 		int contained, flag;
@@ -32,7 +32,6 @@ void *worker(void *data)
 				if (k == k2.x[0] + l) break;
 			w->sorted[k2.x[1] + l] = (i|1)<<2 | flag;
 		} else w->sorted[k+1] = (i|1)<<2 | flag;
-		//if (k2.x[2] > 1) fprintf(stderr, "*** %lld, [%lld,%lld,%lld]\n", k, k2.x[0], k2.x[1], k2.x[2]);
 	}
 	free(s.s);
 	return 0;
