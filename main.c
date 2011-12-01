@@ -18,6 +18,7 @@ int main_correct(int argc, char *argv[]);
 int main_unitig(int argc, char *argv[]);
 int main_clean(int argc, char *argv[]);
 int main_cnt2qual(int argc, char *argv[]);
+int main_seqsort(int argc, char *argv[]);
 
 double rssmem();
 double cputime();
@@ -58,6 +59,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "exact") == 0) ret = main_exact(argc-1, argv+1);
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
 	else if (strcmp(argv[1], "cnt2qual") == 0) ret = main_cnt2qual(argc-1, argv+1);
+	else if (strcmp(argv[1], "seqsort") == 0) ret = main_seqsort(argc-1, argv+1);
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);

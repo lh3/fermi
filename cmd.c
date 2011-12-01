@@ -421,6 +421,29 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 	return 0;
 }
 
+int main_seqsort(int argc, char *argv[])
+{
+	extern uint64_t *fm6_seqsort(const rld_t *e, int n_threads);
+	int c, n_threads = 1;
+	rld_t *e;
+	uint64_t *sorted;
+	while ((c = getopt(argc, argv, "t:")) >= 0) {
+		switch (c) {
+			case 't': n_threads = atoi(optarg); break;
+		}
+	}
+	if (optind == argc) {
+		fprintf(stderr, "Usage: fermi seqsort [-t nThreads=1] <reads.fmd>\n");
+		return 1;
+	}
+	e = rld_restore(argv[optind]);
+	sorted = fm6_seqsort(e, n_threads);
+	fwrite(sorted, 8, e->mcnt[1], stdout);
+	free(sorted);
+	rld_destroy(e);
+	return 0;
+}
+
 int main_clean(int argc, char *argv[])
 {
 	msg_t *g;
