@@ -86,7 +86,7 @@ static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
 	return ret;
 }
 
-static int try_right(aux_t *a, int beg, kstring_t *s)
+static int try_right(aux_t *a, int beg, kstring_t *s, fm64_v *reads)
 {
 	int ori_l = s->l, j, i, c, rbeg, is_forked = 0;
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
@@ -115,7 +115,12 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 						for (i = j; i < prev->n && a->cat.a[i] == cat; ++i) a->cat.a[i] = -1; // mask out other intervals of the same cat
 						kv_push(fmintv_t, a->nei, ok0); // keep in the neighbor vector
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
-					} else set_bits(a->used, &ok0); // the read is contained in another read; mark it as used
+					} else { // the read is contained in another read; mark it as used
+						set_bits(a->used, &ok0);
+						if (a->sorted && reads)
+							for (i = 0; i < ok0.x[2]; ++i)
+								kv_push(uint64_t, *reads, a->sorted[ok0.x[0]+i]>>2);
+					}
 				}
 			} // ~if(ok[0].x[2])
 			if (a->cat.a[j] < 0) continue; // no need to proceed if we have finished this path
@@ -207,7 +212,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	for (i = s->l - 1, a->str.l = 0; i >= rbeg; --i)
 		a->str.s[a->str.l++] = fm6_comp(s->s[i]);
 	a->str.s[a->str.l] = 0;
-	try_right(a, 0, &a->str);
+	try_right(a, 0, &a->str, 0);
 	assert(a->nei.n >= 1);
 	ret = a->nei.n > 1? -1 : 0;
 	a->nei.n = 1; a->nei.a[0] = tmp; // recover the original neighbour
@@ -217,7 +222,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end, fm64_v *reads)
 { // FIXME: be careful of self-loop like a>>a or a><a
 	int i, beg = beg0, rbeg, ori_l = s->l;
-	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
+	while ((rbeg = try_right(a, beg, s, reads)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
