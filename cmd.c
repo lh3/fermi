@@ -183,11 +183,14 @@ int main_unitig(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1, min_match = 30;
 	rld_t *e;
-	while ((c = getopt(argc, argv, "Ml:t:")) >= 0) {
+	uint64_t *sorted = 0;
+	char *fn_sorted = 0;
+	while ((c = getopt(argc, argv, "Ml:t:s:")) >= 0) {
 		switch (c) {
 			case 'l': min_match = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
+			case 's': fn_sorted = strdup(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
@@ -199,7 +202,16 @@ int main_unitig(int argc, char *argv[])
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	fm6_unitig(e, min_match, n_threads);
+	if (fn_sorted) {
+		FILE *fp;
+		fp = fopen(fn_sorted, "rb");
+		sorted = malloc(e->mcnt[1] * 8);
+		fread(sorted, e->mcnt[1], 8, fp);
+		fclose(fp);
+		free(fn_sorted);
+	}
+	fm6_unitig(e, min_match, n_threads, sorted);
+	free(sorted);
 	rld_destroy(e);
 	return 0;
 }

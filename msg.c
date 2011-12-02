@@ -42,6 +42,13 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 		}
 		if (p->nei[j].n == 0) kputc('.', out);
 	}
+	if (p->reads.n) {
+		kputc('\t', out);
+		for (k = 0; k < p->reads.n; ++k) {
+			if (k) kputc(',', out);
+			kputl(p->reads.a[k], out);
+		}
+	}
 	kputc('\n', out);
 	ks_resize(out, out->l + 2 * p->l + 5);
 	for (j = 0; j < p->l; ++j) out->s[out->l++] = "ACGT"[(int)p->seq[j] - 1];

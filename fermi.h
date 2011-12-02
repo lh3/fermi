@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-r431-pe"
+#define FERMI_VERSION "0.0-r432-pe"
 
 #define FM_MASK30 0x3fffffff
 
@@ -40,6 +40,7 @@ typedef struct {
 typedef struct {
 	uint64_t k[2];
 	fm128_v nei[2];
+	fm64_v reads;
 	int l;
 	float avg_cov;
 	int aux[2];
@@ -123,7 +124,7 @@ extern "C" {
 	 */
 	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
-	int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads);
+	int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads, const uint64_t *sorted);
 
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads);
 

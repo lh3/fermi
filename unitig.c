@@ -12,6 +12,8 @@
 #include "ksort.h"
 KSORT_INIT(infocmp, fmintv_t, info_lt)
 
+void ks_introsort_uint64_t(size_t n, uint64_t a[]);
+
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
 	uint64_t *p = bits + (x>>6);
@@ -59,6 +61,7 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 
 typedef struct {
 	const rld_t *e;
+	const uint64_t *sorted;
 	int min_match;
 	fmintv_v a[2], nei;
 	kvec_t(int) cat;
@@ -211,7 +214,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	return ret;
 }
 
-static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
+static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end, fm64_v *reads)
 { // FIXME: be careful of self-loop like a>>a or a><a
 	int i, beg = beg0, rbeg, ori_l = s->l;
 	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
@@ -229,6 +232,10 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		}
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0]); // successful extension
+		if (a->sorted) {
+			for (i = 0; i < a->nei.a[0].x[2]; ++i)
+				kv_push(uint64_t, *reads, a->sorted[a->nei.a[0].x[0] + i]>>2);
+		}
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
 		for (i = rbeg; i < ori_l; ++i) // update the coverage string
@@ -239,7 +246,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 	cov->l = s->l = ori_l; s->s[ori_l] = cov->s[ori_l] = 0;
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2])
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], fm64_v *reads)
 {
 	extern void seq_revcomp6(int l, unsigned char *s);
 	extern void seq_reverse(int l, unsigned char *s);
@@ -249,7 +256,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	int64_t k;
 	size_t i;
 
-	nei[0].n = nei[1].n = 0;
+	nei[0].n = nei[1].n = 0; reads->n = 0;
 	// retrieve the sequence pointed by seed
 	k = fm_retrieve(a->e, seed, s);
 	seq_reverse(s->l, (uint8_t*)s->s);
@@ -262,27 +269,45 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
 	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
+	if (a->sorted) kv_push(uint64_t, *reads, a->sorted[k]>>2);
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	if (a->a[0].n) { // no need to run this if a->a[0].n == 0
-		unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
+		unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0], reads);
 		for (i = 0; i < a->nei.n; ++i) {
 			z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
 			kv_push(fm128_t, nei[0], z);
+		}
+		for (i = 0; i < reads->n; ++i) reads->a[i] ^= 1; // flip the strand
+		for (i = 0; i < reads->n>>1; ++i) { // reverse
+			uint64_t tmp = reads->a[i];
+			reads->a[i] = reads->a[reads->n - 1 - i];
+			reads->a[reads->n - 1 - i] = tmp;
 		}
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
 	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
-	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
+	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1], reads);
 	for (i = 0; i < a->nei.n; ++i) {
 		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
 		kv_push(fm128_t, nei[1], z);
 	}
+	if (reads->n) { // drop paired reads
+		int j;
+		ks_introsort_uint64_t(reads->n, reads->a);
+		for (i = 1; i < reads->n; ++i)
+			if ((reads->a[i]^reads->a[i-1]) == 3)
+				reads->a[i] = reads->a[i-1] = (uint64_t)-1;
+		for (i = 0, j = 0; i < reads->n; ++i)
+			if (reads->a[i] != (uint64_t)-1)
+				reads->a[j++] = reads->a[i];
+		reads->n = j;
+	}
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited)
+static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted)
 {
 	extern void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
 	uint64_t i;
@@ -294,13 +319,13 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
 	a.str.l = a.str.m = str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
-	a.e = e; a.min_match = min_match; a.used = used; a.bend = bend;
+	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
-	kv_init(z.nei[0]); kv_init(z.nei[1]);
+	kv_init(z.nei[0]); kv_init(z.nei[1]); kv_init(z.reads);
 	z.seq = z.cov = 0;
 	// the core loop
 	for (i = start|1; i < end; i += 2) {
-		if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
+		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.reads) >= 0) { // then we keep the unitig
 			uint64_t *p[2], x[2];
 			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
@@ -319,24 +344,25 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 		}
 	}
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
-	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
+	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov); free(z.reads.a);
 	free(a.str.s); free(str.s); free(cov.s); free(out.s);
 }
 
 typedef struct {
 	uint64_t start, end, *used, *bend, *visited;
 	const rld_t *e;
+	const uint64_t *sorted;
 	int min_match;
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	unitig_core(w->e, w->min_match, w->start, w->end, w->used, w->bend, w->visited);
+	unitig_core(w->e, w->min_match, w->start, w->end, w->used, w->bend, w->visited, w->sorted);
 	return 0;
 }
 
-int fm6_unitig(const rld_t *e, int min_match, int n_threads)
+int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sorted)
 {
 	uint64_t *used, *bend, *visited, rest = e->mcnt[1];
 	pthread_t *tid;
@@ -358,6 +384,7 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads)
 		ww->min_match = min_match;
 		ww->start = (e->mcnt[1] - rest) / 2 * 2;
 		ww->end = ww->start + rest / (n_threads - j) / 2 * 2;
+		ww->sorted = sorted;
 		rest -= ww->end - ww->start;
 		ww->used = used; ww->bend = bend; ww->visited = visited;
 	}
