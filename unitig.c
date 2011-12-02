@@ -188,9 +188,7 @@ static int check_left_simple(aux_t *a, int beg, int rbeg, const kstring_t *s)
 			fmintv_t *p = &prev->a[j];
 			fm6_extend(a->e, p, ok, 1);
 			if (ok[0].x[2]) set_bits(a->used, &ok[0]); // some reads end here; they must be contained in a longer read
-			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) {
-				return -1; // backward bifurcation
-			}
+			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) return -1; // potential backward bifurcation
 			kv_push(fmintv_t, *curr, ok[(int)s->s[i]]);
 		}
 		swap = curr; curr = prev; prev = swap;
@@ -221,7 +219,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end, fm64_v *reads)
 { // FIXME: be careful of self-loop like a>>a or a><a
-	int i, beg = beg0, rbeg, ori_l = s->l;
+	int i, beg = beg0, rbeg, ori_l = s->l, ori_n_reads = reads->n;
 	while ((rbeg = try_right(a, beg, s, reads)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
 		if (a->nei.n > 1) { // forward bifurcation
@@ -240,6 +238,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		if (a->sorted) {
 			for (i = 0; i < a->nei.a[0].x[2]; ++i)
 				kv_push(uint64_t, *reads, a->sorted[a->nei.a[0].x[0] + i]>>2);
+			ori_n_reads = reads->n;
 		}
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
@@ -248,6 +247,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		for (i = ori_l; i < s->l; ++i) cov->s[i] = '"';
 		beg = rbeg; ori_l = s->l; a->a[0].n = a->a[1].n = 0; // prepare for the next round of loop
 	}
+	reads->n = ori_n_reads; // avoid including contained reads from failed extension
 	cov->l = s->l = ori_l; s->s[ori_l] = cov->s[ori_l] = 0;
 }
 
