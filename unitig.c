@@ -307,12 +307,26 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
 		kv_push(fm128_t, nei[1], z);
 	}
-	//
-	/*
+	// remove paired reads
+	if (a->sorted) {
+		for (iter = 0; iter != kh_end(a->h); ++iter) {
+			khint_t iter2;
+			if (!kh_exist(a->h, iter)) continue;
+			iter2 = kh_get(64, a->h, kh_key(a->h, iter)^1);
+			if (iter2 != kh_end(a->h) && ((kh_val(a->h, iter)^kh_val(a->h, iter2))&1)) { // on different strands
+				kh_del(64, a->h, iter);
+				kh_del(64, a->h, iter2);
+			}
+		}
+	}
 	for (iter = 0; iter != kh_end(a->h); ++iter)
-		if (kh_exist(a->h, iter))
-			printf("%lld\t%lld\t(%lld,%lld)\n", kh_key(a->h, iter), kh_val(a->h, iter)&1, kh_val(a->h, iter)>>32, kh_val(a->h, iter)<<32>>33);
-	*/
+		if (kh_exist(a->h, iter)) {
+			int beg, end;
+			beg = kh_val(a->h, iter)>>32; end = kh_val(a->h, iter)<<32>>33;
+			printf("%lld\t%lld\t%lld\t(%d,%d)\t", kh_key(a->h, iter), seed, kh_val(a->h, iter)&1, beg, end);
+			for (i = beg; i < end; ++i) putchar("$ACGTN"[(int)s->s[i]]);
+			putchar('\n');
+		}
 	return 0;
 }
 

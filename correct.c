@@ -370,10 +370,10 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 						if (w->info[w->n_seqs]>>16&1) is_bad = 1;
 						else if (k&1) { // second in a pair
 							worker2_t *m = &w2[(k^1)%n_threads];
-							if (m->info[m->n_seqs-1]>>16&1) is_bad = 1;
-						} else {
+							if (m->info[m->n_seqs - 1]>>16&1) is_bad = 1;
+						} else { // first in a pair
 							worker2_t *m = &w2[(k^1)%n_threads];
-							if (m->info[m->n_seqs]>>16&1) is_bad = 1;
+							if (m->info[m->n_seqs + (m == w)]>>16&1) is_bad = 1; // FIXED on 20111206: special treatment for single-thread
 						}
 					} else if (w->info[w->n_seqs]>>16&1) is_bad = 1;
 					if (!is_bad || opt->keep_bad) {
