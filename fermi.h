@@ -40,7 +40,6 @@ typedef struct {
 typedef struct {
 	uint64_t k[2];
 	fm128_v nei[2];
-	fm64_v reads;
 	int l;
 	float avg_cov;
 	int aux[2];

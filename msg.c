@@ -11,7 +11,7 @@
 KSEQ_INIT(gzFile, gzread)
 
 #include "khash.h"
-KHASH_MAP_INIT_INT64(64, uint64_t)
+KHASH_INIT2(64,, khint64_t, uint64_t, 1, kh_int64_hash_func, kh_int64_hash_equal)
 
 #define fm128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
 #define fm128_ylt(a, b) ((int64_t)(a).y > (int64_t)(b).y)
@@ -41,13 +41,6 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 			kputl(p->nei[j].a[k].x, out); kputc(':', out); kputw((int32_t)p->nei[j].a[k].y, out);
 		}
 		if (p->nei[j].n == 0) kputc('.', out);
-	}
-	if (p->reads.n) {
-		kputc('\t', out);
-		for (k = 0; k < p->reads.n; ++k) {
-			if (k) kputc(',', out);
-			kputl(p->reads.a[k], out);
-		}
 	}
 	kputc('\n', out);
 	ks_resize(out, out->l + 2 * p->l + 5);

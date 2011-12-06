@@ -12,7 +12,10 @@
 #include "ksort.h"
 KSORT_INIT(infocmp, fmintv_t, info_lt)
 
-void ks_introsort_uint64_t(size_t n, uint64_t a[]);
+#include "khash.h"
+KHASH_DECLARE(64, uint64_t, uint64_t)
+
+typedef khash_t(64) hash64_t;
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
@@ -67,6 +70,7 @@ typedef struct {
 	kvec_t(int) cat;
 	uint64_t *used, *bend;
 	kstring_t str;
+	hash64_t *h;
 } aux_t;
 
 static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
@@ -86,7 +90,7 @@ static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
 	return ret;
 }
 
-static int try_right(aux_t *a, int beg, kstring_t *s, fm64_v *reads)
+static int try_right(aux_t *a, int beg, kstring_t *s)
 {
 	int ori_l = s->l, j, i, c, rbeg, is_forked = 0;
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
@@ -117,9 +121,6 @@ static int try_right(aux_t *a, int beg, kstring_t *s, fm64_v *reads)
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
 					} else { // the read is contained in another read; mark it as used
 						set_bits(a->used, &ok0);
-						if (a->sorted && reads)
-							for (i = 0; i < ok0.x[2]; ++i)
-								kv_push(uint64_t, *reads, a->sorted[ok0.x[0]+i]>>2);
 					}
 				}
 			} // ~if(ok[0].x[2])
@@ -210,17 +211,17 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	for (i = s->l - 1, a->str.l = 0; i >= rbeg; --i)
 		a->str.s[a->str.l++] = fm6_comp(s->s[i]);
 	a->str.s[a->str.l] = 0;
-	try_right(a, 0, &a->str, 0);
+	try_right(a, 0, &a->str);
 	assert(a->nei.n >= 1);
 	ret = a->nei.n > 1? -1 : 0;
 	a->nei.n = 1; a->nei.a[0] = tmp; // recover the original neighbour
 	return ret;
 }
 
-static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end, fm64_v *reads)
+static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
-	int i, beg = beg0, rbeg, ori_l = s->l, ori_n_reads = reads->n;
-	while ((rbeg = try_right(a, beg, s, reads)) >= 0) { // loop if there is at least one overlap
+	int i, beg = beg0, rbeg, ori_l = s->l, ret;
+	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
@@ -236,9 +237,11 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0]); // successful extension
 		if (a->sorted) {
-			for (i = 0; i < a->nei.a[0].x[2]; ++i)
-				kv_push(uint64_t, *reads, a->sorted[a->nei.a[0].x[0] + i]>>2);
-			ori_n_reads = reads->n;
+			for (i = 0; i < a->nei.a[0].x[2]; ++i) {
+				uint64_t kk = a->nei.a[0].x[0] + i;
+				khint_t iter = kh_put(64, a->h, a->sorted[kk]>>3, &ret);
+				kh_val(a->h, iter) = s->l<<1 | (uint64_t)(a->sorted[kk]>>2&1) | (uint64_t)rbeg<<32;
+			}
 		}
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
@@ -247,21 +250,22 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		for (i = ori_l; i < s->l; ++i) cov->s[i] = '"';
 		beg = rbeg; ori_l = s->l; a->a[0].n = a->a[1].n = 0; // prepare for the next round of loop
 	}
-	reads->n = ori_n_reads; // avoid including contained reads from failed extension
 	cov->l = s->l = ori_l; s->s[ori_l] = cov->s[ori_l] = 0;
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], fm64_v *reads)
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2])
 {
 	extern void seq_revcomp6(int l, unsigned char *s);
 	extern void seq_reverse(int l, unsigned char *s);
 	fmintv_t intv0;
-	int seed_len;
+	int seed_len, ret;
 	fm128_t z;
 	int64_t k;
 	size_t i;
+	khint_t iter;
 
-	nei[0].n = nei[1].n = 0; reads->n = 0;
+	nei[0].n = nei[1].n = 0;
+	kh_clear(64, a->h);
 	// retrieve the sequence pointed by seed
 	k = fm_retrieve(a->e, seed, s);
 	seq_reverse(s->l, (uint8_t*)s->s);
@@ -274,41 +278,41 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
 	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
-	if (a->sorted) kv_push(uint64_t, *reads, a->sorted[k]>>2);
+	if (a->sorted) {
+		iter = kh_put(64, a->h, a->sorted[k]>>3, &ret);
+		kh_val(a->h, iter) = s->l<<1 | (uint64_t)(a->sorted[k]>>2&1); // beg:32, end:31, strand:1
+	}
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	if (a->a[0].n) { // no need to run this if a->a[0].n == 0
-		unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0], reads);
+		unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
 		for (i = 0; i < a->nei.n; ++i) {
 			z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
 			kv_push(fm128_t, nei[0], z);
-		}
-		for (i = 0; i < reads->n; ++i) reads->a[i] ^= 1; // flip the strand
-		for (i = 0; i < reads->n>>1; ++i) { // reverse
-			uint64_t tmp = reads->a[i];
-			reads->a[i] = reads->a[reads->n - 1 - i];
-			reads->a[reads->n - 1 - i] = tmp;
 		}
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
 	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
-	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1], reads);
+	for (iter = 0; iter != kh_end(a->h); ++iter) { // flip the strand
+		if (kh_exist(a->h, iter)) {
+			int beg, end;
+			beg = kh_val(a->h, iter)>>32;
+			end = kh_val(a->h, iter)<<32>>33;
+			kh_val(a->h, iter) = (uint64_t)(s->l - end)<<32 | (s->l - beg)<<1 | ((kh_val(a->h, iter)&1)^1);
+		}
+	}
+	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	for (i = 0; i < a->nei.n; ++i) {
 		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
 		kv_push(fm128_t, nei[1], z);
 	}
-	if (reads->n) { // drop paired reads
-		int j;
-		ks_introsort_uint64_t(reads->n, reads->a);
-		for (i = 1; i < reads->n; ++i)
-			if ((reads->a[i]^reads->a[i-1]) == 3)
-				reads->a[i] = reads->a[i-1] = (uint64_t)-1;
-		for (i = 0, j = 0; i < reads->n; ++i)
-			if (reads->a[i] != (uint64_t)-1)
-				reads->a[j++] = reads->a[i];
-		reads->n = j;
-	}
+	//
+	/*
+	for (iter = 0; iter != kh_end(a->h); ++iter)
+		if (kh_exist(a->h, iter))
+			printf("%lld\t%lld\t(%lld,%lld)\n", kh_key(a->h, iter), kh_val(a->h, iter)&1, kh_val(a->h, iter)>>32, kh_val(a->h, iter)<<32>>33);
+	*/
 	return 0;
 }
 
@@ -326,11 +330,12 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	a.str.l = a.str.m = str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
-	kv_init(z.nei[0]); kv_init(z.nei[1]); kv_init(z.reads);
+	a.h = kh_init(64);
+	kv_init(z.nei[0]); kv_init(z.nei[1]);
 	z.seq = z.cov = 0;
 	// the core loop
 	for (i = start|1; i < end; i += 2) {
-		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.reads) >= 0) { // then we keep the unitig
+		if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
 			uint64_t *p[2], x[2];
 			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
@@ -348,8 +353,9 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 			out.s[0] = 0; out.l = 0;
 		}
 	}
+	kh_destroy(64, a.h);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
-	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov); free(z.reads.a);
+	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
 	free(a.str.s); free(str.s); free(cov.s); free(out.s);
 }
 
