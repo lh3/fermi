@@ -223,14 +223,44 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 	int i, beg = beg0, rbeg, ori_l = s->l, ret;
 	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
+		int check_back = 1;
 		if (a->nei.n > 1) { // forward bifurcation
-			set_bit(a->bend, *end);
-			break;
+			if (a->sorted) { // then drop unpaired extensions
+				int j, u;
+				for (i = u = 0; i < a->nei.n; ++i) {
+					for (j = 0; j < a->nei.a[i].x[2]; ++j) {
+						khint_t iter;
+						k = a->sorted[a->nei.a[i].x[0] + j]>>2;
+						if (k&1) { // the reverse strand
+							iter = kh_get(64, a->h, k>>1^1);
+							if (iter != kh_end(a->h) && (kh_val(a->h, iter)&1) == 0)
+								break;
+						}
+					}
+					if (j == a->nei.a[i].x[2])
+						a->nei.a[u++] = a->nei.a[i];
+				}
+				a->nei.n = u;
+			}
+			if (a->nei.n != 1) {
+				set_bit(a->bend, *end);
+				break;
+			}
 		}
 		k = a->nei.a[0].x[0];
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
-		if ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0) { // backward bifurcation
+		if (a->sorted) {
+			for (i = 0; i < a->nei.a[0].x[2]; ++i) {
+				uint64_t kk = a->sorted[a->nei.a[0].x[0] + i]>>2;
+				khint_t iter;
+				if ((kk&1) == 0) break; // need to check back if on the forward strand
+				iter = kh_get(64, a->h, kk>>1^1);
+				if (iter == kh_end(a->h) || (kh_val(a->h, iter)&1)) break;
+			}
+			if (i == a->nei.a[0].x[2]) check_back = 0;
+		}
+		if (check_back && ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0)) { // backward bifurcation
 			set_bit(a->bend, k);
 			break;
 		}
@@ -238,9 +268,17 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		set_bits(a->used, &a->nei.a[0]); // successful extension
 		if (a->sorted) {
 			for (i = 0; i < a->nei.a[0].x[2]; ++i) {
-				uint64_t kk = a->nei.a[0].x[0] + i;
-				khint_t iter = kh_put(64, a->h, a->sorted[kk]>>3, &ret);
-				kh_val(a->h, iter) = s->l<<1 | (uint64_t)(a->sorted[kk]>>2&1) | (uint64_t)rbeg<<32;
+				uint64_t kk = a->sorted[a->nei.a[0].x[0] + i]>>2;
+				int to_add = 0;
+				khint_t iter;
+				if (kk&1) { // reverse strand; check if the mate has been added
+					iter = kh_get(64, a->h, kk>>1^1);
+					if (iter == kh_end(a->h) || (kh_val(a->h, iter)&1)) to_add = 1;
+				} else to_add = 1;
+				if (to_add) {
+					iter = kh_put(64, a->h, kk>>1, &ret);
+					kh_val(a->h, iter) = s->l<<1 | (kk&1) | (uint64_t)rbeg<<32;
+				}
 			}
 		}
 		if (cov->m < s->m) ks_resize(cov, s->m);
@@ -323,9 +361,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 		if (kh_exist(a->h, iter)) {
 			int beg, end;
 			beg = kh_val(a->h, iter)>>32; end = kh_val(a->h, iter)<<32>>33;
-			printf("%lld\t%lld\t%lld\t(%d,%d)\t", kh_key(a->h, iter), seed, kh_val(a->h, iter)&1, beg, end);
-			for (i = beg; i < end; ++i) putchar("$ACGTN"[(int)s->s[i]]);
-			putchar('\n');
+			printf("%lld\t%lld\t%lld\t(%d,%d)\n", kh_key(a->h, iter), seed, kh_val(a->h, iter)&1, beg, end);
 		}
 	return 0;
 }
