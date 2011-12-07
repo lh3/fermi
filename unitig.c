@@ -90,7 +90,7 @@ static int test_contained_right(aux_t *a, const kstring_t *s, fmintv_t *intv)
 	return ret;
 }
 
-static int try_right(aux_t *a, int beg, kstring_t *s)
+static int try_right(aux_t *a, int beg, kstring_t *s, int paired_only)
 {
 	int ori_l = s->l, j, i, c, rbeg, is_forked = 0;
 	fmintv_v *prev = &a->a[0], *curr = &a->a[1], *swap;
@@ -114,6 +114,19 @@ static int try_right(aux_t *a, int beg, kstring_t *s)
 				if (ok0.x[2]) { // the match is bounded by sentinels - a full-length match
 					if (ok[0].x[2] == p->x[2] && p->x[2] == ok0.x[2]) { // never consider a read contained in another read
 						int cat = a->cat.a[j];
+						if (paired_only && a->sorted) {
+							int l;
+							for (l = 0; l < ok0.x[2]; ++l) {
+								khint_t iter;
+								uint64_t k = a->sorted[ok0.x[0] + l]>>2;
+								if (k&1) { // the reverse strand
+									iter = kh_get(64, a->h, k>>1^1);
+									if (iter != kh_end(a->h) && (kh_val(a->h, iter)&1) == 0)
+										break;
+								}
+							}
+							if (l == ok0.x[2]) continue; // do not add this read
+						}
 						assert(j == 0 || a->cat.a[j] > a->cat.a[j-1]); // otherwise not irreducible
 						ok0.info = ori_l - (p->info&0xffffffffU);
 						for (i = j; i < prev->n && a->cat.a[i] == cat; ++i) a->cat.a[i] = -1; // mask out other intervals of the same cat
@@ -211,7 +224,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	for (i = s->l - 1, a->str.l = 0; i >= rbeg; --i)
 		a->str.s[a->str.l++] = fm6_comp(s->s[i]);
 	a->str.s[a->str.l] = 0;
-	try_right(a, 0, &a->str);
+	try_right(a, 0, &a->str, 0);
 	assert(a->nei.n >= 1);
 	ret = a->nei.n > 1? -1 : 0;
 	a->nei.n = 1; a->nei.a[0] = tmp; // recover the original neighbour
@@ -221,27 +234,13 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 { // FIXME: be careful of self-loop like a>>a or a><a
 	int i, beg = beg0, rbeg, ori_l = s->l, ret;
-	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
+	while ((rbeg = try_right(a, beg, s, 0)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
 		int check_back = 1;
 		if (a->nei.n > 1) { // forward bifurcation
-			if (1&&a->sorted) { // then drop unpaired extensions
-				int j, u;
-				j = j;
-				for (i = u = 0; i < a->nei.n; ++i) {
-					for (j = 0; j < a->nei.a[i].x[2]; ++j) {
-						khint_t iter;
-						k = a->sorted[a->nei.a[i].x[0] + j]>>2;
-						if (k&1) { // the reverse strand
-							iter = kh_get(64, a->h, k>>1^1);
-							if (iter != kh_end(a->h) && (kh_val(a->h, iter)&1) == 0)
-								break;
-						}
-					}
-					if (j != a->nei.a[i].x[2])
-						a->nei.a[u++] = a->nei.a[i];
-				}
-				a->nei.n = u;
+			if (a->sorted) {
+				s->l = ori_l; a->a[0].n = a->a[1].n = 0;
+				rbeg = try_right(a, beg, s, 1);
 			}
 			if (a->nei.n != 1) {
 				set_bit(a->bend, *end);
