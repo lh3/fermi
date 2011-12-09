@@ -255,8 +255,8 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 				uint64_t kk = a->sorted[a->nei.a[0].x[0] + i]>>2;
 				khint_t iter;
 				if ((kk&1) == 0) break; // need to check back if on the forward strand
-				//iter = kh_get(64, a->h, kk>>1^1);
-				//if (iter == kh_end(a->h) || (kh_val(a->h, iter)&1)) break;
+				iter = kh_get(64, a->h, kk>>1^1);
+				if (iter == kh_end(a->h) || (kh_val(a->h, iter)&1)) break;
 			}
 			if (i == a->nei.a[0].x[2]) check_back = 0;
 		}
@@ -380,7 +380,11 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 			uint64_t *p[2], x[2];
 			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
-			if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue; // NOT always working
+			if (a->sorted) {
+				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) && (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
+			} else {
+				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
+			}
 			z.l = str.l;
 			if (max_l < str.m) {
 				max_l = str.m;
