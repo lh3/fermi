@@ -255,8 +255,8 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 				uint64_t kk = a->sorted[a->nei.a[0].x[0] + i]>>2;
 				khint_t iter;
 				if ((kk&1) == 0) break; // need to check back if on the forward strand
-				iter = kh_get(64, a->h, kk>>1^1);
-				if (iter == kh_end(a->h) || (kh_val(a->h, iter)&1)) break;
+				//iter = kh_get(64, a->h, kk>>1^1);
+				//if (iter == kh_end(a->h) || (kh_val(a->h, iter)&1)) break;
 			}
 			if (i == a->nei.a[0].x[2]) check_back = 0;
 		}
@@ -346,14 +346,14 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
 		kv_push(fm128_t, nei[1], z);
 	}
-	/*
+#if 0
 	for (iter = 0; iter != kh_end(a->h); ++iter)
 		if (kh_exist(a->h, iter)) {
 			int beg, end;
 			beg = kh_val(a->h, iter)>>32; end = kh_val(a->h, iter)<<32>>33;
-			printf("%lld\t%lld\t%lld\t(%d,%d)\n", kh_key(a->h, iter), seed, kh_val(a->h, iter)&1, beg, end);
+			printf("XX\t%lld\t%lld\t%lld\t(%d,%d;%d,%d)\n", kh_key(a->h, iter), seed, kh_val(a->h, iter)&1, beg, end, s->l - end, s->l - beg);
 		}
-	*/
+#endif
 	return 0;
 }
 
