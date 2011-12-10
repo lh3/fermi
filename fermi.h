@@ -19,6 +19,7 @@ typedef struct {
 	uint64_t x, y;
 } fm128_t;
 
+typedef struct { size_t n, m; int32_t *a; } fm32s_v;
 typedef struct { size_t n, m; uint32_t *a; } fm32_v;
 typedef struct { size_t n, m; uint64_t *a; } fm64_v;
 typedef struct { size_t n, m; fm128_t  *a; } fm128_v;
@@ -123,7 +124,7 @@ extern "C" {
 	 */
 	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
-	int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads, const uint64_t *sorted);
+	int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads, const uint64_t *sorted, const char *fn);
 
 	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads);
 

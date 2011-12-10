@@ -184,13 +184,14 @@ int main_unitig(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1, min_match = 30;
 	rld_t *e;
 	uint64_t *sorted = 0;
-	char *fn_sorted = 0;
-	while ((c = getopt(argc, argv, "Ml:t:s:")) >= 0) {
+	char *fn_sorted = 0, *fn_seq = 0;
+	while ((c = getopt(argc, argv, "Ml:t:r:s:")) >= 0) {
 		switch (c) {
 			case 'l': min_match = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
-			case 's': fn_sorted = strdup(optarg); break;
+			case 'r': fn_sorted = strdup(optarg); break;
+			case 's': fn_seq = strdup(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
@@ -198,6 +199,8 @@ int main_unitig(int argc, char *argv[])
 		fprintf(stderr, "Usage:   fermi unitig [options] <reads.bwt>\n\n");
 		fprintf(stderr, "Options: -l INT      min match [%d]\n", min_match);
 		fprintf(stderr, "         -t INT      number of threads [1]\n");
+		fprintf(stderr, "         -r FILE     rank file [null]\n");
+		fprintf(stderr, "         -s FILE     sequences [null]\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -210,7 +213,8 @@ int main_unitig(int argc, char *argv[])
 		fclose(fp);
 		free(fn_sorted);
 	}
-	fm6_unitig(e, min_match, n_threads, sorted);
+	fm6_unitig(e, min_match, n_threads, sorted, fn_seq);
+	free(fn_seq);
 	free(sorted);
 	rld_destroy(e);
 	return 0;
