@@ -78,11 +78,11 @@ typedef struct {
 	fm32s_v cat;
 	uint64_t *used, *bend;
 	kstring_t str;
-	hash64_t *h;
+	hash64_t *h, *h_used; // these two are only used when sorted is set
 } aux_t;
 
 int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t *intv, fmintv_v *ovlp, uint64_t *used)
-{ // read e; write prev and used
+{ // for s is a sequence in e, test if s is contained in other sequences in e; return intervals right overlapping with s
 	fmintv_t ik, ok[6];
 	int ret = 0;
 	assert(s->l > min_match);
@@ -265,6 +265,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 			}
 		}
 		k = a->nei.a[0].x[0];
+		if (a->h_used && kh_get(64, a->h_used, k) != kh_end(a->h_used)) break; // a loop
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
 		if (a->sorted) {
@@ -283,6 +284,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		}
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0]); // successful extension
+		if (a->h_used) kh_put(64, a->h_used, k, &ret);
 		if (a->sorted) {
 			for (i = 0; i < a->nei.a[0].x[2]; ++i) {
 				uint64_t kk = a->sorted[a->nei.a[0].x[0] + i]>>2;
@@ -319,7 +321,8 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	khint_t iter;
 
 	nei[0].n = nei[1].n = 0;
-	kh_clear(64, a->h);
+	if (a->h) kh_clear(64, a->h);
+	if (a->h_used) kh_clear(64, a->h_used);
 	// retrieve the sequence pointed by seed
 	k = fm_retrieve(a->e, seed, s);
 	seq_reverse(s->l, (uint8_t*)s->s);
@@ -335,6 +338,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	if (a->sorted) {
 		iter = kh_put(64, a->h, a->sorted[k]>>3, &ret);
 		kh_val(a->h, iter) = s->l<<1 | (uint64_t)(a->sorted[k]>>2&1); // beg:32, end:31, strand:1
+		if (a->h_used) kh_put(64, a->h_used, k, &ret);
 	}
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
@@ -348,12 +352,14 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
 	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
-	for (iter = 0; iter != kh_end(a->h); ++iter) { // flip the strand
-		if (kh_exist(a->h, iter)) {
-			int beg, end;
-			beg = kh_val(a->h, iter)>>32;
-			end = kh_val(a->h, iter)<<32>>33;
-			kh_val(a->h, iter) = (uint64_t)(s->l - end)<<32 | (s->l - beg)<<1 | ((kh_val(a->h, iter)&1)^1);
+	if (a->h) {
+		for (iter = 0; iter != kh_end(a->h); ++iter) { // flip the strand
+			if (kh_exist(a->h, iter)) {
+				int beg, end;
+				beg = kh_val(a->h, iter)>>32;
+				end = kh_val(a->h, iter)<<32>>33;
+				kh_val(a->h, iter) = (uint64_t)(s->l - end)<<32 | (s->l - beg)<<1 | ((kh_val(a->h, iter)&1)^1);
+			}
 		}
 	}
 	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
@@ -384,10 +390,12 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 
 	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
-	a.str.l = a.str.m = str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
+	memset(&a, 0, sizeof(aux_t));
+	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
-	a.h = kh_init(64);
+	if (sorted) a.h = kh_init(64);
+	if (sorted) a.h_used = kh_init(64);
 	kv_init(z.nei[0]); kv_init(z.nei[1]);
 	z.seq = z.cov = 0;
 	// the core loop
@@ -457,7 +465,8 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 			}
 		}
 	}
-	kh_destroy(64, a.h);
+	if (a.h) kh_destroy(64, a.h);
+	if (a.h_used) kh_destroy(64, a.h_used);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
 	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
 	free(a.str.s); free(str.s); free(cov.s); free(out.s);
