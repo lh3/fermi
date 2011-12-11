@@ -396,20 +396,23 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 		gzFile fp;
 		fp = gzopen(fn, "rb");
 		kseq = kseq_init(fp);
-		i = 0;
-		while (kseq_read(kseq) >= 0) {
+		for (i = 0; kseq_read(kseq) >= 0; i += 2) {
 			fmintv_t intv;
 			int j, x;
 			if (i >= end) break;
-			if (i - 2 >= start) {
+			if (i >= start) {
 				z.l = kseq->seq.l;
 				for (j = 0; j < kseq->seq.l; ++j)
 					kseq->seq.s[j] = seq_nt6_table[(int)kseq->seq.s[j]];
 				if (fm6_is_contained(a.e, a.min_match, &kseq->seq, &intv, &a.a[0], 0) < 0) continue; // contained
+				if (intv.x[2] > 1) { // remove exact duplicates
+					uint64_t k = fm_retrieve(e, i, &str);
+					if (k != intv.x[0]) continue;
+				}
 				for (x = 0; x < 2; ++x) {
-					fm6_get_nei(a.e, a.min_match, 0, &kseq->seq, &a.nei, &a.a[0], &a.a[1], &a.cat, 0, 0, 0, 0);
+					fm6_get_nei(e, min_match, 0, &kseq->seq, &a.nei, &a.a[0], &a.a[1], &a.cat, 0, 0, 0, 0);
 					kseq->seq.l = z.l; kseq->seq.s[z.l] = 0; // l may be modified in fm6_get_nei()
-					seq_revcomp6(kseq->seq.l, kseq->seq.s);
+					seq_revcomp6(kseq->seq.l, (uint8_t*)kseq->seq.s);
 					kv_resize(fm128_t, z.nei[x^1], a.nei.m);
 					z.nei[x^1].n = a.nei.n;
 					for (j = 0; j < a.nei.n; ++j)
@@ -423,7 +426,6 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 				fputs(out.s, stdout);
 				out.l = 0; z.seq = z.cov = 0;
 			}
-			i += 2;
 		}
 		kseq_destroy(kseq);
 		gzclose(fp);
@@ -431,12 +433,15 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 		for (i = start|1; i < end; i += 2) {
 			if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
 				uint64_t *p[2], x[2];
+				int done[2];
 				p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 				p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
-				if (a.sorted) {
-					if ((__sync_fetch_and_or(p[0], x[0])&x[0]) && (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
+				done[0] = __sync_fetch_and_or(p[0], x[0])&x[0];
+				done[1] = __sync_fetch_and_or(p[1], x[1])&x[1];
+ 				if (a.sorted) {
+					if (done[0] && done[1]) continue;
 				} else {
-					if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
+					if (done[0] || done[1]) continue;
 				}
 				z.l = str.l;
 				if (max_l < str.m) {
