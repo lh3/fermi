@@ -124,7 +124,7 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 				fm6_extend0(e, &ok[0], &ok0, 1); // backward extension to look for sentinels
 				if (ok0.x[2]) { // the match is bounded by sentinels - a full-length match
 					if (ok[0].x[2] == p->x[2] && p->x[2] == ok0.x[2]) { // never consider a read contained in another read
-						int cat0 = cat->a[j];
+						int cat0 = cat->a[j]; // a category approximately corresponds to one neighbor, though not always
 						if (sorted && h && paired_only) {
 							int l;
 							for (l = 0; l < ok0.x[2]; ++l) {
@@ -143,8 +143,8 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 						for (i = j; i < prev->n && cat->a[i] == cat0; ++i) cat->a[i] = -1; // mask out other intervals of the same cat
 						kv_push(fmintv_t, *nei, ok0); // keep in the neighbor vector
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
-					} else if (used) { // the read is contained in another read; mark it as used
-						set_bits(used, &ok0);
+					} else { // the read is contained in another read; mark it as used
+						if (used) set_bits(used, &ok0);
 					}
 				}
 			} // ~if(ok[0].x[2])
@@ -311,11 +311,35 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 	cov->l = s->l = ori_l; s->s[ori_l] = cov->s[ori_l] = 0;
 }
 
+static void flip_seq(kstring_t *s, hash64_t *h)
+{
+	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
+	if (h) {
+		khint_t iter;
+		int beg, end;
+		for (iter = 0; iter != kh_end(h); ++iter) { // flip the strand for mapping intervals
+			if (!kh_exist(h, iter)) continue;
+			beg = kh_val(h, iter)>>32;
+			end = kh_val(h, iter)<<32>>33;
+			kh_val(h, iter) = (uint64_t)(s->l - end)<<32 | (s->l - beg)<<1 | ((kh_val(h, iter)&1)^1);
+		}
+	}
+}
+
+static void copy_nei(fm128_v *dst, const fmintv_v *src)
+{
+	int i;
+	for (i = 0; i < src->n; ++i) {
+		fm128_t z;
+		z.x = src->a[i].x[0]; z.y = src->a[i].info;
+		kv_push(fm128_t, *dst, z);
+	}
+}
+
 static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2])
 {
 	fmintv_t intv0;
 	int seed_len, ret;
-	fm128_t z;
 	int64_t k;
 	size_t i;
 	khint_t iter;
@@ -342,30 +366,22 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	}
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
-	if (a->a[0].n) { // no need to run this if a->a[0].n == 0
+	if (a->a[0].n) { // no need to extend to the right if there is no overlap
 		unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
-		for (i = 0; i < a->nei.n; ++i) {
-			z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
-			kv_push(fm128_t, nei[0], z);
-		}
+		copy_nei(&nei[0], &a->nei);
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
-	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
-	if (a->h) {
-		for (iter = 0; iter != kh_end(a->h); ++iter) { // flip the strand
-			if (kh_exist(a->h, iter)) {
-				int beg, end;
-				beg = kh_val(a->h, iter)>>32;
-				end = kh_val(a->h, iter)<<32>>33;
-				kh_val(a->h, iter) = (uint64_t)(s->l - end)<<32 | (s->l - beg)<<1 | ((kh_val(a->h, iter)&1)^1);
-			}
-		}
-	}
+	flip_seq(s, a->h);
 	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
-	for (i = 0; i < a->nei.n; ++i) {
-		z.x = a->nei.a[i].x[0]; z.y = a->nei.a[i].info;
-		kv_push(fm128_t, nei[1], z);
+	copy_nei(&nei[1], &a->nei);
+	// left-wards extension again in the paired-end mode
+	if (a->sorted) {
+		a->a[0].n = a->a[1].n = a->nei.n = 0;
+		flip_seq(s, a->h);
+		unitig_unidir(a, s, cov, s->l - seed_len, end[0], &end[0]);
+		copy_nei(&nei[0], &a->nei);
+		flip_seq(s, a->h);
 	}
 #if 0
 	for (iter = 0; iter != kh_end(a->h); ++iter)
