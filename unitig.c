@@ -39,6 +39,7 @@ static inline void set_bits(uint64_t *bits, const fmintv_t *p, const uint64_t *s
 		for (k = 0; k < p->x[2]; ++k) {
 			set_bit(bits, sorted[p->x[0] + k]>>2);
 			set_bit(bits, sorted[p->x[1] + k]>>2);
+			//assert(abs((sorted[p->x[0] + k]>>2) - (sorted[p->x[1] + k]>>2)) == 1);
 		}
 	} else {
 		for (k = 0; k < p->x[2]; ++k) {
