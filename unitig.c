@@ -32,12 +32,19 @@ static inline void set_bit(uint64_t *bits, uint64_t x)
 	__sync_fetch_and_or(p, z);
 }
 
-static inline void set_bits(uint64_t *bits, const fmintv_t *p)
+static inline void set_bits(uint64_t *bits, const fmintv_t *p, const uint64_t *sorted)
 {
 	uint64_t k;
-	for (k = 0; k < p->x[2]; ++k) {
-		set_bit(bits, p->x[0] + k);
-		set_bit(bits, p->x[1] + k);
+	if (sorted) {
+		for (k = 0; k < p->x[2]; ++k) {
+			set_bit(bits, sorted[p->x[0] + k]>>2);
+			set_bit(bits, sorted[p->x[1] + k]>>2);
+		}
+	} else {
+		for (k = 0; k < p->x[2]; ++k) {
+			set_bit(bits, p->x[0] + k);
+			set_bit(bits, p->x[1] + k);
+		}
 	}
 }
 
@@ -81,7 +88,7 @@ typedef struct {
 	hash64_t *h, *h_used; // these two are only used when sorted is set
 } aux_t;
 
-int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t *intv, fmintv_v *ovlp, uint64_t *used)
+int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t *intv, fmintv_v *ovlp)
 { // for s is a sequence in e, test if s is contained in other sequences in e; return intervals right overlapping with s
 	fmintv_t ik, ok[6];
 	int ret = 0;
@@ -93,7 +100,6 @@ int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t
 	ik = ok[0];
 	fm6_extend(e, &ik, ok, 0); assert(ok[0].x[2]);
 	if (ik.x[2] != ok[0].x[2]) ret = -1; // the sequence is right contained
-	if (used) set_bits(used, ok); // mark the read(s) has been used
 	*intv = ok[0];
 	return ret;
 }
@@ -144,7 +150,7 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 						kv_push(fmintv_t, *nei, ok0); // keep in the neighbor vector
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
 					} else { // the read is contained in another read; mark it as used
-						if (used) set_bits(used, &ok0);
+						if (used) set_bits(used, &ok0, sorted);
 					}
 				}
 			} // ~if(ok[0].x[2])
@@ -218,7 +224,7 @@ static int check_left_simple(aux_t *a, int beg, int rbeg, const kstring_t *s)
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
 			fm6_extend(a->e, p, ok, 1);
-			if (ok[0].x[2]) set_bits(a->used, &ok[0]); // some reads end here; they must be contained in a longer read
+			if (ok[0].x[2]) set_bits(a->used, &ok[0], a->sorted); // some reads end here; they must be contained in a longer read
 			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) return -1; // potential backward bifurcation
 			kv_push(fmintv_t, *curr, ok[(int)s->s[i]]);
 		}
@@ -283,7 +289,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 			break;
 		}
 		*end = a->nei.a[0].x[1];
-		set_bits(a->used, &a->nei.a[0]); // successful extension
+		set_bits(a->used, &a->nei.a[0], a->sorted); // successful extension
 		if (a->h_used) kh_put(64, a->h_used, k, &ret);
 		if (a->sorted) {
 			for (i = 0; i < a->nei.a[0].x[2]; ++i) {
@@ -339,7 +345,7 @@ static void copy_nei(fm128_v *dst, const fmintv_v *src)
 static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2])
 {
 	fmintv_t intv0;
-	int seed_len, ret;
+	int seed_len, ret, old_l;
 	int64_t k;
 	size_t i;
 	khint_t iter;
@@ -347,14 +353,17 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	nei[0].n = nei[1].n = 0;
 	if (a->h) kh_clear(64, a->h);
 	if (a->h_used) kh_clear(64, a->h_used);
+	if (a->sorted && (a->used[seed>>6]>>(seed&0x3f)&1)) return -2; // used
 	// retrieve the sequence pointed by seed
 	k = fm_retrieve(a->e, seed, s);
 	seq_reverse(s->l, (uint8_t*)s->s);
 	seed_len = s->l;
 	// check length, containment and if used before
 	if (s->l <= a->min_match) return -1; // too short
-	if (a->used[k>>6]>>(k&0x3f)&1) return -2; // used
-	if (fm6_is_contained(a->e, a->min_match, s, &intv0, &a->a[0], a->used) < 0) return -3; // contained
+	if (!a->sorted && (a->used[k>>6]>>(k&0x3f)&1)) return -2; // used
+	ret = fm6_is_contained(a->e, a->min_match, s, &intv0, &a->a[0]);
+	set_bits(a->used, &intv0, a->sorted); // mark the reads as used
+	if (ret < 0) return -3; // contained
 	// initialize the coverage string
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
@@ -372,11 +381,12 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
+	old_l = s->l;
 	flip_seq(s, a->h);
 	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	copy_nei(&nei[1], &a->nei);
 	// left-wards extension again in the paired-end mode
-	if (a->sorted) {
+	if (a->sorted && old_l != s->l) {
 		a->a[0].n = a->a[1].n = a->nei.n = 0;
 		flip_seq(s, a->h);
 		unitig_unidir(a, s, cov, s->l - seed_len, end[0], &end[0]);
@@ -428,7 +438,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 				z.l = kseq->seq.l;
 				for (j = 0; j < kseq->seq.l; ++j)
 					kseq->seq.s[j] = seq_nt6_table[(int)kseq->seq.s[j]];
-				if (fm6_is_contained(a.e, a.min_match, &kseq->seq, &intv, &a.a[0], 0) < 0) continue; // contained
+				if (fm6_is_contained(a.e, a.min_match, &kseq->seq, &intv, &a.a[0]) < 0) continue; // contained
 				if (intv.x[2] > 1) { // remove exact duplicates
 					uint64_t k = fm_retrieve(e, i, &str);
 					if (k != intv.x[0]) continue;
