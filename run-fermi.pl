@@ -38,8 +38,7 @@ sub main {
 	push(@lines, "# Construct the FM-index for raw sequences");
 	my @part;
 	my $pre = "$opts{p}.raw";
-	push(@part, sprintf("$pre.%.4d.fq.gz", $_)) for (0 .. $opts{t}-1);
-	push(@lines, join(" ", @part) . ":$in_list");
+	push(@lines, "$pre.split.log:$in_list");
 	push(@lines, "\t$fqs | \$(FERMI) splitfa - $pre $opts{t} 2> $pre.split.log\n");
 	&build_fmd(\@lines, $opts{t}, $pre, 1);
 
@@ -50,8 +49,7 @@ sub main {
 	push(@lines, "# Construct the FM-index for corrected sequences");
 	@part = ();
 	$pre = "$opts{p}.ec";
-	push(@part, sprintf("$pre.%.4d.fq.gz", $_)) for (0 .. $opts{t}-1);
-	push(@lines, join(" ", @part).":$opts{p}.ec.fq.gz");
+	push(@lines, "$pre.split.log:$opts{p}.ec.fq.gz");
 	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $opts{t} 2> $pre.split.log\n");
 	&build_fmd(\@lines, $opts{t}, $pre, 1);
 
@@ -87,8 +85,8 @@ sub build_fmd {
 	$rm = $rm? 'rm -f $^' : '';
 	for (0 .. $t-1) {
 		my $p = sprintf("$pre.%.4d", $_);
-		push(@$lines, "$p.fmd:$p.fq.gz");
-		push(@$lines, "\t\$(FERMI) build -fo \$@ \$< 2> \$@.log; $rm");
+		push(@$lines, "$p.fmd:$pre.split.log");
+		push(@$lines, "\t\$(FERMI) build -fo \$@ $p.fq.gz 2> \$@.log; $rm");
 	}
 	push(@$lines, "");
 	my @part = ();
