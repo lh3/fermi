@@ -468,15 +468,15 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 		for (i = start|1; i < end; i += 2) {
 			if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
 				uint64_t *p[2], x[2];
-				int done[2];
 				p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 				p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
-				done[0] = __sync_fetch_and_or(p[0], x[0])&x[0];
-				done[1] = __sync_fetch_and_or(p[1], x[1])&x[1];
  				if (a.sorted) {
-					if (done[0] && done[1]) continue;
+					int skip = 0;
+					if ((__sync_fetch_and_or(p[0], x[0])&x[0]) && (__sync_fetch_and_or(p[1], x[1])&x[1])) skip = 1;
+					__sync_fetch_and_or(p[1], x[1]);
+					if (skip) continue;
 				} else {
-					if (done[0] || done[1]) continue;
+					if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
 				}
 				z.l = str.l;
 				if (max_l < str.m) {
