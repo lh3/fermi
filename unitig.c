@@ -514,6 +514,16 @@ static void *worker(void *data)
 	return 0;
 }
 
+/* This routine has three modes. When sorted==NULL and fn==NULL, it constructs
+ * unitigs assuming the inputs are single-end reads. In this case, neighbors
+ * can be precisely computed. When sorted==NULL but fn!=NULL, the routine
+ * constructs the graph but does not do extension. Finally, when sorted!=NULL
+ * but fn==NULL, it assumes the inputs are paired-end reads.
+ *
+ * "sorted" converts the rank of a read to its index in the FM-index. In the
+ * paired-end mode, this routine is able to take advantage of "sorted" to speed
+ * up the computation.
+ */
 int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sorted, const char *fn)
 {
 	uint64_t *used, *bend, *visited, rest = e->mcnt[1];

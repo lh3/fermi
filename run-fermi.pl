@@ -32,25 +32,49 @@ sub main {
 			$fqs .= ($f =~ /\.gz$/)? "gzip -dc $f; " : "cat $f; ";
 		}
 	}
+	chop($fqs);
 	$fqs = '(' . $fqs . ')';
 
+	push(@lines, "# Construct the FM-index for raw sequences");
 	my @part;
 	my $pre = "$opts{p}.raw";
 	push(@part, sprintf("$pre.%.4d.fq.gz", $_)) for (0 .. $opts{t}-1);
 	push(@lines, join(" ", @part) . ":$in_list");
-	push(@lines, "\t$fqs | \$(FERMI) splitfa - $pre $opts{t} 2> $opts{p}.raw.split.log\n");
-	&build_fmd(\@lines, $opts{t}, $pre);
+	push(@lines, "\t$fqs | \$(FERMI) splitfa - $pre $opts{t} 2> $pre.split.log\n");
+	&build_fmd(\@lines, $opts{t}, $pre, 1);
+
+	push(@lines, "# Error correction");
 	push(@lines, "$opts{p}.ec.fq.gz:$opts{p}.raw.fmd");
 	push(@lines, "\t$fqs | \$(FERMI) correct -".(defined($opts{P})? 'p' : '')."t $opts{t} \$< - 2> \$@.log | gzip -1 > \$@\n");
+
+	push(@lines, "# Construct the FM-index for corrected sequences");
 	@part = ();
 	$pre = "$opts{p}.ec";
 	push(@part, sprintf("$pre.%.4d.fq.gz", $_)) for (0 .. $opts{t}-1);
 	push(@lines, join(" ", @part).":$opts{p}.ec.fq.gz");
-	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $opts{t} 2> $opts{p}.ec.split.log\n");
-	&build_fmd(\@lines, $opts{t}, $pre);
+	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $opts{t} 2> $pre.split.log\n");
+	&build_fmd(\@lines, $opts{t}, $pre, 1);
+
 	if (defined($opts{P})) {
-		push(@lines, "");
+		push(@lines, "# Compute the rank of each sequence");
+		push(@lines, "$opts{p}.ec.rank:$opts{p}.ec.fmd");
+		push(@lines, "\t\$(FERMI) seqsort -t $opts{t} \$< > \$@ 2> \$@.log\n");
+
+		push(@lines, "# Generate pre-unitigs and construct the FM-index");
+		@part = ();
+		$pre = "$opts{p}.re";
+		push(@part, sprintf("$pre.%.4d.fq.gz", $_)) for (0 .. $opts{t}-1);
+		push(@lines, join(" ", @part).":$opts{p}.ec.rank $opts{p}.ec.fmd");
+		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -r \$^ 2> $pre.unitig.log | \$(FERMI) splitfa - $pre $opts{t} 2> $pre.split.log\n");
+		&build_fmd(\@lines, $opts{t}, $pre, 0);
+
+		push(@lines, "# Generate unitigs");
+		push(@lines, "$opts{p}.re.fq.gz:$pre.fmd ".join(" ", @part));
+		push(@lines, "\tcat \$^ > \$@; rm -f \$^\n");
+		push(@lines, "$opts{p}.msg.gz:$opts{p}.re.fq.gz $opts{p}.re.fmd");
+		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) -s \$^ 2> \$@.log | gzip -1 > \$@; rm -f \$<\n");
 	} else {
+		push(@lines, "# Generate unitigs");
 		push(@lines, "$opts{p}.msg.gz:$opts{p}.ec.fmd");
 		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) \$< 2> \$@.log | gzip -1 > \$@\n");
 	}
@@ -59,11 +83,12 @@ sub main {
 }
 
 sub build_fmd {
-	my ($lines, $t, $pre) = @_;
+	my ($lines, $t, $pre, $rm) = @_;
+	$rm = $rm? 'rm -f $^' : '';
 	for (0 .. $t-1) {
 		my $p = sprintf("$pre.%.4d", $_);
 		push(@$lines, "$p.fmd:$p.fq.gz");
-		push(@$lines, "\t\$(FERMI) build -fo \$@ \$< 2> \$@.log; rm -f \$^");
+		push(@$lines, "\t\$(FERMI) build -fo \$@ \$< 2> \$@.log; $rm");
 	}
 	push(@$lines, "");
 	my @part = ();
