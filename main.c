@@ -42,6 +42,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
 		fprintf(stderr, "         exact     Find exact matches\n");
 		fprintf(stderr, "         correct   Error correction\n");
+		fprintf(stderr, "         seqrank   Compute the rank of sequences\n");
 		fprintf(stderr, "         unitig    Construct unitigs\n");
 		fprintf(stderr, "         clean     Clean the graph\n");
 		fprintf(stderr, "\n");
@@ -60,6 +61,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
 	else if (strcmp(argv[1], "cnt2qual") == 0) ret = main_cnt2qual(argc-1, argv+1);
 	else if (strcmp(argv[1], "seqsort") == 0) ret = main_seqsort(argc-1, argv+1);
+	else if (strcmp(argv[1], "seqrank") == 0) ret = main_seqsort(argc-1, argv+1); // an alias of seqsort
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);
