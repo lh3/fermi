@@ -82,15 +82,14 @@ sub main {
 
 sub build_fmd {
 	my ($lines, $t, $pre, $rm) = @_;
-	$rm = $rm? 'rm -f $^' : '';
+	my ($logs, $fmds) = ('', '');
 	for (0 .. $t-1) {
 		my $p = sprintf("$pre.%.4d", $_);
-		push(@$lines, "$p.fmd:$pre.split.log");
-		push(@$lines, "\t\$(FERMI) build -fo \$@ $p.fq.gz 2> \$@.log; $rm");
+		$logs .= "$p.fmd.log ";
+		$fmds .= "$p.fmd ";
+		push(@$lines, "$p.fmd.log:$pre.split.log");
+		push(@$lines, "\t\$(FERMI) build -fo $p.fmd $p.fq.gz 2> \$@; ".($rm? "rm -f $p.fq.gz" : ""));
 	}
-	push(@$lines, "");
-	my @part = ();
-	push(@part, sprintf("$pre.%.4d.fmd", $_)) for (0 .. $t-1);
-	push(@$lines, "$pre.fmd:".join(" ", @part));
-	push(@$lines, "\t\$(FERMI) merge -t $t -fo \$@ \$^ 2> \$@.log; rm -f \$^\n");
+	push(@$lines, "", "$pre.fmd:$logs");
+	push(@$lines, "\t\$(FERMI) merge -t $t -fo \$@ $fmds 2> \$@.log; rm -f $fmds\n");
 }
