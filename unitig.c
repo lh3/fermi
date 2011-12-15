@@ -310,7 +310,7 @@ static void copy_nei(fm128_v *dst, const fmintv_v *src)
 static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2])
 {
 	fmintv_t intv0;
-	int seed_len, ret, old_l;
+	int seed_len, ret;
 	int64_t k;
 	size_t i;
 	khint_t iter;
@@ -344,7 +344,6 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
-	old_l = s->l;
 	flip_seq(s, a->h);
 	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	copy_nei(&nei[1], &a->nei);
@@ -384,14 +383,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 			uint64_t *p[2], x[2];
 			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
-			if (a.sorted) {
-				int skip = 0;
-				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) && (__sync_fetch_and_or(p[1], x[1])&x[1])) skip = 1;
-				__sync_fetch_and_or(p[1], x[1]);
-				if (skip) continue;
-			} else {
-				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
-			}
+			if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
 			z.l = str.l;
 			if (max_l < str.m) {
 				max_l = str.m;
