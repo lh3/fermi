@@ -60,9 +60,17 @@ Options: -P        the input is paired
 	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $opts{t} 2> $pre.split.log\n");
 	&build_fmd(\@lines, $opts{t}, $pre, 1);
 
-	push(@lines, "# Generate unitigs");
-	push(@lines, "$opts{p}.msg.gz:$opts{p}.ec.fmd");
-	push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) \$< 2> \$@.log | gzip -1 > \$@\n");
+	if (defined($opts{P})) {
+		push(@lines, "# Generate unitigs");
+		push(@lines, "$opts{p}.ec.rank:$opts{p}.ec.fmd");
+		push(@lines, "\t\$(FERMI) seqrank -t $opts{t} \$< > \$@ 2> \$@.log\n");
+		push(@lines, "$opts{p}.msg.gz:$opts{p}.ec.rank $opts{p}.ec.fmd");
+		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) -r \$^ 2> \$@.log | gzip -1 > \$@\n");
+	} else {
+		push(@lines, "# Generate unitigs");
+		push(@lines, "$opts{p}.msg.gz:$opts{p}.ec.fmd");
+		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) \$< 2> \$@.log | gzip -1 > \$@\n");
+	}
 
 	print join("\n", @lines), "\n";
 }

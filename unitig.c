@@ -79,7 +79,7 @@ typedef struct {
 	const rld_t *e;
 	const uint64_t *sorted;
 	int min_match;
-	fmintv_v a[2], nei;
+	fmintv_v a[2], nei, contained;
 	fm32s_v cat;
 	uint64_t *used, *bend;
 	kstring_t str;
@@ -102,15 +102,36 @@ int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t
 	return ret;
 }
 
+static void pair_add(const uint64_t *sorted, hash64_t *h, const fmintv_t *intv, int beg, int end)
+{
+	int i;
+	if (sorted == 0 || h == 0) return;
+	for (i = 0; i < intv->x[2]; ++i) {
+		uint64_t k = sorted[intv->x[0] + i]>>2;
+		int ret, to_add = 0;
+		khint_t iter;
+		if (k&1) { // reverse strand; check if the mate has been added
+			iter = kh_get(64, h, k>>1^1);
+			if (iter == kh_end(h) || (kh_val(h, iter)&1)) to_add = 1;
+			else kh_del(64, h, iter);
+		} else to_add = 1;
+		if (to_add) {
+			iter = kh_put(64, h, k>>1, &ret);
+			kh_val(h, iter) = end<<1 | (k&1) | (uint64_t)beg<<32;
+		}
+	}
+}
+
 int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *nei, // input and output variables
 				fmintv_v *prev, fmintv_v *curr, fm32s_v *cat,                        // temporary arrays
-				uint64_t *used, const uint64_t *sorted, void *_h)                    // optional info
+				uint64_t *used, const uint64_t *sorted, fmintv_v *contained)         // optional info
 {
 	int ori_l = s->l, j, i, c, rbeg, is_forked = 0;
 	fmintv_v *swap;
 	fmintv_t ok[6], ok0;
 
 	curr->n = nei->n = cat->n = 0;
+	if (contained) contained->n = 0;
 	if (prev->n == 0) { // when this routine is called for the seed, prev may filled by fm6_is_contained()
 		overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min_match, s->l - beg - 1, 0, prev, 0);
 		if (prev->n == 0) return -1; // no overlap
@@ -135,6 +156,11 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
 					} else { // the read is contained in another read; mark it as used
 						if (used) set_bits(used, &ok0, sorted);
+						if (contained) { // keep the contained reads
+							fmintv_t tmp = ok0;
+							tmp.info = (ori_l - (p->info&0xffffffffU)) | ((uint64_t)s->l<<32);
+							kv_push(fmintv_t, *contained, tmp);
+						}
 					}
 				}
 			} // ~if(ok[0].x[2])
@@ -192,9 +218,9 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 	return rbeg;
 }
 
-static int try_right(aux_t *a, int beg, kstring_t *s)
+static int try_right(aux_t *a, int beg, kstring_t *s, int keep_contained)
 {
-	return fm6_get_nei(a->e, a->min_match, beg, s, &a->nei, &a->a[0], &a->a[1], &a->cat, a->used, a->sorted, a->h);
+	return fm6_get_nei(a->e, a->min_match, beg, s, &a->nei, &a->a[0], &a->a[1], &a->cat, a->used, a->sorted, keep_contained? &a->contained:0);
 }
 
 static int check_left_simple(aux_t *a, int beg, int rbeg, const kstring_t *s)
@@ -231,7 +257,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	for (i = s->l - 1, a->str.l = 0; i >= rbeg; --i)
 		a->str.s[a->str.l++] = fm6_comp(s->s[i]);
 	a->str.s[a->str.l] = 0;
-	try_right(a, 0, &a->str);
+	try_right(a, 0, &a->str, 0);
 	assert(a->nei.n >= 1);
 	ret = a->nei.n > 1? -1 : 0;
 	a->nei.n = 1; a->nei.a[0] = tmp; // recover the original neighbour
@@ -240,8 +266,8 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 {
-	int i, beg = beg0, rbeg, ori_l = s->l, ret;
-	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
+	int i, beg = beg0, rbeg, ori_l = s->l;
+	while ((rbeg = try_right(a, beg, s, 1)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
@@ -257,20 +283,9 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0], a->sorted); // successful extension
 		if (a->sorted) {
-			for (i = 0; i < a->nei.a[0].x[2]; ++i) {
-				uint64_t kk = a->sorted[a->nei.a[0].x[0] + i]>>2;
-				int to_add = 0;
-				khint_t iter;
-				if (kk&1) { // reverse strand; check if the mate has been added
-					iter = kh_get(64, a->h, kk>>1^1);
-					if (iter == kh_end(a->h) || (kh_val(a->h, iter)&1)) to_add = 1;
-					else kh_del(64, a->h, iter);
-				} else to_add = 1;
-				if (to_add) {
-					iter = kh_put(64, a->h, kk>>1, &ret);
-					kh_val(a->h, iter) = s->l<<1 | (kk&1) | (uint64_t)rbeg<<32;
-				}
-			}
+			pair_add(a->sorted, a->h, &a->nei.a[0], rbeg, s->l);
+			for (i = 0; i < a->contained.n; ++i)
+				pair_add(a->sorted, a->h, &a->contained.a[i], (uint32_t)a->contained.a[i].info, a->contained.a[i].info>>32);
 		}
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
@@ -307,13 +322,12 @@ static void copy_nei(fm128_v *dst, const fmintv_v *src)
 	}
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2])
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], fm128_v *mapping)
 {
 	fmintv_t intv0;
 	int seed_len, ret;
 	int64_t k;
 	size_t i;
-	khint_t iter;
 
 	nei[0].n = nei[1].n = 0;
 	if (a->h) kh_clear(64, a->h);
@@ -332,10 +346,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
 	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
-	if (a->sorted) {
-		iter = kh_put(64, a->h, a->sorted[k]>>3, &ret);
-		kh_val(a->h, iter) = s->l<<1 | (uint64_t)(a->sorted[k]>>2&1); // beg:32, end:31, strand:1
-	}
+	if (a->sorted) pair_add(a->sorted, a->h, &intv0, 0, s->l);
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	if (a->a[0].n) { // no need to extend to the right if there is no overlap
@@ -347,14 +358,17 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	flip_seq(s, a->h);
 	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	copy_nei(&nei[1], &a->nei);
-#if 0
-	for (iter = 0; iter != kh_end(a->h); ++iter)
-		if (kh_exist(a->h, iter)) {
-			int beg, end;
-			beg = kh_val(a->h, iter)>>32; end = kh_val(a->h, iter)<<32>>33;
-			printf("XX\t%lld\t%lld\t%lld\t(%d,%d;%d,%d)\n", kh_key(a->h, iter), seed, kh_val(a->h, iter)&1, beg, end, s->l - end, s->l - beg);
+	if (a->h && mapping) {
+		khint_t iter;
+		mapping->n = 0;
+		for (iter = 0; iter != kh_end(a->h); ++iter) {
+			fm128_t tmp;
+			if (!kh_exist(a->h, iter)) continue;
+			tmp.x = kh_key(a->h, iter)<<1 | (kh_val(a->h, iter)&1);
+			tmp.y = kh_val(a->h, iter)>>32<<32 | (kh_val(a->h, iter)<<32>>33);
+			kv_push(fm128_t, *mapping, tmp);
 		}
-#endif
+	}
 	return 0;
 }
 
@@ -373,13 +387,12 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	memset(&a, 0, sizeof(aux_t));
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
-	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
 	if (sorted) a.h = kh_init(64);
 	kv_init(z.nei[0]); kv_init(z.nei[1]);
 	z.seq = z.cov = 0;
 	// the core loop
 	for (i = start|1; i < end; i += 2) {
-		if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
+		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping) >= 0) { // then we keep the unitig
 			uint64_t *p[2], x[2];
 			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
@@ -398,8 +411,8 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 		}
 	}
 	if (a.h) kh_destroy(64, a.h);
-	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
-	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
+	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a); free(a.contained.a);
+	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov); free(z.mapping.a);
 	free(a.str.s); free(str.s); free(cov.s); free(out.s);
 }
 

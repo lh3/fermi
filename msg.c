@@ -42,6 +42,16 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 		}
 		if (p->nei[j].n == 0) kputc('.', out);
 	}
+	if (p->mapping.n) {
+		kputc('\t', out);
+		for (j = 0; j < p->mapping.n; ++j) {
+			fm128_t *q = &p->mapping.a[j];
+			if (j) kputc(',', out);
+			kputl(q->x, out); kputc(':', out);
+			kputw(q->y>>32, out); kputc(':', out);
+			kputw(q->y<<32>>32, out);
+		}
+	}
 	kputc('\n', out);
 	ks_resize(out, out->l + 2 * p->l + 5);
 	for (j = 0; j < p->l; ++j) out->s[out->l++] = "ACGT"[(int)p->seq[j] - 1];
