@@ -385,12 +385,10 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
 	memset(&a, 0, sizeof(aux_t));
-	memset(&z, 0, sizeof(fmnoe_t));
+	memset(&z, 0, sizeof(fmnode_t));
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	if (sorted) a.h = kh_init(64);
-	kv_init(z.nei[0]); kv_init(z.nei[1]);
-	z.seq = z.cov = 0;
 	// the core loop
 	for (i = start|1; i < end; i += 2) {
 		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping) >= 0) { // then we keep the unitig
