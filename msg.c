@@ -48,8 +48,9 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 			fm128_t *q = &p->mapping.a[j];
 			if (j) kputc(',', out);
 			kputl(q->x, out); kputc(':', out);
+			kputc((q->y&1)? '-' : '+', out); kputc(':', out);
 			kputw(q->y>>32, out); kputc(':', out);
-			kputw(q->y<<32>>32, out);
+			kputw(q->y<<32>>33, out);
 		}
 	}
 	kputc('\n', out);
@@ -182,7 +183,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 				if (nei.a[i].y < ovlp_thres)
 					nei.a[i].x = 0; // to be deleted in rmdup_128v()
 			rmdup_128v(&nei);
-			if (nei.n > max_arc) {
+			if (nei.n > max_arc) { // excessive connections; keep the top ones
 				int thres;
 				ks_introsort(128y, nei.n, nei.a);
 				thres = nei.a[max_arc].y;
@@ -200,6 +201,19 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 			}
 			++n_tips;
 		} else {
+			// read mappings
+			if (seq->comment.l - (q - seq->comment.s) >= 5) {
+				for (; *q && !isdigit(*q); ++q); // skip non-digits
+				while (isdigit(*q)) {
+					fm128_t x;
+					x.x = strtol(q, &q, 10); ++q;
+					x.y = *q == '-'? 1 : 0; q += 2;
+					x.y |= (uint64_t)strtol(q, &q, 10)<<32; ++q;
+					x.y |= strtol(q, &q, 10)<<1; ++q;
+					kv_push(fm128_t, p->mapping, x);
+				}
+			}
+			// finalize
 			tot_len += seq->seq.l;
 			if (fm_verbose >= 4 && g->nodes.n % 100000 == 0)
 				fprintf(stderr, "[%s] read %ld nodes in %ld bp in %.2f sec (#tips: %ld; #arcs: %ld; #dropped: %ld)\n",
@@ -223,7 +237,7 @@ void msg_destroy(msg_t *g)
 	for (i = 0; i < g->nodes.n; ++i) {
 		fmnode_t *p = &g->nodes.a[i];
 		if (p->l < 0) continue;
-		free(p->nei[0].a); free(p->nei[1].a);
+		free(p->nei[0].a); free(p->nei[1].a); free(p->mapping.a);
 		free(p->seq); free(p->cov);
 	}
 	free(g->nodes.a);

@@ -364,8 +364,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 		for (iter = 0; iter != kh_end(a->h); ++iter) {
 			fm128_t tmp;
 			if (!kh_exist(a->h, iter)) continue;
-			tmp.x = kh_key(a->h, iter)<<1 | (kh_val(a->h, iter)&1);
-			tmp.y = kh_val(a->h, iter)>>32<<32 | (kh_val(a->h, iter)<<32>>33);
+			tmp.x = kh_key(a->h, iter); tmp.y = kh_val(a->h, iter);
 			kv_push(fm128_t, *mapping, tmp);
 		}
 	}
