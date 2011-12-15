@@ -60,29 +60,9 @@ Options: -P        the input is paired
 	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $opts{t} 2> $pre.split.log\n");
 	&build_fmd(\@lines, $opts{t}, $pre, 1);
 
-	if (defined($opts{P})) {
-		push(@lines, "# Compute the rank of each sequence");
-		push(@lines, "$opts{p}.ec.rank:$opts{p}.ec.fmd");
-		push(@lines, "\t\$(FERMI) seqsort -t $opts{t} \$< > \$@ 2> \$@.log\n");
-
-		push(@lines, "# Generate pre-unitigs and construct the FM-index");
-		$pre = "$opts{p}.pe";
-		push(@lines, "$pre.split.log:$opts{p}.ec.rank $opts{p}.ec.fmd");
-		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -r \$^ 2> $pre.unitig.log | \$(FERMI) splitfa - $pre $opts{t} 2> $pre.split.log\n");
-		&build_fmd(\@lines, $opts{t}, $pre, 0);
-
-		my $fq_list = '';
-		$fq_list .= sprintf("$opts{p}.pe.%.4d.fq.gz ", $_) for (0 .. $opts{t}-1);
-		push(@lines, "# Generate unitigs");
-		push(@lines, "$opts{p}.pe.fq.gz:$pre.split.log $pre.fmd");
-		push(@lines, "\tcat $fq_list > \$@; rm -f $fq_list\n");
-		push(@lines, "$opts{p}.msg.gz:$opts{p}.pe.fq.gz $opts{p}.pe.fmd");
-		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) -s \$^ 2> \$@.log | gzip -1 > \$@\n");
-	} else {
-		push(@lines, "# Generate unitigs");
-		push(@lines, "$opts{p}.msg.gz:$opts{p}.ec.fmd");
-		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) \$< 2> \$@.log | gzip -1 > \$@\n");
-	}
+	push(@lines, "# Generate unitigs");
+	push(@lines, "$opts{p}.msg.gz:$opts{p}.ec.fmd");
+	push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) \$< 2> \$@.log | gzip -1 > \$@\n");
 
 	print join("\n", @lines), "\n";
 }

@@ -16,9 +16,6 @@ KSORT_INIT(infocmp, fmintv_t, info_lt)
 #include "khash.h"
 KHASH_DECLARE(64, uint64_t, uint64_t)
 
-#include "kseq.h"
-KSEQ_INIT(gzFile, gzread)
-
 typedef khash_t(64) hash64_t;
 
 extern unsigned char seq_nt6_table[128];
@@ -86,7 +83,7 @@ typedef struct {
 	fm32s_v cat;
 	uint64_t *used, *bend;
 	kstring_t str;
-	hash64_t *h, *h_used; // these two are only used when sorted is set
+	hash64_t *h;
 } aux_t;
 
 int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t *intv, fmintv_v *ovlp)
@@ -107,12 +104,11 @@ int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t
 
 int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *nei, // input and output variables
 				fmintv_v *prev, fmintv_v *curr, fm32s_v *cat,                        // temporary arrays
-				uint64_t *used, const uint64_t *sorted, void *_h, int paired_only)   // optional info
+				uint64_t *used, const uint64_t *sorted, void *_h)                    // optional info
 {
 	int ori_l = s->l, j, i, c, rbeg, is_forked = 0;
 	fmintv_v *swap;
 	fmintv_t ok[6], ok0;
-	hash64_t *h = (hash64_t*)_h;
 
 	curr->n = nei->n = cat->n = 0;
 	if (prev->n == 0) { // when this routine is called for the seed, prev may filled by fm6_is_contained()
@@ -132,19 +128,6 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 				if (ok0.x[2]) { // the match is bounded by sentinels - a full-length match
 					if (ok[0].x[2] == p->x[2] && p->x[2] == ok0.x[2]) { // never consider a read contained in another read
 						int cat0 = cat->a[j]; // a category approximately corresponds to one neighbor, though not always
-						if (sorted && h && paired_only) {
-							int l;
-							for (l = 0; l < ok0.x[2]; ++l) {
-								khint_t iter;
-								uint64_t k = sorted[ok0.x[0] + l]>>2;
-								if (k&1) { // the reverse strand
-									iter = kh_get(64, h, k>>1^1);
-									if (iter != kh_end(h) && (kh_val(h, iter)&1) == 0)
-										break;
-								}
-							}
-							if (l == ok0.x[2]) continue; // do not add this read
-						}
 						assert(j == 0 || cat->a[j] > cat->a[j-1]); // otherwise not irreducible
 						ok0.info = ori_l - (p->info&0xffffffffU);
 						for (i = j; i < prev->n && cat->a[i] == cat0; ++i) cat->a[i] = -1; // mask out other intervals of the same cat
@@ -209,9 +192,9 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 	return rbeg;
 }
 
-static int try_right(aux_t *a, int beg, kstring_t *s, int paired_only)
+static int try_right(aux_t *a, int beg, kstring_t *s)
 {
-	return fm6_get_nei(a->e, a->min_match, beg, s, &a->nei, &a->a[0], &a->a[1], &a->cat, a->used, a->sorted, a->h, paired_only);
+	return fm6_get_nei(a->e, a->min_match, beg, s, &a->nei, &a->a[0], &a->a[1], &a->cat, a->used, a->sorted, a->h);
 }
 
 static int check_left_simple(aux_t *a, int beg, int rbeg, const kstring_t *s)
@@ -248,7 +231,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	for (i = s->l - 1, a->str.l = 0; i >= rbeg; --i)
 		a->str.s[a->str.l++] = fm6_comp(s->s[i]);
 	a->str.s[a->str.l] = 0;
-	try_right(a, 0, &a->str, 0);
+	try_right(a, 0, &a->str);
 	assert(a->nei.n >= 1);
 	ret = a->nei.n > 1? -1 : 0;
 	a->nei.n = 1; a->nei.a[0] = tmp; // recover the original neighbour
@@ -256,42 +239,23 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 }
 
 static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
-{ // FIXME: be careful of self-loop like a>>a or a><a
+{
 	int i, beg = beg0, rbeg, ori_l = s->l, ret;
-	while ((rbeg = try_right(a, beg, s, 0)) >= 0) { // loop if there is at least one overlap
+	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
-		int check_back = 1;
 		if (a->nei.n > 1) { // forward bifurcation
-			if (a->sorted) {
-				s->l = ori_l; a->a[0].n = a->a[1].n = 0;
-				rbeg = try_right(a, beg, s, 1);
-			}
-			if (a->nei.n != 1) {
-				set_bit(a->bend, *end);
-				break;
-			}
+			set_bit(a->bend, *end);
+			break;
 		}
 		k = a->nei.a[0].x[0];
-		if (a->h_used && kh_get(64, a->h_used, k) != kh_end(a->h_used)) break; // a loop
 		if (k == k0) break; // a loop like a>>b>>c>>a
 		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
-		if (a->sorted) {
-			for (i = 0; i < a->nei.a[0].x[2]; ++i) {
-				uint64_t kk = a->sorted[a->nei.a[0].x[0] + i]>>2;
-				khint_t iter;
-				if ((kk&1) == 0) break; // need to check back if on the forward strand
-				iter = kh_get(64, a->h, kk>>1^1);
-				if (iter == kh_end(a->h) || (kh_val(a->h, iter)&1)) break;
-			}
-			if (i == a->nei.a[0].x[2]) check_back = 0;
-		}
-		if (check_back && ((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0)) { // backward bifurcation
+		if (((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0)) { // backward bifurcation
 			set_bit(a->bend, k);
 			break;
 		}
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0], a->sorted); // successful extension
-		if (a->h_used) kh_put(64, a->h_used, k, &ret);
 		if (a->sorted) {
 			for (i = 0; i < a->nei.a[0].x[2]; ++i) {
 				uint64_t kk = a->sorted[a->nei.a[0].x[0] + i]>>2;
@@ -353,7 +317,6 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 
 	nei[0].n = nei[1].n = 0;
 	if (a->h) kh_clear(64, a->h);
-	if (a->h_used) kh_clear(64, a->h_used);
 	if (a->sorted && (a->used[seed>>6]>>(seed&0x3f)&1)) return -2; // used
 	// retrieve the sequence pointed by seed
 	k = fm_retrieve(a->e, seed, s);
@@ -372,7 +335,6 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	if (a->sorted) {
 		iter = kh_put(64, a->h, a->sorted[k]>>3, &ret);
 		kh_val(a->h, iter) = s->l<<1 | (uint64_t)(a->sorted[k]>>2&1); // beg:32, end:31, strand:1
-		if (a->h_used) kh_put(64, a->h_used, k, &ret);
 	}
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
@@ -386,14 +348,6 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	flip_seq(s, a->h);
 	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	copy_nei(&nei[1], &a->nei);
-	// left-wards extension again in the paired-end mode
-	if (a->sorted && old_l != s->l) {
-		a->a[0].n = a->a[1].n = a->nei.n = 0;
-		flip_seq(s, a->h);
-		unitig_unidir(a, s, cov, s->l - seed_len, end[0], &end[0]);
-		copy_nei(&nei[0], &a->nei);
-		flip_seq(s, a->h);
-	}
 #if 0
 	for (iter = 0; iter != kh_end(a->h); ++iter)
 		if (kh_exist(a->h, iter)) {
@@ -422,78 +376,36 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	kv_init(a.a[0]); kv_init(a.a[1]); kv_init(a.nei); kv_init(a.cat);
 	if (sorted) a.h = kh_init(64);
-	if (sorted) a.h_used = kh_init(64);
 	kv_init(z.nei[0]); kv_init(z.nei[1]);
 	z.seq = z.cov = 0;
 	// the core loop
-	if (fn) {
-		kseq_t *kseq;
-		gzFile fp;
-		fp = gzopen(fn, "rb");
-		kseq = kseq_init(fp);
-		for (i = 0; kseq_read(kseq) >= 0; i += 2) {
-			fmintv_t intv;
-			int j, x;
-			if (i >= end) break;
-			if (i >= start) {
-				z.l = kseq->seq.l;
-				for (j = 0; j < kseq->seq.l; ++j)
-					kseq->seq.s[j] = seq_nt6_table[(int)kseq->seq.s[j]];
-				if (fm6_is_contained(a.e, a.min_match, &kseq->seq, &intv, &a.a[0]) < 0) continue; // contained
-				if (intv.x[2] > 1) { // remove exact duplicates
-					uint64_t k = fm_retrieve(e, i, &str);
-					if (k != intv.x[0]) continue;
-				}
-				for (x = 0; x < 2; ++x) {
-					fm6_get_nei(e, min_match, 0, &kseq->seq, &a.nei, &a.a[0], &a.a[1], &a.cat, 0, 0, 0, 0);
-					kseq->seq.l = z.l; kseq->seq.s[z.l] = 0; // l may be modified in fm6_get_nei()
-					seq_revcomp6(kseq->seq.l, (uint8_t*)kseq->seq.s);
-					kv_resize(fm128_t, z.nei[x^1], a.nei.m);
-					z.nei[x^1].n = a.nei.n;
-					for (j = 0; j < a.nei.n; ++j)
-						z.nei[x^1].a[j].x = a.nei.a[j].x[0], z.nei[x^1].a[j].y = a.nei.a[j].info;
-					a.a[0].n = a.a[1].n = 0;
-					z.k[x] = intv.x[x];
-				}
-				z.seq = kseq->seq.s; z.cov = kseq->qual.s;
-				z.k[0] = intv.x[0]; z.k[1] = intv.x[1];
-				msg_write_node(&z, i, &out);
-				fputs(out.s, stdout);
-				out.l = 0; z.seq = z.cov = 0;
+	for (i = start|1; i < end; i += 2) {
+		if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
+			uint64_t *p[2], x[2];
+			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
+			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
+			if (a.sorted) {
+				int skip = 0;
+				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) && (__sync_fetch_and_or(p[1], x[1])&x[1])) skip = 1;
+				__sync_fetch_and_or(p[1], x[1]);
+				if (skip) continue;
+			} else {
+				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
 			}
-		}
-		kseq_destroy(kseq);
-		gzclose(fp);
-	} else {
-		for (i = start|1; i < end; i += 2) {
-			if (unitig1(&a, i, &str, &cov, z.k, z.nei) >= 0) { // then we keep the unitig
-				uint64_t *p[2], x[2];
-				p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
-				p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
- 				if (a.sorted) {
-					int skip = 0;
-					if ((__sync_fetch_and_or(p[0], x[0])&x[0]) && (__sync_fetch_and_or(p[1], x[1])&x[1])) skip = 1;
-					__sync_fetch_and_or(p[1], x[1]);
-					if (skip) continue;
-				} else {
-					if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
-				}
-				z.l = str.l;
-				if (max_l < str.m) {
-					max_l = str.m;
-					z.seq = realloc(z.seq, max_l);
-					z.cov = realloc(z.cov, max_l);
-				}
-				memcpy(z.seq, str.s, z.l);
-				memcpy(z.cov, cov.s, z.l + 1);
-				msg_write_node(&z, i, &out);
-				fputs(out.s, stdout);
-				out.s[0] = 0; out.l = 0;
+			z.l = str.l;
+			if (max_l < str.m) {
+				max_l = str.m;
+				z.seq = realloc(z.seq, max_l);
+				z.cov = realloc(z.cov, max_l);
 			}
+			memcpy(z.seq, str.s, z.l);
+			memcpy(z.cov, cov.s, z.l + 1);
+			msg_write_node(&z, i, &out);
+			fputs(out.s, stdout);
+			out.s[0] = 0; out.l = 0;
 		}
 	}
 	if (a.h) kh_destroy(64, a.h);
-	if (a.h_used) kh_destroy(64, a.h_used);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
 	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
 	free(a.str.s); free(str.s); free(cov.s); free(out.s);
@@ -514,17 +426,7 @@ static void *worker(void *data)
 	return 0;
 }
 
-/* This routine has three modes. When sorted==NULL and fn==NULL, it constructs
- * unitigs assuming the inputs are single-end reads. In this case, neighbors
- * can be precisely computed. When sorted==NULL but fn!=NULL, the routine
- * constructs the graph but does not do extension. Finally, when sorted!=NULL
- * but fn==NULL, it assumes the inputs are paired-end reads.
- *
- * "sorted" converts the rank of a read to its index in the FM-index. In the
- * paired-end mode, this routine is able to take advantage of "sorted" to speed
- * up the computation.
- */
-int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sorted, const char *fn)
+int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sorted)
 {
 	uint64_t *used, *bend, *visited, rest = e->mcnt[1];
 	pthread_t *tid;
@@ -547,7 +449,6 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 		ww->start = (e->mcnt[1] - rest) / 2 * 2;
 		ww->end = ww->start + rest / (n_threads - j) / 2 * 2;
 		ww->sorted = sorted;
-		ww->fn = fn;
 		rest -= ww->end - ww->start;
 		ww->used = used; ww->bend = bend; ww->visited = visited;
 	}
