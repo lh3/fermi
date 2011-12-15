@@ -358,7 +358,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, const char *fn,
+static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end,
 						uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted)
 {
 	extern void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
@@ -407,14 +407,13 @@ typedef struct {
 	uint64_t start, end, *used, *bend, *visited;
 	const rld_t *e;
 	const uint64_t *sorted;
-	const char *fn;
 	int min_match;
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	unitig_core(w->e, w->min_match, w->start, w->end, w->fn, w->used, w->bend, w->visited, w->sorted);
+	unitig_core(w->e, w->min_match, w->start, w->end, w->used, w->bend, w->visited, w->sorted);
 	return 0;
 }
 
