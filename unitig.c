@@ -385,6 +385,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
 	memset(&a, 0, sizeof(aux_t));
+	memset(&z, 0, sizeof(fmnoe_t));
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	if (sorted) a.h = kh_init(64);
