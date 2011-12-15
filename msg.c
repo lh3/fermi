@@ -148,7 +148,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 		uint32_t tmp;
 		char *q;
 		kv_pushp(fmnode_t, g->nodes, &p);
-		kv_init(p->nei[0]); kv_init(p->nei[1]);
+		kv_init(p->nei[0]); kv_init(p->nei[1]); kv_init(p->mapping);
 		p->l = seq->seq.l;
 		tmp = p->l + 1;
 		kroundup32(tmp);
