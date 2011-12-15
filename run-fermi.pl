@@ -8,13 +8,14 @@ use Getopt::Std;
 
 sub main {
 	my %opts = (e=>'fermi', t=>2, p=>'fmdef', f=>17, k=>50);
-	getopts('e:t:p:Pcf:', \%opts);
+	getopts('e:t:p:Pcf:k:', \%opts);
 	$opts{P} = 1 if defined($opts{c});
 
 	die(qq/
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
 Options: -P        the input is paired
          -c        the input is collated FASTQ (two ends in the same file)
+         -e FILE   fermi executable [$opts{e}]
          -t INT    number of threads [$opts{t}]
          -p STR    prefix of output files [$opts{p}]
          -f INT    k-mer length for unique-mer filtering [$opts{f}]
@@ -35,7 +36,6 @@ Options: -P        the input is paired
 		for (my $i = 0; $i < @ARGV; $i += 2) {
 			$fqs .= "\$(FERMI) pe2cofq $ARGV[$i] ".$ARGV[$i+1]."; ";
 		}
-		$fqs = '(' . $fqs . ')';
 	} else {
 		for my $f (@ARGV) {
 			$fqs .= ($f =~ /\.gz$/)? "gzip -dc $f; " : "cat $f; ";

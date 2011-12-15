@@ -1,4 +1,4 @@
-.TH fermi 1 "30 November 2011" "fermi-r426" "Bioinformatics tools"
+.TH fermi 1 "14 December 2011" "fermi-r457" "Bioinformatics tools"
 
 .SH NAME
 .PP
@@ -6,27 +6,104 @@ fermi - FERragina-Manzini Index for DNA sequences
 
 .SH SYNOPSIS
 .PP
-fermi build seq1.fq > seq1.fmd
+run-fermi.pl -p pe -Pt 8 end1.fq end2.fq > assemble.mak
 .PP
-fermi build seq2.fq > seq2.fmd
+make -f assemble.mak -j 8
 .PP
-fermi merge -t 4 seq1.fmd seq2.fmd > seq12.fmd
-.PP
-cat seq1.fq seq2.fq | fermi correct seq12.fmd - > seq12.ec.fa
-.PP
-fermi build seq12.ec.fa > seq12.ec.fmd
-.PP
-fermi unitig seq12.ec.fmd > seq12.ec.msg
-.PP
-fermi clean -C seq12.ec.msg > seq12.contigs
+fermi clean -C pe.msg.gz > pe.contigs.fq
 
 .SH DESCRIPTION
 .PP
-Fermi is a set of tools blablabla...
+(to be added...)
 
 .SH COMMANDS AND OPTIONS
 .sp
 \ 
+.SS Quick assembly with run-fermi.pl
+
+.B run-fermi.pl
+.RB [ \-Pc ]
+.RB [ \-e
+.IR fermiExe ]
+.RB [ \-t
+.IR nCPUs ]
+.RB [ \-p
+.IR prefix ]
+.RB [ \-f
+.IR uniqFltK ]
+.RB [ \-k
+.IR ovlpLen ]
+.I in1.fq.gz
+.RI [ in2.fq.gz ]
+.BI > assemble.mak
+
+Generate a Makefile to assembly input reads. To actually perform the assembly,
+one should use
+.RB ` make
+-f
+.I assemble.mak
+-j
+.IR nCPUs ',
+where
+.I nCPUs
+is the option used for generating the Makefile. The end assembly output is
+.IR prefix .msg.gz
+which is an overlap graph in a FASTQ-like format: a quality line in FASTQ
+gives the per-base read depth. One should further use the
+.B clean
+command or another assembler to remove tips and bubbles. 
+
+In addition to the final assembly graph, the following files are also generated
+as useful intermediate results:
+.IR prefix .raw.fmd,
+the FM-index of the raw sequence reads;
+.IR prefix .ec.fq.gz,
+the error-corrected read sequences;
+.IR prefix .ec.fmd,
+the FM-index of the error-corrected reads.
+
+.B OPTIONS:
+.TP 10
+.B -c
+The input is collated paired-end FASTQs where the
+.RI 2* i -th
+and
+.RI 2*( i +1)-th
+reads in each input file constitute a read pair.
+.TP
+.B -P
+The input is separated paired-end FASTQ pairs where the
+.IR i -th
+read in the
+.RI 2* j -th
+input file and the
+.IR i -th
+read in the
+.RI 2*( j +1)-th
+file constitute a read pair.
+.TP
+.BI -e \ FILE
+Path of the
+.B fermi
+executable [fermi]
+.TP
+.BI -p \ STR
+Prefix of output files [fmdef]
+.TP
+.BI -t \ INT
+Maximum number of CPUs. Must be a number no less than 2. [2]
+.TP
+.BI -f \ INT
+K-mer length used for filtering unique mers (see also
+.BR fltuniq ).
+Typically between 16 and 18. [17]
+.TP
+.BI -k \ INT
+Minimum overlap when constructing unitigs (see also
+.BR unitig ).
+[50]
+
+
 .SS Assembly related commands
 
 .TP 10
@@ -293,11 +370,6 @@ Find the super-maximal exact matches against the FM-index.
 .SH NOTES
 .sp
 \ 
-
-.SS The goal of Fermi
-.PP
-Fermi aims to bring the power of de novo assembly to resequencing. (to be continued)
-
 .SS Fermi and SGA
 .PP
 Fermi is fundamentally influenced by the string graph assembler (SGA) written
@@ -309,6 +381,18 @@ FM-index data structure, the BWT construction algorithm, the error correction
 strategy, the overlap graph construction procedure are all different from those
 implemented in SGA.
 
+.SS Current development status
+.PP
+Fermi works fairly well for single-end HiSeq data. The corrected contiguity is
+comparable to or at times better than other assemblers. The number of
+misassemblies is unfortunately is a little higher in comparison to SGA and
+SOAPdenovo. For paired-end data, fermi relies on other assemblers for
+scaffolding. Thus by itself fermi is unable to produce scafftigs - ungapped
+fragments contained in scaffolds - which are frequently longer than the raw
+unitigs. To compensate the lack of functionality, fermi can construct unitigs
+with the pairing information and thus produces longer unitigs in the paired-end
+mode. Fermi is unable to make use of jumping libraries at the moment.
+
 
 .SH AUTHOR
 .PP
@@ -317,4 +401,4 @@ Heng Li <lh3@me.com> implemented
 
 .SH SEE ALSO
 .PP
-Fermi web site.
+Fermi git repository: <https://github.com/lh3/fermi>
