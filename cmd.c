@@ -457,6 +457,17 @@ int main_seqsort(int argc, char *argv[])
 	return 0;
 }
 
+int main_peread(int argc, char *argv[])
+{
+	extern int msg_peread(const msg_t *g, int max_dist);
+	int max_dist = 1000;
+	msg_t *g;
+	g = msg_read(argv[optind], 0, 1<<30, 0.);
+	msg_peread(g, max_dist);
+	msg_destroy(g);
+	return 0;
+}
+
 int main_clean(int argc, char *argv[])
 {
 	msg_t *g;

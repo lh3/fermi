@@ -194,6 +194,19 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 			n_arc_drop += ori_n - nei.n;
 			kv_copy(fm128_t, p->nei[j], nei);
 		}
+		if (seq->comment.l - (q - seq->comment.s) >= 5) { // read mapping
+			for (; *q && !isdigit(*q); ++q); // skip non-digits
+			p->mapping.n = 0;
+			while (isdigit(*q)) {
+				fm128_t x;
+				x.x = strtol(q, &q, 10); ++q;
+				x.y = *q == '-'? 1 : 0; q += 2;
+				x.y |= (uint64_t)strtol(q, &q, 10)<<32; ++q;
+				x.y |= strtol(q, &q, 10)<<1;
+				kv_push(fm128_t, p->mapping, x);
+				if (*q++ == 0) break;
+			}
+		}
 		if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.000001) {
 			if (drop_tip) {
 				free(p->nei[0].a); free(p->nei[1].a); free(p->cov); free(p->seq);
@@ -201,18 +214,6 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 			}
 			++n_tips;
 		} else {
-			// read mappings
-			if (seq->comment.l - (q - seq->comment.s) >= 5) {
-				for (; *q && !isdigit(*q); ++q); // skip non-digits
-				while (isdigit(*q)) {
-					fm128_t x;
-					x.x = strtol(q, &q, 10); ++q;
-					x.y = *q == '-'? 1 : 0; q += 2;
-					x.y |= (uint64_t)strtol(q, &q, 10)<<32; ++q;
-					x.y |= strtol(q, &q, 10)<<1; ++q;
-					kv_push(fm128_t, p->mapping, x);
-				}
-			}
 			// finalize
 			tot_len += seq->seq.l;
 			if (fm_verbose >= 4 && g->nodes.n % 100000 == 0)
