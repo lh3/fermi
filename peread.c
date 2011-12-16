@@ -93,6 +93,7 @@ static inline uint64_t get_idd(hash64_t *h, uint64_t k)
 typedef struct {
 	fm128_v heap, stack, rst;
 	fm64_v walk;
+	int is_multi;
 } aux_t;
 
 static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t *a)
@@ -100,14 +101,14 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 	fm128_t *q;
 	fm128_v *r;
 	fmnode_t *p, *w;
-	int i, n_nei[2], is_multi = 0;
+	int i, n_nei[2];
 	uint64_t end, start;
 
 	// stack -- .x: id+direction (idd); .y: parent
 	// heap  -- .x: position in stack;  .y: distance from the end of start (can be negative)
 
 	// initialize
-	a->heap.n = a->stack.n = a->rst.n = a->walk.n = 0;
+	a->heap.n = a->stack.n = a->rst.n = a->walk.n = a->is_multi = 0;
 	for (i = 0; i < 2; ++i) {
 		p = &g->nodes.a[i];
 		n_nei[i] = p->nei[idd[i]&1].n;
@@ -118,6 +119,7 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 	q->x = start, q->y = (uint64_t)-1;
 	kv_pushp(fm128_t, a->heap, &q);
 	q->x = 0, q->y = -g->nodes.a[start>>1].l; // note that "128y" compares int64_t instead of uint64_t
+	g->nodes.a[start>>1].aux[0] = 1;
 	// shortest path
 	while (a->heap.n) {
 		// pop up the best node
@@ -133,9 +135,9 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 			w = &g->nodes.a[u>>1];
 			if (dist < max_dist) {
 				if (w->aux[0] != INT_MAX) { // visited before
-					//printf("multi: [%lld,%lld]->[%lld,%lld]\n", p->k[0], p->k[1], w->k[0], w->k[1]);
-					is_multi = 1; // multiple paths
-					break;
+					++w->aux[0];
+					if (fm_verbose >= 100) printf("multi: [%lld,%lld]->[%lld,%lld]\n", p->k[0], p->k[1], w->k[0], w->k[1]);
+					if (a->rst.n) break;
 				} else {
 					kv_pushp(fm128_t, a->heap, &q);
 					q->x = a->stack.n, q->y = dist;
@@ -143,7 +145,7 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 					ks_heapup_128y(a->heap.n, a->heap.a);
 					kv_pushp(fm128_t, a->stack, &q);
 					q->x = u^1, q->y = z.x;
-					//printf("[%lld,%lld]->[%lld,%lld]\t%lld\n", p->k[0], p->k[1], w->k[0], w->k[1], dist);
+					if (fm_verbose >= 100) printf("[%lld,%lld]->[%lld,%lld]\t%lld\n", p->k[0], p->k[1], w->k[0], w->k[1], dist);
 					if (u == end) { // reach the end
 						kv_pushp(fm128_t, a->rst, &q);
 						q->x = a->stack.n - 1, q->y = dist;
@@ -153,21 +155,22 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 		}
 		if (i != r->n) break; // found 3 paths
 	}
-	// revert aux[]
-	for (i = 0; i < a->stack.n; ++i) {
-		p = &g->nodes.a[a->stack.a[i].x>>1];
-		p->aux[0] = p->aux[1] = INT_MAX;
+	if (a->rst.n == 0) { // no path
+		for (i = 0; i < a->stack.n; ++i)
+			p = &g->nodes.a[a->stack.a[i].x>>1], p->aux[0] = p->aux[1] = INT_MAX;
+		return INT_MIN;
 	}
-	if (a->rst.n == 0) return INT_MIN;
 	// backtrace
 	end = a->rst.a[0].x;
 	do {
+		if (g->nodes.a[a->stack.a[end].x>>1].aux[0] > 1) a->is_multi = 1;
 		kv_push(uint64_t, a->walk, a->stack.a[end].x);
 		end = a->stack.a[end].y;
 	} while (end != (uint64_t)-1);
 	for (i = 0; i < a->walk.n>>1; ++i) // reverse
 		end = a->walk.a[i], a->walk.a[i] = a->walk.a[a->walk.n - 1 - i], a->walk.a[a->walk.n - 1 - i] = end;
-	if (is_multi && a->walk.n != 2) return INT_MAX;
+	for (i = 0; i < a->stack.n; ++i)
+		p = &g->nodes.a[a->stack.a[i].x>>1], p->aux[0] = p->aux[1] = INT_MAX;
 	return (int)((int64_t)a->rst.a[0].y);
 }
 
@@ -190,14 +193,13 @@ int msg_peread(msg_t *g, int max_dist)
 		fm128_t *q;
 		q = &pairs.a[i];
 		idd[0] = q->x>>8; idd[1] = q->y;
+		fm_verbose = (idd[0] == 63 && idd[1] == 1152)? 1000 : 3;
 		dist = walk(g, h, idd, max_dist, &a);
 		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", (int)(q->x&0xff), q->x>>8, g->nodes.a[q->x>>9].k[q->x>>8&1], q->y, g->nodes.a[q->y>>1].k[q->y&1]);
-		if (dist == INT_MAX) {
-			printf("multi");
-		} else if (dist == INT_MIN) {
+		if (dist == INT_MIN) {
 			printf("none");
 		} else {
-			printf("%d\t", dist);
+			printf("%d\t%d\t", a.is_multi, dist);
 			for (j = 0; j < a.walk.n; ++j) {
 				if (j) putchar(',');
 				printf("%lld", a.walk.a[j]);
