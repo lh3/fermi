@@ -78,12 +78,9 @@ static void collect_pairs(fmnode_v *n, const hash64_t *h, fm128_v *pairs) // n->
 		} else r = q, ++r->x;
 	}
 	for (i = m = 0; i < pairs->n; ++i)
-		if (pairs->a[i].x != (uint64_t)-1 && (pairs->a[i].x&0xff) > 1)
+		if (pairs->a[i].x != (uint64_t)-1 && (pairs->a[i].x&0xff) > 0)
 			pairs->a[m++] = pairs->a[i];
 	pairs->n = m;
-	for (i = 0; i < pairs->n; ++i) {
-		printf("%lld, %lld, %lld\n", pairs->a[i].x>>8, pairs->a[i].y, pairs->a[i].x&0xff);
-	}
 }
 
 static inline uint64_t get_idd(hash64_t *h, uint64_t k)
@@ -132,12 +129,13 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 		r = &p->nei[a->stack.a[z.x].x&1];
 		for (i = 0; i < r->n; ++i) {
 			uint64_t u = get_idd(g->h, r->a[i].x);
+			int64_t dist = (int64_t)z.y + p->l - (int64_t)r->a[i].y;
 			w = &g->nodes.a[u>>1];
-			if (w->aux[0] != INT_MAX) { // visited before
-				if (++w->aux[0] >= 3) break;
-				is_multi = 1; // multiple paths
-			} else if ((int64_t)z.y + p->l - r->a[i].y < max_dist) { // then push to the heap
-				int64_t dist = (int64_t)z.y + p->l - r->a[i].y;
+			if (dist < max_dist) {
+				if (w->aux[0] != INT_MAX) { // visited before
+					if (++w->aux[0] >= 3) break;
+					is_multi = 1; // multiple paths
+				}
 				kv_pushp(fm128_t, a->heap, &q);
 				q->x = a->stack.n, q->y = dist;
 				w->aux[0] = 1;
@@ -157,18 +155,54 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 		p = &g->nodes.a[a->stack.a[i].x>>1];
 		p->aux[0] = p->aux[1] = INT_MAX;
 	}
-	if (is_multi) return 0;
+	if (is_multi) return INT_MAX;
+	if (a->rst.n == 0) return INT_MIN;
 	// backtrace
-	return a->walk.n;
+	end = a->rst.a[0].x;
+	do {
+		kv_push(uint64_t, a->walk, a->stack.a[end].x);
+		end = a->stack.a[end].y;
+	} while (end != (uint64_t)-1);
+	for (i = 0; i < a->walk.n>>1; ++i) // reverse
+		end = a->walk.a[i], a->walk.a[i] = a->walk.a[a->walk.n - 1 - i], a->walk.a[a->walk.n - 1 - i] = end;
+	return (int)((int64_t)a->rst.a[0].y);
 }
 
 int msg_peread(msg_t *g, int max_dist)
 {
 	hash64_t *h;
+	int64_t i;
+	int j;
 	fm128_v pairs;
+	aux_t a;
+
 	kv_init(pairs);
+	memset(&a, 0, sizeof(aux_t));
+
 	h = build_hash(&g->nodes);
 	collect_pairs(&g->nodes, h, &pairs);
+	for (i = 0; i < pairs.n; ++i) {
+		int dist;
+		size_t idd[2];
+		fm128_t *q;
+		q = &pairs.a[i];
+		idd[0] = q->x>>8; idd[1] = q->y;
+		dist = walk(g, h, idd, max_dist, &a);
+		printf("%d\t%lld\t%lld\t", (int)(q->x&0xff), q->x>>8, q->y);
+		if (dist == INT_MAX) {
+			printf("multi\n");
+		} else if (dist == INT_MIN) {
+			printf("none\n");
+		} else {
+			for (j = 0; j < a.walk.n; ++j) {
+				if (j) putchar(',');
+				printf("%lld", a.walk.a[j]);
+			}
+		}
+		putchar('\n');
+	}
+
+	free(a.walk.a); free(a.rst.a); free(a.stack.a); free(a.heap.a);
 	kh_destroy(64, h);
 	free(pairs.a);
 	return 0;
