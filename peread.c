@@ -78,7 +78,7 @@ static void collect_pairs(fmnode_v *n, const hash64_t *h, fm128_v *pairs) // n->
 		} else r = q, ++r->x;
 	}
 	for (i = m = 0; i < pairs->n; ++i)
-		if (pairs->a[i].x != (uint64_t)-1 && (pairs->a[i].x&0xff) > 0)
+		if (pairs->a[i].x != (uint64_t)-1 && (pairs->a[i].x&0xff) > 1)
 			pairs->a[m++] = pairs->a[i];
 	pairs->n = m;
 }

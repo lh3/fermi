@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <zlib.h>
+#include <math.h>
 #include "fermi.h"
 #include "rld.h"
 #include "kvec.h"
@@ -21,6 +22,8 @@ typedef khash_t(64) hash64_t;
 extern unsigned char seq_nt6_table[128];
 extern void seq_revcomp6(int l, unsigned char *s);
 extern void seq_reverse(int l, unsigned char *s);
+
+static volatile uint64_t g_n, g_sum, g_sum2; // for estimating the insert size distribution
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
@@ -84,6 +87,7 @@ typedef struct {
 	uint64_t *used, *bend;
 	kstring_t str;
 	hash64_t *h;
+	uint64_t n, sum, sum2;
 } aux_t;
 
 int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t *intv, fmintv_v *ovlp)
@@ -102,18 +106,24 @@ int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t
 	return ret;
 }
 
-static void pair_add(const uint64_t *sorted, hash64_t *h, const fmintv_t *intv, int beg, int end)
+static void pair_add(aux_t *a, const fmintv_t *intv, int beg, int end)
 {
 	int i;
-	if (sorted == 0 || h == 0) return;
+	hash64_t *h = a->h;
+	if (a->sorted == 0 || a->h == 0) return;
 	for (i = 0; i < intv->x[2]; ++i) {
-		uint64_t k = sorted[intv->x[0] + i]>>2;
+		uint64_t k = a->sorted[intv->x[0] + i]>>2;
 		int ret, to_add = 0;
 		khint_t iter;
 		if (k&1) { // reverse strand; check if the mate has been added
 			iter = kh_get(64, h, k>>1^1);
 			if (iter == kh_end(h) || (kh_val(h, iter)&1)) to_add = 1;
-			else kh_del(64, h, iter);
+			else {
+				int l = end - (kh_val(h, iter)>>32);
+				++a->n;
+				a->sum += l; a->sum2 += l * l;
+				kh_del(64, h, iter);
+			}
 		} else to_add = 1;
 		if (to_add) {
 			iter = kh_put(64, h, k>>1, &ret);
@@ -283,9 +293,9 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0], a->sorted); // successful extension
 		if (a->sorted) {
-			pair_add(a->sorted, a->h, &a->nei.a[0], rbeg, s->l);
+			pair_add(a, &a->nei.a[0], rbeg, s->l);
 			for (i = 0; i < a->contained.n; ++i)
-				pair_add(a->sorted, a->h, &a->contained.a[i], (uint32_t)a->contained.a[i].info, a->contained.a[i].info>>32);
+				pair_add(a, &a->contained.a[i], (uint32_t)a->contained.a[i].info, a->contained.a[i].info>>32);
 		}
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
@@ -346,7 +356,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
 	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
-	if (a->sorted) pair_add(a->sorted, a->h, &intv0, 0, s->l);
+	if (a->sorted) pair_add(a, &intv0, 0, s->l);
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	if (a->a[0].n) { // no need to extend to the right if there is no overlap
@@ -371,8 +381,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end,
-						uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted)
+static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted)
 {
 	extern void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
 	uint64_t i;
@@ -408,6 +417,9 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 			out.s[0] = 0; out.l = 0;
 		}
 	}
+	__sync_fetch_and_add(&g_n, a.n);
+	__sync_fetch_and_add(&g_sum, a.sum);
+	__sync_fetch_and_add(&g_sum2, a.sum2);
 	if (a.h) kh_destroy(64, a.h);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a); free(a.contained.a);
 	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov); free(z.mapping.a);
@@ -435,6 +447,7 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 	pthread_attr_t attr;
 	worker_t *w;
 	int j;
+	double avg;
 
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -457,5 +470,7 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(tid); free(used); free(bend); free(visited); free(w);
+	avg = (double)g_sum / g_n;
+	fprintf(stderr, "[M::%s] avg=%.2f std.dev=%.2f\n", __func__, avg, sqrt((double)g_sum2/g_n - avg * avg));
 	return 0;
 }
