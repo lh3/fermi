@@ -133,18 +133,21 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 			w = &g->nodes.a[u>>1];
 			if (dist < max_dist) {
 				if (w->aux[0] != INT_MAX) { // visited before
-					if (++w->aux[0] >= 3) break;
+					//printf("multi: [%lld,%lld]->[%lld,%lld]\n", p->k[0], p->k[1], w->k[0], w->k[1]);
 					is_multi = 1; // multiple paths
-				}
-				kv_pushp(fm128_t, a->heap, &q);
-				q->x = a->stack.n, q->y = dist;
-				w->aux[0] = 1;
-				ks_heapup_128y(a->heap.n, a->heap.a);
-				kv_pushp(fm128_t, a->stack, &q);
-				q->x = u, q->y = z.x;
-				if (u == end) { // reach the end
-					kv_pushp(fm128_t, a->rst, &q);
-					q->x = a->stack.n - 1, q->y = dist;
+					break;
+				} else {
+					kv_pushp(fm128_t, a->heap, &q);
+					q->x = a->stack.n, q->y = dist;
+					w->aux[0] = 1;
+					ks_heapup_128y(a->heap.n, a->heap.a);
+					kv_pushp(fm128_t, a->stack, &q);
+					q->x = u^1, q->y = z.x;
+					//printf("[%lld,%lld]->[%lld,%lld]\t%lld\n", p->k[0], p->k[1], w->k[0], w->k[1], dist);
+					if (u == end) { // reach the end
+						kv_pushp(fm128_t, a->rst, &q);
+						q->x = a->stack.n - 1, q->y = dist;
+					}
 				}
 			}
 		}
@@ -188,11 +191,11 @@ int msg_peread(msg_t *g, int max_dist)
 		q = &pairs.a[i];
 		idd[0] = q->x>>8; idd[1] = q->y;
 		dist = walk(g, h, idd, max_dist, &a);
-		printf("%d\t%lld\t%lld\t", (int)(q->x&0xff), q->x>>8, q->y);
+		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", (int)(q->x&0xff), q->x>>8, g->nodes.a[q->x>>9].k[q->x>>8&1], q->y, g->nodes.a[q->y>>1].k[q->y&1]);
 		if (dist == INT_MAX) {
-			printf("multi\n");
+			printf("multi");
 		} else if (dist == INT_MIN) {
-			printf("none\n");
+			printf("none");
 		} else {
 			for (j = 0; j < a.walk.n; ++j) {
 				if (j) putchar(',');
@@ -200,6 +203,7 @@ int msg_peread(msg_t *g, int max_dist)
 			}
 		}
 		putchar('\n');
+		fflush(stdout);
 	}
 
 	free(a.walk.a); free(a.rst.a); free(a.stack.a); free(a.heap.a);
