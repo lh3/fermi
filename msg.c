@@ -726,6 +726,15 @@ static void flip(fmnode_t *p, hash64_t *h)
 	k = kh_get(64, h, p->k[1]);
 	assert(k != kh_end(h));
 	kh_val(h, k) ^= 1;
+	if (p->mapping.n) { // flip the mapping
+		int i;
+		for (i = 0; i < p->mapping.n; ++i) {
+			int beg, end;
+			beg = p->mapping.a[i].y>>32;
+			end = p->mapping.a[i].y<<32>>33;
+			p->mapping.a[i].y = (uint64_t)(p->l - end)<<32 | (p->l - beg)<<1 | ((p->mapping.a[i].y&1)^1);
+		}
+	}
 }
 
 static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
@@ -771,6 +780,18 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	// merge neighbors
 	free(p->nei[1].a);
 	p->nei[1] = q->nei[1]; p->k[1] = q->k[1];
+	if (p->mapping.n || q->mapping.n) {
+		for (i = 0; i < q->mapping.n; ++i)
+			kv_push(fm128_t, p->mapping, q->mapping.a[i]);
+		ks_introsort_128x(p->mapping.n, p->mapping.a);
+		for (i = 1; i < p->mapping.n; ++i)
+			if ((p->mapping.a[i].x ^ p->mapping.a[i-1].x) == 1)
+				p->mapping.a[i].x = p->mapping.a[i-1].x = 0xffffffffU;
+		for (i = j = 0; i < p->mapping.n; ++i)
+			if (p->mapping.a[i].x != 0xffffffffU)
+				p->mapping.a[j++] = p->mapping.a[i];
+		p->mapping.n = j;
+	}
 	// update the hash table
 	kp = kh_get(64, g->h, p->k[1]);
 	assert(kp != kh_end((hash64_t*)g->h));
@@ -778,9 +799,9 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	// clean up q
 	free(q->cov); free(q->seq);
 	q->cov = q->seq = 0; q->l = -1;
-	free(q->nei[0].a);
-	q->nei[0].n = q->nei[0].m = q->nei[1].n = q->nei[1].m = 0;
-	q->nei[0].a = q->nei[1].a = 0; // q->nei[1] has been copied over to p->nei[1], so we can delete it
+	free(q->nei[0].a); free(q->mapping.a);
+	q->nei[0].n = q->nei[0].m = q->nei[1].n = q->nei[1].m = q->mapping.n = q->mapping.m = 0;
+	q->nei[0].a = q->nei[1].a = q->mapping.a = 0; // q->nei[1] has been copied over to p->nei[1], so we can delete it
 	return 0;
 }
 

@@ -158,7 +158,6 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 		p = &g->nodes.a[a->stack.a[i].x>>1];
 		p->aux[0] = p->aux[1] = INT_MAX;
 	}
-	if (is_multi) return INT_MAX;
 	if (a->rst.n == 0) return INT_MIN;
 	// backtrace
 	end = a->rst.a[0].x;
@@ -168,6 +167,7 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 	} while (end != (uint64_t)-1);
 	for (i = 0; i < a->walk.n>>1; ++i) // reverse
 		end = a->walk.a[i], a->walk.a[i] = a->walk.a[a->walk.n - 1 - i], a->walk.a[a->walk.n - 1 - i] = end;
+	if (is_multi && a->walk.n != 2) return INT_MAX;
 	return (int)((int64_t)a->rst.a[0].y);
 }
 
@@ -197,6 +197,7 @@ int msg_peread(msg_t *g, int max_dist)
 		} else if (dist == INT_MIN) {
 			printf("none");
 		} else {
+			printf("%d\t", dist);
 			for (j = 0; j < a.walk.n; ++j) {
 				if (j) putchar(',');
 				printf("%lld", a.walk.a[j]);
