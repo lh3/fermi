@@ -19,11 +19,13 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
+#define MAX_ISIZE 1000
+
 extern unsigned char seq_nt6_table[128];
 extern void seq_revcomp6(int l, unsigned char *s);
 extern void seq_reverse(int l, unsigned char *s);
 
-static volatile uint64_t g_n, g_sum, g_sum2; // for estimating the insert size distribution
+static volatile uint64_t g_n, g_sum, g_sum2, g_unpaired; // for estimating the insert size distribution
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
@@ -87,7 +89,7 @@ typedef struct {
 	uint64_t *used, *bend;
 	kstring_t str;
 	hash64_t *h;
-	uint64_t n, sum, sum2;
+	uint64_t n, sum, sum2, unpaired;
 } aux_t;
 
 int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t *intv, fmintv_v *ovlp)
@@ -115,15 +117,15 @@ static void pair_add(aux_t *a, const fmintv_t *intv, int beg, int end)
 		uint64_t k = a->sorted[intv->x[0] + i]>>2;
 		int ret, to_add = 0;
 		khint_t iter;
-		if (k&1) { // reverse strand; check if the mate has been added
-			iter = kh_get(64, h, k>>1^1);
-			if (iter == kh_end(h) || (kh_val(h, iter)&1)) to_add = 1;
-			else {
+		iter = kh_get(64, h, k>>1^1); // to get the mate
+		if (iter != kh_end(h)) { // mate found
+			if ((k&1) && !(kh_val(h, iter)&1)) { // inward orientation
 				int l = end - (kh_val(h, iter)>>32);
-				++a->n;
-				a->sum += l; a->sum2 += l * l;
-				kh_del(64, h, iter);
-			}
+				if (l < MAX_ISIZE) { // properly paired; remove the mate
+					++a->n, a->sum += l, a->sum2 += l * l;
+					kh_del(64, h, iter);
+				} else to_add = 1, ++a->unpaired;
+			} else to_add = 1, ++a->unpaired;
 		} else to_add = 1;
 		if (to_add) {
 			iter = kh_put(64, h, k>>1, &ret);
@@ -420,6 +422,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	__sync_fetch_and_add(&g_n, a.n);
 	__sync_fetch_and_add(&g_sum, a.sum);
 	__sync_fetch_and_add(&g_sum2, a.sum2);
+	__sync_fetch_and_add(&g_unpaired, a.unpaired);
 	if (a.h) kh_destroy(64, a.h);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a); free(a.contained.a);
 	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov); free(z.mapping.a);
@@ -471,6 +474,6 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(tid); free(used); free(bend); free(visited); free(w);
 	avg = (double)g_sum / g_n;
-	fprintf(stderr, "[M::%s] avg=%.2f std.dev=%.2f\n", __func__, avg, sqrt((double)g_sum2/g_n - avg * avg));
+	fprintf(stderr, "[M::%s] avg=%.2f std.dev=%.2f #unpaired=%ld\n", __func__, avg, sqrt((double)g_sum2/g_n - avg * avg), (long)g_unpaired);
 	return 0;
 }

@@ -460,7 +460,7 @@ int main_seqsort(int argc, char *argv[])
 int main_peread(int argc, char *argv[])
 {
 	extern int msg_peread(const msg_t *g, int max_dist);
-	int max_dist = 500;
+	int max_dist = 700;
 	msg_t *g;
 	g = msg_read(argv[optind], 0, 1<<30, 0.);
 	msg_peread(g, max_dist);
