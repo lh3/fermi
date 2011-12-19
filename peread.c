@@ -174,11 +174,11 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 	return (int)((int64_t)a->rst.a[0].y);
 }
 
-int msg_peread(msg_t *g, int max_dist)
+int msg_peread(msg_t *g, double avg, double std)
 {
 	hash64_t *h;
 	int64_t i;
-	int j;
+	int j, max_dist = (int)(avg + std * 2 + .499);
 	fm128_v pairs;
 	aux_t a;
 
@@ -193,7 +193,7 @@ int msg_peread(msg_t *g, int max_dist)
 		fm128_t *q;
 		q = &pairs.a[i];
 		idd[0] = q->x>>8; idd[1] = q->y;
-		fm_verbose = (idd[0] == 63 && idd[1] == 1152)? 1000 : 3;
+		fm_verbose = (idd[0] == 144 && idd[1] == 268)? 1000 : 3;
 		dist = walk(g, h, idd, max_dist, &a);
 		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", (int)(q->x&0xff), q->x>>8, g->nodes.a[q->x>>9].k[q->x>>8&1], q->y, g->nodes.a[q->y>>1].k[q->y&1]);
 		if (dist == INT_MIN) {

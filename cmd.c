@@ -459,11 +459,21 @@ int main_seqsort(int argc, char *argv[])
 
 int main_peread(int argc, char *argv[])
 {
-	extern int msg_peread(const msg_t *g, int max_dist);
-	int max_dist = 700;
+	extern int msg_peread(const msg_t *g, double avg, double std);
+	int c;
+	double avg, std;
 	msg_t *g;
+
+	while ((c = getopt(argc, argv, "")) >= 0) {
+	}
+	if (optind + 3 > argc) {
+		fprintf(stderr, "Usage: fermi peread <in.fmd> <avg> <std>\n");
+		return 1;
+	}
+	avg = atof(argv[optind+1]);
+	std = atof(argv[optind+2]);
 	g = msg_read(argv[optind], 0, 1<<30, 0.);
-	msg_peread(g, max_dist);
+	msg_peread(g, avg, std);
 	msg_destroy(g);
 	return 0;
 }
