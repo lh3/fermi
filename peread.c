@@ -55,40 +55,45 @@ static hash64_t *build_hash(const fmnode_v *n)
 
 static void collect_pairs(fmnode_v *n, fm128_v *pairs) // n->a[].aux to be modified
 {
-	size_t i, m;
-	int j;
-	khint_t k;
-	fm128_t z, *r;
+	size_t i;
+	fm128_t z;
 	hash64_t *h;
-
 	h = build_hash(n);
 	pairs->n = 0;
 	for (i = 0; i < n->n; ++i) {
+		int j;
 		fmnode_t *p = &n->a[i];
 		p->aux[0] = p->aux[1] = INT_MAX;
 		for (j = 0; j < p->mapping.n; ++j) {
+			khint_t k;
 			k = kh_get(64, h, p->mapping.a[j].x);
 			if (k == kh_end(h)) continue;
-			z.x = kh_val(h, k)>>31<<8; // the lower 8 bits keep the count
+			z.x = kh_val(h, k)>>31<<32;
+			z.y = kh_val(h, k)<<33>>33<<32;
 			k = kh_get(64, h, p->mapping.a[j].x^1);
-			z.y = kh_val(h, k)>>31;
-			if (z.x>>8 < z.y) kv_push(fm128_t, *pairs, z);
+			z.x |= kh_val(h, k)>>31;
+			z.y |= kh_val(h, k)<<33>>33;
+			if (z.x>>32 < z.x<<32>>32) kv_push(fm128_t, *pairs, z);
 		}
+		free(p->mapping.a);
+		p->mapping.a = 0;
+		p->mapping.n = p->mapping.m = 0;
 	}
-	ks_introsort_128x(pairs->n, pairs->a);
-	r = &pairs->a[0];
-	for (i = 1; i < pairs->n; ++i) {
-		fm128_t *q = &pairs->a[i];
-		if (q->x>>8 == r->x>>8 && q->y == r->y) {
-			if ((r->x&0xff) != 0xff) ++r->x;
-			q->x = q->y = (uint64_t)-1;
-		} else r = q, ++r->x;
-	}
-	for (i = m = 0; i < pairs->n; ++i)
-		if (pairs->a[i].x != (uint64_t)-1 && (pairs->a[i].x&0xff) > 1)
-			pairs->a[m++] = pairs->a[i];
-	pairs->n = m;
 	kh_destroy(64, h);
+	ks_introsort_128x(pairs->n, pairs->a);
+}
+
+static void index_pairs(const fm128_v *pairs, fm64_v *pidx)
+{
+	uint32_t i, beg;
+	for (i = 1, beg = 0; i < pairs->n; ++i)
+		if (pairs->a[i].x != pairs->a[beg].x) {
+			kv_push(uint64_t, *pidx, (uint64_t)beg<<32 | i);
+			beg = i;
+		}
+	kv_push(uint64_t, *pidx, (uint64_t)beg<<32 | i);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] collected %ld read pairs and %ld unitig pairs\n", __func__, (long)pairs->n, (long)pidx->n);
 }
 
 static inline uint64_t get_idd(hash64_t *h, uint64_t k)
@@ -188,21 +193,23 @@ int msg_peread(msg_t *g, double avg, double std)
 	int64_t i;
 	int j, max_dist = (int)(avg + std * 2 + .499);
 	fm128_v pairs;
+	fm64_v pidx;
 	aux_t a;
 
-	kv_init(pairs);
+	kv_init(pairs); kv_init(pidx);
 	memset(&a, 0, sizeof(aux_t));
 
 	collect_pairs(&g->nodes, &pairs);
-	for (i = 0; i < pairs.n; ++i) {
+	index_pairs(&pairs, &pidx);
+	for (i = 0; i < pidx.n; ++i) {
 		int dist;
 		size_t idd[2];
 		fm128_t *q;
-		q = &pairs.a[i];
-		idd[0] = q->x>>8; idd[1] = q->y;
+		q = &pairs.a[pidx.a[i]>>32];
+		idd[0] = q->x>>32; idd[1] = q->x<<32>>32;
 		fm_verbose = (idd[0] == 144 && idd[1] == 268)? 1000 : 3;
 		dist = walk(g, idd, max_dist, &a);
-		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", (int)(q->x&0xff), q->x>>8, g->nodes.a[q->x>>9].k[q->x>>8&1], q->y, g->nodes.a[q->y>>1].k[q->y&1]);
+		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", (int)((pidx.a[i]<<32>>32) - (pidx.a[i]>>32)), idd[0], g->nodes.a[idd[0]>>1].k[idd[0]&1], idd[1], g->nodes.a[idd[1]>>1].k[idd[1]&1]);
 		if (dist == INT_MIN) {
 			printf("none");
 		} else {
@@ -217,6 +224,6 @@ int msg_peread(msg_t *g, double avg, double std)
 	}
 
 	free(a.walk.a); free(a.rst.a); free(a.stack.a); free(a.heap.a);
-	free(pairs.a);
+	free(pairs.a); free(pidx.a);
 	return 0;
 }
