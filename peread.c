@@ -202,14 +202,16 @@ int msg_peread(msg_t *g, double avg, double std)
 	collect_pairs(&g->nodes, &pairs);
 	index_pairs(&pairs, &pidx);
 	for (i = 0; i < pidx.n; ++i) {
-		int dist;
+		int dist, cnt;
 		size_t idd[2];
 		fm128_t *q;
+		cnt = (pidx.a[i]<<32>>32) - (pidx.a[i]>>32);
+		if (cnt < 2) continue;
 		q = &pairs.a[pidx.a[i]>>32];
 		idd[0] = q->x>>32; idd[1] = q->x<<32>>32;
 		fm_verbose = (idd[0] == 144 && idd[1] == 268)? 1000 : 3;
 		dist = walk(g, idd, max_dist, &a);
-		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", (int)((pidx.a[i]<<32>>32) - (pidx.a[i]>>32)), idd[0], g->nodes.a[idd[0]>>1].k[idd[0]&1], idd[1], g->nodes.a[idd[1]>>1].k[idd[1]&1]);
+		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", cnt, idd[0], g->nodes.a[idd[0]>>1].k[idd[0]&1], idd[1], g->nodes.a[idd[1]>>1].k[idd[1]&1]);
 		if (dist == INT_MIN) {
 			printf("none");
 		} else {
