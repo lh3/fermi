@@ -25,8 +25,11 @@ static hash64_t *build_hash(const fmnode_v *n)
 		fmnode_t *p = &n->a[i];
 		for (j = 0; j < p->mapping.n; ++j) {
 			k = kh_put(64, h, p->mapping.a[j].x, &ret); // the key is the read index
-			if (ret == 0) kh_val(h, k) = (uint64_t)-1;
-			else kh_val(h, k) = i<<31 | ((p->mapping.a[j].y&1)^1)<<30 | j; // the value: nodeID<<31|orientation<<30|index
+			if (ret) { // absent from the hash table
+				uint64_t tmp = p->mapping.a[j].y;
+				uint32_t pos = (tmp&1)? tmp<<32>>33 : tmp>>32; // pos of the end of a fragment
+				kh_val(h, k) = i<<32 | ((tmp&1)^1)<<31 | pos;
+			} else kh_val(h, k) = (uint64_t)-1; // a read with multiple occurrences; drop it
 		}
 	}
 	for (k = kh_begin(h); k != kh_end(h); ++k) { // exclude unpaired reads
@@ -66,9 +69,9 @@ static void collect_pairs(fmnode_v *n, fm128_v *pairs) // n->a[].aux to be modif
 		for (j = 0; j < p->mapping.n; ++j) {
 			k = kh_get(64, h, p->mapping.a[j].x);
 			if (k == kh_end(h)) continue;
-			z.x = kh_val(h, k)>>30<<8; // the lower 8 bits keep the count
+			z.x = kh_val(h, k)>>31<<8; // the lower 8 bits keep the count
 			k = kh_get(64, h, p->mapping.a[j].x^1);
-			z.y = kh_val(h, k)>>30;
+			z.y = kh_val(h, k)>>31;
 			if (z.x>>8 < z.y) kv_push(fm128_t, *pairs, z);
 		}
 	}
