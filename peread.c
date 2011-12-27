@@ -24,11 +24,12 @@ static hash64_t *build_hash(const fmnode_v *n)
 	for (i = 0; i < n->n; ++i) {
 		fmnode_t *p = &n->a[i];
 		for (j = 0; j < p->mapping.n; ++j) {
-			k = kh_put(64, h, p->mapping.a[j].x, &ret);
-			kh_val(h, k) = ret == 0? (uint64_t)-1 : (i<<1|(p->mapping.a[j].y&1))^1;
+			k = kh_put(64, h, p->mapping.a[j].x, &ret); // the key is the read index
+			if (ret == 0) kh_val(h, k) = (uint64_t)-1;
+			else kh_val(h, k) = i<<31 | ((p->mapping.a[j].y&1)^1)<<30 | j; // the value: nodeID<<31|orientation<<30|index
 		}
 	}
-	for (k = kh_begin(h); k != kh_end(h); ++k) {
+	for (k = kh_begin(h); k != kh_end(h); ++k) { // exclude unpaired reads
 		int to_drop = 0;
 		if (!kh_exist(h, k)) continue;
 		if (kh_val(h, k) != (uint64_t)-1) {
@@ -49,12 +50,15 @@ static hash64_t *build_hash(const fmnode_v *n)
 	return h;
 }
 
-static void collect_pairs(fmnode_v *n, const hash64_t *h, fm128_v *pairs) // n->a[].aux to be modified
+static void collect_pairs(fmnode_v *n, fm128_v *pairs) // n->a[].aux to be modified
 {
 	size_t i, m;
 	int j;
 	khint_t k;
 	fm128_t z, *r;
+	hash64_t *h;
+
+	h = build_hash(n);
 	pairs->n = 0;
 	for (i = 0; i < n->n; ++i) {
 		fmnode_t *p = &n->a[i];
@@ -62,9 +66,9 @@ static void collect_pairs(fmnode_v *n, const hash64_t *h, fm128_v *pairs) // n->
 		for (j = 0; j < p->mapping.n; ++j) {
 			k = kh_get(64, h, p->mapping.a[j].x);
 			if (k == kh_end(h)) continue;
-			z.x = kh_val(h, k)<<8;
+			z.x = kh_val(h, k)>>30<<8; // the lower 8 bits keep the count
 			k = kh_get(64, h, p->mapping.a[j].x^1);
-			z.y = kh_val(h, k);
+			z.y = kh_val(h, k)>>30;
 			if (z.x>>8 < z.y) kv_push(fm128_t, *pairs, z);
 		}
 	}
@@ -81,6 +85,7 @@ static void collect_pairs(fmnode_v *n, const hash64_t *h, fm128_v *pairs) // n->
 		if (pairs->a[i].x != (uint64_t)-1 && (pairs->a[i].x&0xff) > 1)
 			pairs->a[m++] = pairs->a[i];
 	pairs->n = m;
+	kh_destroy(64, h);
 }
 
 static inline uint64_t get_idd(hash64_t *h, uint64_t k)
@@ -96,7 +101,8 @@ typedef struct {
 	int is_multi;
 } aux_t;
 
-static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t *a)
+//static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t *a)
+static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 { // FIXME: the algorithm can be improved but will be more complicated.
 	fm128_t *q;
 	fm128_v *r;
@@ -176,7 +182,6 @@ static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t 
 
 int msg_peread(msg_t *g, double avg, double std)
 {
-	hash64_t *h;
 	int64_t i;
 	int j, max_dist = (int)(avg + std * 2 + .499);
 	fm128_v pairs;
@@ -185,8 +190,7 @@ int msg_peread(msg_t *g, double avg, double std)
 	kv_init(pairs);
 	memset(&a, 0, sizeof(aux_t));
 
-	h = build_hash(&g->nodes);
-	collect_pairs(&g->nodes, h, &pairs);
+	collect_pairs(&g->nodes, &pairs);
 	for (i = 0; i < pairs.n; ++i) {
 		int dist;
 		size_t idd[2];
@@ -194,7 +198,7 @@ int msg_peread(msg_t *g, double avg, double std)
 		q = &pairs.a[i];
 		idd[0] = q->x>>8; idd[1] = q->y;
 		fm_verbose = (idd[0] == 144 && idd[1] == 268)? 1000 : 3;
-		dist = walk(g, h, idd, max_dist, &a);
+		dist = walk(g, idd, max_dist, &a);
 		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", (int)(q->x&0xff), q->x>>8, g->nodes.a[q->x>>9].k[q->x>>8&1], q->y, g->nodes.a[q->y>>1].k[q->y&1]);
 		if (dist == INT_MIN) {
 			printf("none");
@@ -210,7 +214,6 @@ int msg_peread(msg_t *g, double avg, double std)
 	}
 
 	free(a.walk.a); free(a.rst.a); free(a.stack.a); free(a.heap.a);
-	kh_destroy(64, h);
 	free(pairs.a);
 	return 0;
 }
