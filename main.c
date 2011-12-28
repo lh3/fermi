@@ -17,7 +17,6 @@ int main_build(int argc, char *argv[]);
 int main_correct(int argc, char *argv[]);
 int main_unitig(int argc, char *argv[]);
 int main_clean(int argc, char *argv[]);
-int main_peread(int argc, char *argv[]);
 int main_cnt2qual(int argc, char *argv[]);
 int main_seqsort(int argc, char *argv[]);
 
@@ -66,7 +65,6 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);
-	else if (strcmp(argv[1], "peread") == 0) ret = main_peread(argc-1, argv+1);
 	else if (strcmp(argv[1], "splitfa") == 0) ret = main_splitfa(argc-1, argv+1);
 	else if (strcmp(argv[1], "fltuniq") == 0) ret = main_fltuniq(argc-1, argv+1);
 	else if (strcmp(argv[1], "trimseq") == 0) ret = main_trimseq(argc-1, argv+1);
