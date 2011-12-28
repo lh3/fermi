@@ -11,6 +11,8 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
+/* Due to the limitation of 32-bit integers, routines here assume there are maximally INT32_MAX nodes. */
+
 void ks_introsort_128x(size_t n, fm128_t *a);
 void ks_heapup_128y(size_t n, fm128_t *a);
 void ks_heapdown_128y(size_t i, size_t n, fm128_t *a);
@@ -106,21 +108,20 @@ static inline uint64_t get_idd(hash64_t *h, uint64_t k)
 }
 
 typedef struct {
-	fm128_v heap, stack, rst;
-	fm64_v walk;
+	fm128_v heap, stack, rst, walk;
 	int is_multi;
 } aux_t;
 
 //static int walk(msg_t *g, const hash64_t *h, size_t idd[2], int max_dist, aux_t *a)
 static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 { // FIXME: the algorithm can be improved but will be more complicated.
-	fm128_t *q;
+	fm128_t *q, tmp;
 	fm128_v *r;
 	fmnode_t *p, *w;
 	int i, n_nei[2];
 	uint64_t end, start;
 
-	// stack -- .x: id+direction (idd); .y: parent
+	// stack -- .x: id+direction (idd); .y: parent<<32 | overlap_len (-1 for the first element)
 	// heap  -- .x: position in stack;  .y: distance from the end of start (can be negative)
 
 	// initialize
@@ -160,7 +161,7 @@ static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 					w->aux[0] = 1;
 					ks_heapup_128y(a->heap.n, a->heap.a);
 					kv_pushp(fm128_t, a->stack, &q);
-					q->x = u^1, q->y = z.x;
+					q->x = u^1, q->y = z.x<<32 | r->a[i].y;
 					//if (fm_verbose >= 100) printf("[%lld,%lld]->[%lld,%lld]\t%lld\n", p->k[0], p->k[1], w->k[0], w->k[1], dist);
 					if (u == end) { // reach the end
 						kv_pushp(fm128_t, a->rst, &q);
@@ -172,32 +173,42 @@ static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 		if (i != r->n) break; // multiple paths
 	}
 	if (a->rst.n == 0) { // no path
-		for (i = 0; i < a->stack.n; ++i)
+		for (i = 0; i < a->stack.n; ++i) // reset nodes visited in this traversal
 			p = &g->nodes.a[a->stack.a[i].x>>1], p->aux[0] = p->aux[1] = INT_MAX;
 		return INT_MIN;
 	}
 	// backtrace
 	end = a->rst.a[0].x;
-	do {
+	for (;;) {
 		if (g->nodes.a[a->stack.a[end].x>>1].aux[0] > 1)
 			a->is_multi = 1;
-		kv_push(uint64_t, a->walk, a->stack.a[end].x);
-		end = a->stack.a[end].y;
-	} while (end != (uint64_t)-1);
-	for (i = 0; i < a->walk.n>>1; ++i) // reverse
-		end = a->walk.a[i], a->walk.a[i] = a->walk.a[a->walk.n - 1 - i], a->walk.a[a->walk.n - 1 - i] = end;
-	for (i = 0; i < a->stack.n; ++i)
+		kv_pushp(fm128_t, a->walk, &q);
+		q->x = a->stack.a[end].x, q->y = a->stack.a[end].y<<32>>32;
+		if (a->stack.a[end].y == (uint64_t)-1) break;
+		end = a->stack.a[end].y>>32;
+	}
+	if (a->stack.a[0].x == idd[0]) { // from idd[0] to idd[1]
+		for (i = 0; i < a->walk.n>>1; ++i) // reverse
+			tmp = a->walk.a[i], a->walk.a[i] = a->walk.a[a->walk.n - 1 - i], a->walk.a[a->walk.n - 1 - i] = tmp;
+	} else { // from idd[1] to idd[0]
+		for (i = 0; i < a->walk.n; ++i) // flip the strand
+			a->walk.a[i].x ^= 1;
+		for (i = a->walk.n - 1; i > 0; --i) // update the overlap information
+			a->walk.a[i].y = a->walk.a[i-1].y;
+	}
+	a->walk.a[0].y = 0;
+	for (i = 0; i < a->stack.n; ++i) // reset visited nodes
 		p = &g->nodes.a[a->stack.a[i].x>>1], p->aux[0] = p->aux[1] = INT_MAX;
 	return (int)((int64_t)a->rst.a[0].y);
 }
 
-static int walk2seq(const fmnode_v *n, const fm128_t *pair, const fm64_v *walk, int max_dist, kstring_t *str)
+static int walk2seq(const fmnode_v *n, const fm128_t *pair, const fm128_v *walk, int max_dist, kstring_t *str)
 {
 	int64_t idd;
 	int beg, end, i;
-	assert(walk->n > 1 && pair->x>>32 == walk->a[0]);
+	assert(walk->n > 1 && pair->x>>32 == walk->a[0].x);
 	for (i = 0; i < walk->n; ++i) {
-		idd = walk->a[i];
+		idd = walk->a[i].x;
 		if (i == 0) {
 			beg = pair->y>>32;
 			end = (idd&1)? 0 : n->a[idd>>1].l;
@@ -219,6 +230,7 @@ int msg_peread(msg_t *g, double avg, double std)
 	aux_t a;
 	kstring_t str;
 
+	assert((uint64_t)g->nodes.n <= INT32_MAX);
 	kv_init(pairs); kv_init(pidx);
 	memset(&a, 0, sizeof(aux_t));
 	max_dist = (int)(avg + std * 2 + .499);
@@ -238,7 +250,7 @@ int msg_peread(msg_t *g, double avg, double std)
 		idd[0] = q->x>>32; idd[1] = q->x<<32>>32;
 		fm_verbose = (idd[0] == 144 && idd[1] == 268)? 1000 : 3;
 		dist = walk(g, idd, max_dist, &a);
-		if (dist != INT_MIN) {
+		if (0&&dist != INT_MIN) {
 			for (j = 0; j < cnt; ++j) {
 				walk2seq(&g->nodes, &pairs.a[(pidx.a[i]>>32) + j], &a.walk, max_dist, &str);
 			}
@@ -250,7 +262,7 @@ int msg_peread(msg_t *g, double avg, double std)
 			printf("%d\t%d\t", a.is_multi, dist);
 			for (j = 0; j < a.walk.n; ++j) {
 				if (j) putchar(',');
-				printf("%lld", a.walk.a[j]);
+				printf("%lld:%lld", a.walk.a[j].x, a.walk.a[j].y);
 			}
 		}
 		putchar('\n');
