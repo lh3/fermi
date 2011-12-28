@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <limits.h>
+#include <assert.h>
 #include "fermi.h"
 #include "utils.h"
 #include "kvec.h"
+#include "kstring.h"
 
 #include "khash.h"
 KHASH_DECLARE(64, uint64_t, uint64_t)
@@ -150,7 +152,7 @@ static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 			if (dist < max_dist) {
 				if (w->aux[0] != INT_MAX) { // visited before
 					++w->aux[0];
-					if (fm_verbose >= 100) printf("multi: [%lld,%lld]->[%lld,%lld]\n", p->k[0], p->k[1], w->k[0], w->k[1]);
+					//if (fm_verbose >= 100) printf("multi: [%lld,%lld]->[%lld,%lld]\n", p->k[0], p->k[1], w->k[0], w->k[1]);
 					if (a->rst.n) break;
 				} else {
 					kv_pushp(fm128_t, a->heap, &q);
@@ -159,7 +161,7 @@ static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 					ks_heapup_128y(a->heap.n, a->heap.a);
 					kv_pushp(fm128_t, a->stack, &q);
 					q->x = u^1, q->y = z.x;
-					if (fm_verbose >= 100) printf("[%lld,%lld]->[%lld,%lld]\t%lld\n", p->k[0], p->k[1], w->k[0], w->k[1], dist);
+					//if (fm_verbose >= 100) printf("[%lld,%lld]->[%lld,%lld]\t%lld\n", p->k[0], p->k[1], w->k[0], w->k[1], dist);
 					if (u == end) { // reach the end
 						kv_pushp(fm128_t, a->rst, &q);
 						q->x = a->stack.n - 1, q->y = dist;
@@ -167,7 +169,7 @@ static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 				}
 			}
 		}
-		if (i != r->n) break; // found 3 paths
+		if (i != r->n) break; // multiple paths
 	}
 	if (a->rst.n == 0) { // no path
 		for (i = 0; i < a->stack.n; ++i)
@@ -177,7 +179,8 @@ static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 	// backtrace
 	end = a->rst.a[0].x;
 	do {
-		if (g->nodes.a[a->stack.a[end].x>>1].aux[0] > 1) a->is_multi = 1;
+		if (g->nodes.a[a->stack.a[end].x>>1].aux[0] > 1)
+			a->is_multi = 1;
 		kv_push(uint64_t, a->walk, a->stack.a[end].x);
 		end = a->stack.a[end].y;
 	} while (end != (uint64_t)-1);
@@ -188,29 +191,58 @@ static int walk(msg_t *g, size_t idd[2], int max_dist, aux_t *a)
 	return (int)((int64_t)a->rst.a[0].y);
 }
 
+static int walk2seq(const fmnode_v *n, const fm128_t *pair, const fm64_v *walk, int max_dist, kstring_t *str)
+{
+	int64_t idd;
+	int beg, end, i;
+	assert(walk->n > 1 && pair->x>>32 == walk->a[0]);
+	for (i = 0; i < walk->n; ++i) {
+		idd = walk->a[i];
+		if (i == 0) {
+			beg = pair->y>>32;
+			end = (idd&1)? 0 : n->a[idd>>1].l;
+		} else if (i == walk->n - 1) {
+			end = pair->y<<32>>32;
+			beg = (idd&1)? n->a[idd>>1].l : 0;
+		} else {
+		}
+	}
+	return 0;
+}
+
 int msg_peread(msg_t *g, double avg, double std)
 {
 	int64_t i;
-	int j, max_dist = (int)(avg + std * 2 + .499);
+	int min_dist, max_dist;
 	fm128_v pairs;
 	fm64_v pidx;
 	aux_t a;
+	kstring_t str;
 
 	kv_init(pairs); kv_init(pidx);
 	memset(&a, 0, sizeof(aux_t));
+	max_dist = (int)(avg + std * 2 + .499);
+	min_dist = (int)(avg - std * 2 + .499);
+	if (min_dist < 50) min_dist = 50;
 
 	collect_pairs(&g->nodes, &pairs);
 	index_pairs(&pairs, &pidx);
+	str.l = str.m = 0; str.s = 0;
 	for (i = 0; i < pidx.n; ++i) {
-		int dist, cnt;
+		int dist, cnt, j;
 		size_t idd[2];
 		fm128_t *q;
-		cnt = (pidx.a[i]<<32>>32) - (pidx.a[i]>>32);
+		cnt = (int)(pidx.a[i]<<32>>32) - (int)(pidx.a[i]>>32);
 		if (cnt < 2) continue;
 		q = &pairs.a[pidx.a[i]>>32];
 		idd[0] = q->x>>32; idd[1] = q->x<<32>>32;
 		fm_verbose = (idd[0] == 144 && idd[1] == 268)? 1000 : 3;
 		dist = walk(g, idd, max_dist, &a);
+		if (dist != INT_MIN) {
+			for (j = 0; j < cnt; ++j) {
+				walk2seq(&g->nodes, &pairs.a[(pidx.a[i]>>32) + j], &a.walk, max_dist, &str);
+			}
+		}
 		printf("***\t%d\t%lld[%lld]\t%lld[%lld]\t", cnt, idd[0], g->nodes.a[idd[0]>>1].k[idd[0]&1], idd[1], g->nodes.a[idd[1]>>1].k[idd[1]&1]);
 		if (dist == INT_MIN) {
 			printf("none");
@@ -227,5 +259,6 @@ int msg_peread(msg_t *g, double avg, double std)
 
 	free(a.walk.a); free(a.rst.a); free(a.stack.a); free(a.heap.a);
 	free(pairs.a); free(pidx.a);
+	free(str.s);
 	return 0;
 }
