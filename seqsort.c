@@ -1,16 +1,13 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "fermi.h"
-#include "rld.h"
+#include "priv.h"
 
 typedef struct {
 	const rld_t *e;
 	uint64_t *sorted;
 	int start, step;
 } worker_t;
-
-uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, int *contained);
 
 void *worker(void *data)
 {

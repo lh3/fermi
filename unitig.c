@@ -3,11 +3,9 @@
 #include <string.h>
 #include <zlib.h>
 #include <math.h>
-#include "fermi.h"
-#include "rld.h"
+#include "priv.h"
 #include "kvec.h"
 #include "kstring.h"
-#include "utils.h"
 
 #define info_lt(a, b) ((a).info < (b).info)
 
@@ -20,10 +18,6 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 typedef khash_t(64) hash64_t;
 
 #define MAX_ISIZE 1000
-
-extern unsigned char seq_nt6_table[128];
-extern void seq_revcomp6(int l, unsigned char *s);
-extern void seq_reverse(int l, unsigned char *s);
 
 static volatile uint64_t g_n, g_sum, g_sum2, g_unpaired; // for estimating the insert size distribution
 
@@ -53,7 +47,6 @@ static inline void set_bits(uint64_t *bits, const fmintv_t *p, const uint64_t *s
 
 static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p, int inc_sentinel)
 { // requirement: seq[j] matches the end of a read
-	extern void fm_reverse_fmivec(fmintv_v *p);
 	int c, depth, dir, end;
 	fmintv_t ik, ok[6];
 	p->n = 0;
@@ -385,7 +378,6 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 
 static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted)
 {
-	extern void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
 	uint64_t i;
 	int max_l = 0;
 	aux_t a;

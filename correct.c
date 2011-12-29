@@ -4,9 +4,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <ctype.h>
-#include "utils.h"
-#include "fermi.h"
-#include "rld.h"
+#include "priv.h"
 #include "kvec.h"
 #include "kstring.h"
 
@@ -27,8 +25,6 @@ typedef khash_t(solid) shash_t;
 static volatile int g_stdout_lock;
 static double g_tc, g_tr;
 
-void seq_reverse(int l, unsigned char *s);
-void seq_revcomp6(int l, unsigned char *s);
 void ks_introsort_128y(size_t n, fm128_t *a); // in msg.c
 void ks_heapup_128y(size_t n, fm128_t *a);
 void ks_heapdown_128y(size_t i, size_t n, fm128_t *a);
@@ -204,7 +200,6 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 
 static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
 {
-	extern unsigned char seq_nt6_table[];
 	int i, j, ret0, ret1, n_lower;
 	kstring_t str;
 	fixaux_t fa;
@@ -433,7 +428,6 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 
 int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 {
-	extern unsigned char seq_nt6_table[128];
 	char *seq, *qual;
 	int64_t i, cnt[2];
 	int j, n_seqs, *info;

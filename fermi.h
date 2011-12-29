@@ -67,6 +67,8 @@ typedef struct __kstring_t { // implemented in kstring.h
 #define fm6_comp(a) ((a) >= 1 && (a) <= 4? 5 - (a) : (a))
 #define fm6_set_intv(e, c, ik) ((ik).x[0] = (e)->cnt[(int)(c)], (ik).x[2] = (e)->cnt[(int)(c)+1] - (e)->cnt[(int)(c)], (ik).x[1] = (e)->cnt[fm6_comp(c)], (ik).info = 0)
 
+extern unsigned char seq_nt6_table[128];
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -131,7 +133,6 @@ extern "C" {
 
 	msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio);
 	void msg_amend(msg_t *g);
-	void msg_join_unambi(msg_t *g);
 	void msg_clean(msg_t *g, const fmclnopt_t *opt);
 	void msg_print(const fmnode_v *nodes);
 	void msg_destroy(msg_t *g);

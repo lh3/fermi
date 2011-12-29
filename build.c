@@ -1,9 +1,5 @@
 #include <stdio.h>
-#include "rld.h"
-#include "fermi.h"
-
-int ksa_bwt(unsigned char *T, int n, int k);
-int ksa_bwt64(unsigned char *T, int64_t n, int k);
+#include "priv.h"
 
 int fm_bwtgen(int asize, int64_t l, uint8_t *s)
 {

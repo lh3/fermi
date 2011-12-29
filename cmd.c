@@ -5,19 +5,10 @@
 #include <zlib.h>
 #include <limits.h>
 #include <ctype.h>
-#include "rld.h"
-#include "fermi.h"
+#include "priv.h"
 #include "kstring.h"
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
-
-int sais(const unsigned char *T, int *SA, int n, int k);
-int sais64(const unsigned char *T, int64_t *SA, int64_t n, int64_t k);
-
-void seq_char2nt6(int l, unsigned char *s);
-void seq_revcomp6(int l, unsigned char *s);
-
-double cputime();
 
 int main_cnt2qual(int argc, char *argv[])
 {
@@ -436,7 +427,6 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 int main_seqsort(int argc, char *argv[])
 {
-	extern uint64_t *fm6_seqsort(const rld_t *e, int n_threads);
 	int c, n_threads = 1;
 	rld_t *e;
 	uint64_t *sorted;

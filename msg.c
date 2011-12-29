@@ -2,8 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "fermi.h"
-#include "rld.h"
+#include "priv.h"
 #include "utils.h"
 #include "kstring.h"
 #include "kvec.h"
@@ -76,6 +75,20 @@ void msg_print(const fmnode_v *nodes)
 	free(out.s);
 }
 
+void msg_nodecpy(fmnode_t *dst, const fmnode_t *src)
+{
+	int i;
+	memcpy(dst, src, sizeof(fmnode_t));
+	dst->seq = calloc(src->l + 1, 1);
+	dst->cov = calloc(src->l + 1, 1);
+	memcpy(dst->seq, src->seq, src->l);
+	memcpy(dst->cov, src->cov, src->l);
+	kv_init(dst->nei[0]); kv_init(dst->nei[1]); kv_init(dst->mapping);
+	for (i = 0; i < src->nei[0].n; ++i) kv_push(fm128_t, dst->nei[0], src->nei[0].a[i]);
+	for (i = 0; i < src->nei[1].n; ++i) kv_push(fm128_t, dst->nei[1], src->nei[1].a[i]);
+	for (i = 0; i < src->mapping.n; ++i) kv_push(fm128_t, dst->mapping, src->mapping.a[i]);
+}
+
 static inline void rmdup_128v(fm128_v *r)
 {
 	int l, cnt;
@@ -126,7 +139,6 @@ static hash64_t *build_hash(const fmnode_v *nodes)
 
 msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 {
-	extern unsigned char seq_nt6_table[128];
 	gzFile fp;
 	kseq_t *seq;
 	int64_t tot_len = 0, n_arcs = 0, n_tips = 0, n_arc_drop = 0;
@@ -710,8 +722,6 @@ static void pop_simple_bubble(msg_t *g, size_t id, double min_bub_ratio, double 
 
 static void flip(fmnode_t *p, hash64_t *h)
 {
-	extern void seq_reverse(int l, unsigned char *s);
-	extern void seq_revcomp6(int l, unsigned char *s);
 	fm128_v t;
 	khint_t k;
 	seq_revcomp6(p->l, (uint8_t*)p->seq);
