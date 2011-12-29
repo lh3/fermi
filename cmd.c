@@ -217,6 +217,32 @@ int main_unitig(int argc, char *argv[])
 	return 0;
 }
 
+int main_pext(int argc, char *argv[])
+{
+	extern int fm6_pext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, double avg, double std);
+	int c, use_mmap = 0, n_threads = 1, min_match = 30;
+	rld_t *e;
+	while ((c = getopt(argc, argv, "Ml:t:")) >= 0) {
+		switch (c) {
+			case 'l': min_match = atoi(optarg); break;
+			case 'M': use_mmap = 1; break;
+			case 't': n_threads = atoi(optarg); break;
+		}
+	}
+	if (optind + 4 > argc) {
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi pext [options] <reads.fmd> <graph.msg> <avg> <std>\n\n");
+		fprintf(stderr, "Options: -l INT      min match [%d]\n", min_match);
+		fprintf(stderr, "         -t INT      number of threads [1]\n");
+		fprintf(stderr, "\n");
+		return 1;
+	}
+	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
+	fm6_pext(e, argv[optind+1], min_match, n_threads, atof(argv[optind+2]), atof(argv[optind+3]));
+	rld_destroy(e);
+	return 0;
+}
+
 int main_correct(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1;
