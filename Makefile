@@ -24,11 +24,11 @@ rld.o:rld.h
 build.o:fermi.h rld.h
 exact.o:fermi.h rld.h kstring.h kvec.h
 unitig.o:fermi.h rld.h kstring.h kvec.h
-correct.o:fermi.h rld.h kvec.h
+correct.o:fermi.h rld.h kvec.h kseq.h
 smem.o:fermi.h rld.h kvec.h
 merge.o:fermi.h rld.h ksort.h
 cmd.o:fermi.h rld.h kseq.h
-msg.o:fermi.h khash.h
+msg.o:fermi.h khash.h kseq.h
 main.o:fermi.h
 
 clean:

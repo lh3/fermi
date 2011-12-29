@@ -9,7 +9,7 @@
 #include "fermi.h"
 #include "kstring.h"
 #include "kseq.h"
-KSEQ_INIT(gzFile, gzread)
+KSEQ_INIT2(, gzFile, gzread)
 
 int sais(const unsigned char *T, int *SA, int n, int k);
 int sais64(const unsigned char *T, int64_t *SA, int64_t n, int64_t k);

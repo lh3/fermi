@@ -18,7 +18,7 @@
 
 #include <zlib.h>
 #include "kseq.h"
-KSEQ_INIT(gzFile, gzread)
+KSEQ_DECLARE(gzFile)
 
 #define solid_hash(a) ((a)>>2)
 #define solid_eq(a, b) ((a)>>2 == (b)>>2)

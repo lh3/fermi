@@ -8,7 +8,7 @@
 #include "kstring.h"
 #include "kvec.h"
 #include "kseq.h"
-KSEQ_INIT(gzFile, gzread)
+KSEQ_DECLARE(gzFile)
 
 #include "khash.h"
 KHASH_INIT2(64,, khint64_t, uint64_t, 1, kh_int64_hash_func, kh_int64_hash_equal)
@@ -20,8 +20,6 @@ KSORT_INIT(128x, fm128_t, fm128_xlt)
 KSORT_INIT(128y, fm128_t, fm128_ylt)
 
 #define MAX_DEBUBBLE_DIFF 3
-#define MAX_POP_EXTENSION 1000
-#define MAX_NEIGHBORS     512
 
 typedef khash_t(64) hash64_t;
 
