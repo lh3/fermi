@@ -135,6 +135,8 @@ extern "C" {
 	void msg_print(const fmnode_v *nodes);
 	void msg_destroy(msg_t *g);
 
+	struct __rld_t *fm6_api_build(int64_t l, uint8_t *s);
+
 #ifdef __cplusplus
 }
 #endif

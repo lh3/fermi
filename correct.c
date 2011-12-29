@@ -10,11 +10,9 @@
 #include "kvec.h"
 #include "kstring.h"
 
-#define SUF_LEN   8
-#define SUF_SHIFT (SUF_LEN<<1)
-#define SUF_NUM   (1<<SUF_SHIFT)
-#define SUF_MASK  (SUF_NUM-1)
-#define MAX_KMER  (SUF_LEN + 15)
+#define DEFAULT_SUF_LEN 8
+
+static int SUF_LEN, SUF_NUM;
 
 #include <zlib.h>
 #include "kseq.h"
@@ -34,6 +32,12 @@ void seq_revcomp6(int l, unsigned char *s);
 void ks_introsort_128y(size_t n, fm128_t *a); // in msg.c
 void ks_heapup_128y(size_t n, fm128_t *a);
 void ks_heapdown_128y(size_t i, size_t n, fm128_t *a);
+
+static void compute_SUF(int suf_len)
+{
+	SUF_LEN   = suf_len;
+	SUF_NUM   = 1<<(SUF_LEN<<1);
+}
 
 /***********************
  * Collect good k-mers *
@@ -159,8 +163,8 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		}
 		i = (z.y&0xffff) - 1; parent = (int)(z.y>>16);
 		// check the hash table
-		h = solid[z.x & SUF_MASK];
-		k = kh_get(solid, h, z.x>>SUF_SHIFT<<2);
+		h = solid[z.x & (SUF_NUM - 1)];
+		k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
@@ -288,12 +292,13 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 	pthread_t *tid;
 	pthread_attr_t attr;
 
+	compute_SUF(DEFAULT_SUF_LEN);
 	if (opt->w <= SUF_LEN) {
 		fprintf(stderr, "[E::%s] excessively small `-w'. Please increase manually to at least %d.\n", __func__, SUF_LEN + 1);
 		return 1;
 	}
-	if (opt->w > MAX_KMER) {
-		fprintf(stderr, "[E::%s] k-mer length cannot exceed %d\n", __func__, MAX_KMER);
+	if (opt->w > SUF_LEN + 15) { // we keep 15-mer (30 bits) in a 32-bit integer; the rest 2 bits are for other uses
+		fprintf(stderr, "[E::%s] k-mer length cannot exceed %d\n", __func__, SUF_LEN + 15);
 		return 1;
 	}
 	// initialize "solid" and "tid"
@@ -419,3 +424,39 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 	free(solid); free(tid);
 	return 0;
 }
+
+/*******
+ * API *
+ *******/
+
+#define DEFAULT_QUAL 20
+/*
+int fm6_api_correct(int64_t l, uint8_t *_seq, uint8_t *_qual)
+{
+	extern unsigned char seq_nt6_table[128];
+	uint8_t *seq, *qual;
+	int64_t i;
+	rld_t *e;
+	fmecopt_t opt;
+	shash_t *solid[4];
+	// convert encoding; preparation
+	assert(_seq[l-1] == 0); // must be NULL terminated
+	qual = _qual? _qual : malloc(l);
+	seq = malloc(l);
+	for (i = 0; i < l; ++i) {
+		seq[i] = _seq[i] < 6? _seq[i] : seq_nt6_table[_seq[i]];
+		if (_qual == 0) qual[i] = DEFAULT_QUAL;
+	}
+	// build FM-index
+	e = fm6_api_build(l, seq);
+	// collect solid k-mers
+	{
+		int64_t cnt[2];
+		for (i = 1; i <= 4; ++i) {
+			ec_collect(e, &opt, 1, solid[i-1], cnt);
+	}
+	// free
+	rld_destroy(e);
+	if (_qual == 0) free(qual);
+}
+*/

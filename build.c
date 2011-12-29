@@ -51,3 +51,8 @@ rld_t *fm_build(rld_t *e0, int asize, int sbits, int64_t l, uint8_t *s)
 	assert(e->mcnt[0] == ori_l + l);
 	return e;
 }
+
+rld_t *fm6_api_build(int64_t l, uint8_t *s)
+{
+	return fm_build(0, 6, 3, l, s);
+}
