@@ -4,6 +4,7 @@
 #include <assert.h>
 #include "rld.h"
 #include "fermi.h"
+#include "kstring.h"
 #include "kvec.h"
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
@@ -78,13 +79,32 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 	return j;
 }
 
+static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
+{
+	extern void seq_reverse(int l, unsigned char *s);
+	kstring_t rd, seq;
+	int i, j;
+	rd.l = seq.l = rd.m = seq.m = 0; rd.s = seq.s = 0;
+	for (i = start; i < n; i += step) {
+		ext1_t *p = &buf[i];
+		kputsn(p->semitig, p->len + 1, &seq); // +1 to include the ending NULL
+		for (j = 0; j < p->reads.n; ++j) {
+			assert(p->reads.a[j] < e->mcnt[1]);
+			fm_retrieve(e, p->reads.a[j], &rd);
+			seq_reverse(rd.l, (uint8_t*)rd.s);
+			kputsn(rd.s, rd.l + 1, &seq);
+		}
+	}
+	free(rd.s); free(seq.s);
+}
+
 int fm6_pext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, double avg, double std)
 {
 	int min_dist, max_dist;
 	kseq_t *kseq;
 	gzFile fp;
 	ext1_t *buf;
-	int i;
+	int i, n;
 
 	max_dist = (int)(avg + std * 2. + .499);
 	min_dist = (int)(avg - std * 2. + .499);
@@ -94,10 +114,14 @@ int fm6_pext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, doubl
 	kseq = kseq_init(fp);
 	buf = calloc(BUF_SIZE, sizeof(ext1_t));
 
-	while (read_unitigs(kseq, BUF_SIZE, buf, min_dist, max_dist) >= 0) {
+	while ((n = read_unitigs(kseq, BUF_SIZE, buf, min_dist, max_dist)) > 0) {
+		pext_core(e, n, buf, 0, 1);
 	}
 
-	for (i = 0; i < BUF_SIZE; ++i) free(buf[i].reads.a);
+	for (i = 0; i < BUF_SIZE; ++i) {
+		free(buf[i].semitig);
+		free(buf[i].reads.a);
+	}
 	free(buf);
 	kseq_destroy(kseq);
 	gzclose(fp);
