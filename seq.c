@@ -5,7 +5,7 @@
 #include "utils.h"
 #include "kstring.h"
 #include "kseq.h"
-KSEQ_DECLARE(gzFile)
+KSEQ_INIT2(, gzFile, gzread)
 
 unsigned char seq_nt6_table[128] = {
     0, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,
