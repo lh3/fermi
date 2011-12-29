@@ -428,9 +428,9 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 
 int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 {
-	char *seq, *qual;
+	char *qual;
 	int64_t i, cnt[2];
-	int j, n_seqs, *info;
+	int j, *info;
 	rld_t *e;
 	fmecopt_t opt;
 	shash_t **solid;
@@ -441,19 +441,15 @@ int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 	opt.keep_bad = 1; opt.is_paired = 0;
 	opt.max_corr = 0.3;
 	compute_SUF(opt.w > 15? opt.w - 15 : 1);
-	// convert encoding; preparation
+	// build FM-index; initialize the k-mer hash table
 	assert(_seq[l-1] == 0); // must be NULL terminated
+	e = fm6_build2(l, _seq);
 	qual = _qual? _qual : malloc(l);
-	seq = malloc(l);
-	for (i = n_seqs = 0; i < l; ++i) {
-		if (_seq[i] == 0) ++n_seqs;
-		seq[i] = _seq[i] < 6? _seq[i] : seq_nt6_table[(int)_seq[i]];
-		if (_qual == 0) qual[i] = DEFAULT_QUAL + 33;
-	}
+	if (_qual == 0)
+		for (i = 0; i < l; ++i)
+			qual[i] = DEFAULT_QUAL + 33;
 	solid = malloc(SUF_NUM * sizeof(void*));
 	for (i = 0; i < SUF_NUM; ++i) solid[i] = kh_init(solid);
-	// build FM-index
-	e = fm6_build(l, (uint8_t*)seq);
 	// collect solid k-mers
 	for (i = 0; i < SUF_NUM; ++i) {
 		uint8_t s[SUF_LEN+1];
@@ -462,24 +458,19 @@ int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 		ec_collect(e, &opt, SUF_LEN, s, solid[i], cnt);
 	}
 	// correct errors
-	seq2  = malloc(sizeof(void*) * n_seqs);
-	qual2 = malloc(sizeof(void*) * n_seqs);
-	info  = calloc(n_seqs, sizeof(int));
-	seq2[0] = seq; qual2[0] = qual;
-	for (i = 0, j = 1; i < l; ++i) {
-		if (_seq[i] == 0) seq[i] = 0;
-		else seq[i] = _seq[i] < 6? "$ACGTN"[(int)_seq[i]] : toupper(_seq[i]);
-		if (i != l - 1 && seq[i] == 0) // skip the last sentinel
-			seq2[j] = &seq[i + 1], qual2[j++] = &qual[i + 1];
-	}
-	ec_fix(e, &opt, solid, n_seqs, seq2, qual2, info);
-	memcpy(_seq, seq, l);
+	seq2  = malloc(sizeof(void*) * e->mcnt[1] / 2); // NB: e->mcnt[1] equals twice of the number of sequences in _seq
+	qual2 = malloc(sizeof(void*) * e->mcnt[1] / 2);
+	info  = calloc(e->mcnt[1] / 2, sizeof(int));
+	seq2[0] = _seq; qual2[0] = qual;
+	for (i = j = 1; i < l - 1; ++i)
+		if (_seq[i] == 0)
+			seq2[j] = &_seq[i + 1], qual2[j++] = &qual[i + 1];
+	ec_fix(e, &opt, solid, e->mcnt[1]/2, seq2, qual2, info);
 	free(seq2); free(qual2); free(info);
 	// free
 	for (i = 0; i < SUF_NUM; ++i) kh_destroy(solid, solid[i]);
 	free(solid);
 	rld_destroy(e);
 	if (_qual == 0) free(qual);
-	free(seq);
 	return 0;
 }
