@@ -425,38 +425,67 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 	return 0;
 }
 
-/*******
- * API *
- *******/
+/***********************************
+ * High-level error correction API *
+ ***********************************/
 
 #define DEFAULT_QUAL 20
-/*
-int fm6_api_correct(int64_t l, uint8_t *_seq, uint8_t *_qual)
+
+int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 {
 	extern unsigned char seq_nt6_table[128];
-	uint8_t *seq, *qual;
-	int64_t i;
+	char *seq, *qual;
+	int64_t i, cnt[2];
+	int j, n_seqs, *info;
 	rld_t *e;
 	fmecopt_t opt;
-	shash_t *solid[4];
+	shash_t **solid;
+	char **seq2, **qual2;
+	// set correction parameters
+	opt.w = kmer > 0? kmer : 19;
+	opt.min_occ = 3;
+	opt.keep_bad = 1; opt.is_paired = 0;
+	opt.max_corr = 0.3;
+	compute_SUF(opt.w > 15? opt.w - 15 : 1);
 	// convert encoding; preparation
 	assert(_seq[l-1] == 0); // must be NULL terminated
 	qual = _qual? _qual : malloc(l);
 	seq = malloc(l);
-	for (i = 0; i < l; ++i) {
-		seq[i] = _seq[i] < 6? _seq[i] : seq_nt6_table[_seq[i]];
-		if (_qual == 0) qual[i] = DEFAULT_QUAL;
+	for (i = n_seqs = 0; i < l; ++i) {
+		if (_seq[i] == 0) ++n_seqs;
+		seq[i] = _seq[i] < 6? _seq[i] : seq_nt6_table[(int)_seq[i]];
+		if (_qual == 0) qual[i] = DEFAULT_QUAL + 33;
 	}
+	solid = malloc(SUF_NUM * sizeof(void*));
+	for (i = 0; i < SUF_NUM; ++i) solid[i] = kh_init(solid);
 	// build FM-index
-	e = fm6_api_build(l, seq);
+	e = fm6_build(l, (uint8_t*)seq);
 	// collect solid k-mers
-	{
-		int64_t cnt[2];
-		for (i = 1; i <= 4; ++i) {
-			ec_collect(e, &opt, 1, solid[i-1], cnt);
+	for (i = 0; i < SUF_NUM; ++i) {
+		uint8_t s[SUF_LEN+1];
+		for (j = 0; j < SUF_LEN; ++j)
+			s[j] = (i>>(j*2)&0x3) + 1;
+		ec_collect(e, &opt, SUF_LEN, s, solid[i], cnt);
 	}
+	// correct errors
+	seq2  = malloc(sizeof(void*) * n_seqs);
+	qual2 = malloc(sizeof(void*) * n_seqs);
+	info  = calloc(n_seqs, sizeof(int));
+	seq2[0] = seq; qual2[0] = qual;
+	for (i = 0, j = 1; i < l; ++i) {
+		if (_seq[i] == 0) seq[i] = 0;
+		else seq[i] = _seq[i] < 6? "$ACGTN"[(int)_seq[i]] : toupper(_seq[i]);
+		if (i != l - 1 && seq[i] == 0) // skip the last sentinel
+			seq2[j] = &seq[i + 1], qual2[j++] = &qual[i + 1];
+	}
+	ec_fix(e, &opt, solid, n_seqs, seq2, qual2, info);
+	memcpy(_seq, seq, l);
+	free(seq2); free(qual2); free(info);
 	// free
+	for (i = 0; i < SUF_NUM; ++i) kh_destroy(solid, solid[i]);
+	free(solid);
 	rld_destroy(e);
 	if (_qual == 0) free(qual);
+	free(seq);
+	return 0;
 }
-*/

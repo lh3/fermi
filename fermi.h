@@ -75,6 +75,7 @@ extern "C" {
 	struct __rld_t *fm_bwtenc(int asize, int sbits, int64_t l, const uint8_t *s);
 	struct __rld_t *fm_append(struct __rld_t *e0, int len, const uint8_t *T);
 	struct __rld_t *fm_build(struct __rld_t *e0, int asize, int sbits, int64_t l, uint8_t *s);
+	struct __rld_t *fm6_build(int64_t l, uint8_t *s);
 
 	/**
 	 * Backward search for a generic FM-Index
@@ -135,7 +136,9 @@ extern "C" {
 	void msg_print(const fmnode_v *nodes);
 	void msg_destroy(msg_t *g);
 
-	struct __rld_t *fm6_api_build(int64_t l, uint8_t *s);
+	int64_t fm6_api_readseq(const char *fn, char **_seq, char **_qual);
+	void fm6_api_writeseq(int64_t l, char *seq, char *qual);
+	int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual);
 
 #ifdef __cplusplus
 }

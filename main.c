@@ -20,6 +20,8 @@ int main_clean(int argc, char *argv[]);
 int main_cnt2qual(int argc, char *argv[]);
 int main_seqsort(int argc, char *argv[]);
 
+int main_example(int argc, char *argv[]);
+
 double rssmem();
 double cputime();
 double realtime();
@@ -52,6 +54,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         pe2cofq   Convert split pefq to collate fastq\n");
 		fprintf(stderr, "         cg2cofq   Convert cgfq to collate fastq (deprecated)\n");
 		fprintf(stderr, "\n");
+		fprintf(stderr, "         example   Light-weight assembly using fermi high-level APIs\n");
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	if (strcmp(argv[1], "build") == 0) ret = main_build(argc-1, argv+1);
@@ -70,6 +74,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "trimseq") == 0) ret = main_trimseq(argc-1, argv+1);
 	else if (strcmp(argv[1], "pe2cofq") == 0) ret = main_pe2cofq(argc-1, argv+1);
 	else if (strcmp(argv[1], "cg2cofq") == 0) ret = main_cg2cofq(argc-1, argv+1);
+	else if (strcmp(argv[1], "example") == 0) ret = main_example(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;
