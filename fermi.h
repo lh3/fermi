@@ -135,6 +135,7 @@ extern "C" {
 
 	int64_t fm6_api_readseq(const char *fn, char **_seq, char **_qual);
 	void fm6_api_writeseq(int64_t l, char *seq, char *qual);
+	int fm6_api_seqlen(int64_t l, const char *seq, double quantile);
 	int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual);
 	msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq);
 
