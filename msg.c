@@ -77,10 +77,12 @@ void msg_print(const fmnode_v *nodes)
 
 void msg_nodecpy(fmnode_t *dst, const fmnode_t *src)
 {
-	int i;
+	int i, max_l;
 	memcpy(dst, src, sizeof(fmnode_t));
-	dst->seq = calloc(src->l + 1, 1);
-	dst->cov = calloc(src->l + 1, 1);
+	max_l = src->l + 1;
+	kroundup32(max_l); // this is required; otherwise merge will fail
+	dst->seq = calloc(max_l, 1);
+	dst->cov = calloc(max_l, 1);
 	memcpy(dst->seq, src->seq, src->l);
 	memcpy(dst->cov, src->cov, src->l);
 	kv_init(dst->nei[0]); kv_init(dst->nei[1]); kv_init(dst->mapping);
@@ -405,15 +407,16 @@ static void rmnode(msg_t *g, size_t id)
 	p->l = -1;
 }
 
-static void rm_all_tips(msg_t *g, int min_len)
+void msg_rm_tips(msg_t *g, int min_len, double min_cov)
 {
 	size_t i;
 	double t = cputime();
 	if (min_len < 0) return;
+	if (g->h == 0) g->h = build_hash(&g->nodes);
 	for (i = 0; i < g->nodes.n; ++i) {
 		fmnode_t *p = &g->nodes.a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->l < min_len) rmnode(g, i);
+		if (p->l < min_len && p->avg_cov < min_cov) rmnode(g, i);
 	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] removed tips shorter than %dbp in %.3f sec.\n", __func__, min_len, cputime() - t);
@@ -838,12 +841,13 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 
 	kv_init(stack);
 	memset(&paux, 0, sizeof(popaux_t));
+	if (g->h == 0) g->h = build_hash(&g->nodes);
 	paux.h = kh_init(64);
 	paux.kept = kh_init(64);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		drop_all_weak_arcs(g, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
-		rm_all_tips(g, opt->min_tip_len * r);
+		msg_rm_tips(g, opt->min_tip_len * r, 1e4); // FIXME: currently no restriction on the tip coverage
 		msg_join_unambi(g);
 	}
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
@@ -854,19 +858,19 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 				rmnode(g, i);
 		fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
 		drop_all_weak_arcs(g, opt->min_ovlp, opt->min_ovlp_ratio);
-		rm_all_tips(g, opt->min_tip_len);
+		msg_rm_tips(g, opt->min_tip_len, 1e4);
 		msg_join_unambi(g);
 	}
 	if (opt->aggressive_pop) {
 		pop_all_complex_bubbles(g, 500, 20, &paux);
-		rm_all_tips(g, opt->min_tip_len);
+		msg_rm_tips(g, opt->min_tip_len, 1e4);
 		msg_join_unambi(g);
 	} else if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
 			pop_simple_bubble(g, i, opt->min_bub_ratio, opt->min_bub_cov);
 		fprintf(stderr, "[M::%s] popped simple bubbles in %.3f sec.\n", __func__, cputime() - t);
-		rm_all_tips(g, opt->min_tip_len);
+		msg_rm_tips(g, opt->min_tip_len, 1e4);
 		msg_join_unambi(g);
 	}
 	// free

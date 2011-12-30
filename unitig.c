@@ -408,6 +408,9 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 			memcpy(z.cov, cov.s, z.l + 1);
 			if (nodes) { // keep in the nodes array
 				fmnode_t *q;
+				int j, sum = 0;
+				for (j = 0; j < z.l; ++j) sum += z.cov[j] - 33;
+				z.avg_cov = (double)sum / z.l; // compute the average coverage as this has not been done
 				kv_pushp(fmnode_t, *nodes, &q);
 				msg_nodecpy(q, &z);
 			} else { // print out

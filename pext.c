@@ -2,8 +2,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "rld.h"
-#include "fermi.h"
+#include "priv.h"
 #include "kstring.h"
 #include "kvec.h"
 #include "kseq.h"
@@ -82,32 +81,44 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
 {
 	extern void seq_reverse(int l, unsigned char *s);
-	kstring_t rd, seq;
+	kstring_t rd, seq, out;
 	int i, j;
-	rd.l = seq.l = rd.m = seq.m = 0; rd.s = seq.s = 0;
+	rd.l = seq.l = rd.m = seq.m = out.l = out.m = 0; rd.s = seq.s = out.s = 0;
 	for (i = start; i < n; i += step) {
 		ext1_t *p = &buf[i];
 		msg_t *g;
-		int tmp;
+		int tmp, max_len = 0;
 		seq.l = 0;
 		kputsn((char*)p->semitig, p->len + 1, &seq); // +1 to include the ending NULL
 		for (j = 0; j < p->reads.n; ++j) {
 			assert(p->reads.a[j] < e->mcnt[1]);
 			fm_retrieve(e, p->reads.a[j], &rd);
+			if (rd.l > max_len) max_len = rd.l;
 			seq_reverse(rd.l, (uint8_t*)rd.s);
-			kputsn(rd.s, rd.l + 1, &seq);
+			kputsn(rd.s, rd.l + 1, &seq); // +1 to include NULL
 		}
-		tmp = fm_verbose; fm_verbose = 1;
-		g = fm6_api_unitig();
-		//printf("=== %d ===\n", i);
-		if (i == 1) {
-		for (j = 0; j < seq.l; ++j) {
-			if (seq.s[j] == 0) putchar('\n');
-			else putchar("$ACGTN"[(int)seq.s[j]]);
+		if (max_len >= p->len) continue; // a read is longer than the semitig? stop; FIXME: this can be improved
+		// de novo assembly
+		tmp = fm_verbose; fm_verbose = 1; // surpress messages and warnings
+		g = fm6_api_unitig(-1, seq.l, seq.s);
+		msg_rm_tips(g, max_len + 1, 1.01); // very mild tip removal; note that max_len+1 <= p->len
+		msg_join_unambi(g);
+		fm_verbose = tmp;
+		// decide if keep the longest contig
+		for (j = 0, max_len = 0, tmp = -1; j < g->nodes.n; ++j)
+			if (g->nodes.a[j].l >= max_len)
+				max_len = g->nodes.a[j].l, tmp = j;
+		if (max_len > p->len) { // the semitig is extensible
+			fmnode_t *q = &g->nodes.a[tmp];
+			out.l = 0;
+			kputc('>', &out); kputw(i, &out); kputc(' ', &out); kputw(max_len - p->len, &out); kputc('\n', &out);
+			for (j = 0; j < q->l; ++j)
+				kputc("$ACGTN"[(int)q->seq[j]], &out);
+			puts(out.s);
 		}
-		}
+		msg_destroy(g);
 	}
-	free(rd.s); free(seq.s);
+	free(rd.s); free(seq.s); free(out.s);
 }
 
 int fm6_pext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, double avg, double std)
