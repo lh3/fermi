@@ -4,17 +4,13 @@
 #include <math.h>
 #include <pthread.h>
 #include <ctype.h>
-#include "utils.h"
-#include "fermi.h"
-#include "rld.h"
+#include "priv.h"
 #include "kvec.h"
 #include "kstring.h"
 
-#define SUF_LEN   8
-#define SUF_SHIFT (SUF_LEN<<1)
-#define SUF_NUM   (1<<SUF_SHIFT)
-#define SUF_MASK  (SUF_NUM-1)
-#define MAX_KMER  (SUF_LEN + 15)
+#define DEFAULT_SUF_LEN 8
+
+static int SUF_LEN, SUF_NUM;
 
 #include <zlib.h>
 #include "kseq.h"
@@ -29,11 +25,15 @@ typedef khash_t(solid) shash_t;
 static volatile int g_stdout_lock;
 static double g_tc, g_tr;
 
-void seq_reverse(int l, unsigned char *s);
-void seq_revcomp6(int l, unsigned char *s);
 void ks_introsort_128y(size_t n, fm128_t *a); // in msg.c
 void ks_heapup_128y(size_t n, fm128_t *a);
 void ks_heapdown_128y(size_t i, size_t n, fm128_t *a);
+
+static void compute_SUF(int suf_len)
+{
+	SUF_LEN   = suf_len;
+	SUF_NUM   = 1<<(SUF_LEN<<1);
+}
 
 /***********************
  * Collect good k-mers *
@@ -159,8 +159,8 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		}
 		i = (z.y&0xffff) - 1; parent = (int)(z.y>>16);
 		// check the hash table
-		h = solid[z.x & SUF_MASK];
-		k = kh_get(solid, h, z.x>>SUF_SHIFT<<2);
+		h = solid[z.x & (SUF_NUM - 1)];
+		k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
@@ -200,7 +200,6 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 
 static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
 {
-	extern unsigned char seq_nt6_table[];
 	int i, j, ret0, ret1, n_lower;
 	kstring_t str;
 	fixaux_t fa;
@@ -288,12 +287,13 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 	pthread_t *tid;
 	pthread_attr_t attr;
 
+	compute_SUF(DEFAULT_SUF_LEN);
 	if (opt->w <= SUF_LEN) {
 		fprintf(stderr, "[E::%s] excessively small `-w'. Please increase manually to at least %d.\n", __func__, SUF_LEN + 1);
 		return 1;
 	}
-	if (opt->w > MAX_KMER) {
-		fprintf(stderr, "[E::%s] k-mer length cannot exceed %d\n", __func__, MAX_KMER);
+	if (opt->w > SUF_LEN + 15) { // we keep 15-mer (30 bits) in a 32-bit integer; the rest 2 bits are for other uses
+		fprintf(stderr, "[E::%s] k-mer length cannot exceed %d\n", __func__, SUF_LEN + 15);
 		return 1;
 	}
 	// initialize "solid" and "tid"
@@ -417,5 +417,60 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 	// free
 	for (j = 0; j < SUF_NUM; ++j) kh_destroy(solid, solid[j]);
 	free(solid); free(tid);
+	return 0;
+}
+
+/***********************************
+ * High-level error correction API *
+ ***********************************/
+
+#define DEFAULT_QUAL 20
+
+int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
+{
+	char *qual;
+	int64_t i, cnt[2];
+	int j, *info;
+	rld_t *e;
+	fmecopt_t opt;
+	shash_t **solid;
+	char **seq2, **qual2;
+	// set correction parameters
+	opt.w = kmer > 0? kmer : 19;
+	opt.min_occ = 3;
+	opt.keep_bad = 1; opt.is_paired = 0;
+	opt.max_corr = 0.3;
+	compute_SUF(opt.w > 15? opt.w - 15 : 1);
+	// build FM-index; initialize the k-mer hash table
+	assert(_seq[l-1] == 0); // must be NULL terminated
+	e = fm6_build2(l, _seq);
+	qual = _qual? _qual : malloc(l);
+	if (_qual == 0)
+		for (i = 0; i < l; ++i)
+			qual[i] = DEFAULT_QUAL + 33;
+	solid = malloc(SUF_NUM * sizeof(void*));
+	for (i = 0; i < SUF_NUM; ++i) solid[i] = kh_init(solid);
+	// collect solid k-mers
+	for (i = 0; i < SUF_NUM; ++i) {
+		uint8_t s[SUF_LEN+1];
+		for (j = 0; j < SUF_LEN; ++j)
+			s[j] = (i>>(j*2)&0x3) + 1;
+		ec_collect(e, &opt, SUF_LEN, s, solid[i], cnt);
+	}
+	// correct errors
+	seq2  = malloc(sizeof(void*) * e->mcnt[1] / 2); // NB: e->mcnt[1] equals twice of the number of sequences in _seq
+	qual2 = malloc(sizeof(void*) * e->mcnt[1] / 2);
+	info  = calloc(e->mcnt[1] / 2, sizeof(int));
+	seq2[0] = _seq; qual2[0] = qual;
+	for (i = j = 1; i < l - 1; ++i)
+		if (_seq[i] == 0)
+			seq2[j] = &_seq[i + 1], qual2[j++] = &qual[i + 1];
+	ec_fix(e, &opt, solid, e->mcnt[1]/2, seq2, qual2, info);
+	free(seq2); free(qual2); free(info);
+	// free
+	for (i = 0; i < SUF_NUM; ++i) kh_destroy(solid, solid[i]);
+	free(solid);
+	rld_destroy(e);
+	if (_qual == 0) free(qual);
 	return 0;
 }

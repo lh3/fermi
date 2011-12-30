@@ -2,11 +2,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "fermi.h"
-#include "rld.h"
-#include "utils.h"
-
-double cputime();
+#include "priv.h"
 
 /**********************************************
  * Helpful routines for decoding and encoding *
@@ -221,7 +217,6 @@ rld_t *fm_merge_from_SA(rld_t *e0, int len, const uint8_t *T, const int *SA, con
 
 rld_t *fm_append(rld_t *e0, int len, const uint8_t *T)
 {
-	extern int ksa_sa(const unsigned char *T, int *SA, int n, int k);
 	int c, k, *C, *p, *SA;
 	uint64_t i, *oi, *rank_l;
 	uint32_t *ws;

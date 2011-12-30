@@ -1,9 +1,6 @@
 #include <stdio.h>
-#include "rld.h"
-#include "fermi.h"
-
-int ksa_bwt(unsigned char *T, int n, int k);
-int ksa_bwt64(unsigned char *T, int64_t n, int k);
+#include <string.h>
+#include "priv.h"
 
 int fm_bwtgen(int asize, int64_t l, uint8_t *s)
 {
@@ -49,5 +46,25 @@ rld_t *fm_build(rld_t *e0, int asize, int sbits, int64_t l, uint8_t *s)
 		fputc('\n', stderr);
 	}
 	assert(e->mcnt[0] == ori_l + l);
+	return e;
+}
+
+rld_t *fm6_build2(int64_t l, const char *seq)
+{
+	int64_t i, j, beg;
+	uint8_t *s;
+	rld_t *e;
+	s = calloc(l * 2, 1);
+	for (i = j = beg = 0; i < l; ++i) { // generate the reverse complement
+		s[j] = seq[i] < 6? seq[i] : seq_nt6_table[(int)seq[i]];
+		if (s[j] == 0) {
+			memcpy(s + j + 1, s + beg, j - beg);
+			seq_revcomp6(j - beg, s + j + 1);
+			j = beg = j - beg + 2 + j;
+		} else ++j;
+	}
+	assert(j == l * 2);
+	e = fm_build(0, 6, 3, l * 2, s);
+	free(s);
 	return e;
 }

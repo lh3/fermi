@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <assert.h>
 #include "utils.h"
 #include "kstring.h"
 #include "kseq.h"
@@ -355,3 +356,53 @@ int main_trimseq(int argc, char *argv[])
 	return 0;
 }
 
+/*******************
+ * High-level APIs *
+ *******************/
+
+#define DEFAULT_QUAL 20
+
+int64_t fm6_api_readseq(const char *fn, char **_seq, char **_qual)
+{
+	gzFile fp;
+	kseq_t *kseq;
+	kstring_t seq, qual;
+	seq.l = seq.m = qual.l = qual.m = 0; seq.s = qual.s = 0;
+	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
+	kseq = kseq_init(fp);
+	while (kseq_read(kseq) >= 0) {
+		kputsn(kseq->seq.s, kseq->seq.l + 1, &seq);
+		if (kseq->qual.l == 0) {
+			int i;
+			ks_resize(&qual, seq.m);
+			for (i = 0; i < kseq->seq.l; ++i)
+				kputc(DEFAULT_QUAL + 33, &qual);
+			kputc(0, &qual);
+		} else kputsn(kseq->qual.s, kseq->qual.l + 1, &qual);
+	}
+	assert(seq.l == qual.l);
+	kseq_destroy(kseq);
+	gzclose(fp);
+	*_seq = seq.s; *_qual = qual.s;
+	return seq.l;
+}
+
+void fm6_api_writeseq(int64_t l, char *seq, char *qual)
+{
+	kstring_t s, q;
+	int64_t i;
+	s.l = s.m = q.l = q.m = 0; s.s = q.s = 0;
+	for (i = 0; i < l; ++i) {
+		int c = seq[i];
+		if (c == 0) {
+			printf("@%ld\n", (long)i);
+			puts(s.s); puts("+"); puts(q.s);
+			s.l = q.l = 0;
+		} else {
+			if (c < 6) c = "$ACGTN"[c];
+			kputc(c, &s);
+			kputc(qual[i], &q);
+		}
+	}
+	free(s.s); free(q.s);
+}

@@ -1,9 +1,6 @@
-#include "fermi.h"
-#include "rld.h"
+#include "priv.h"
 #include "kvec.h"
 #include "kstring.h"
-
-void fm_reverse_fmivec(fmintv_v *p);
 
 int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, int self_match)
 {

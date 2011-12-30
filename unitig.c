@@ -3,11 +3,9 @@
 #include <string.h>
 #include <zlib.h>
 #include <math.h>
-#include "fermi.h"
-#include "rld.h"
+#include "priv.h"
 #include "kvec.h"
 #include "kstring.h"
-#include "utils.h"
 
 #define info_lt(a, b) ((a).info < (b).info)
 
@@ -20,10 +18,6 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 typedef khash_t(64) hash64_t;
 
 #define MAX_ISIZE 1000
-
-extern unsigned char seq_nt6_table[128];
-extern void seq_revcomp6(int l, unsigned char *s);
-extern void seq_reverse(int l, unsigned char *s);
 
 static volatile uint64_t g_n, g_sum, g_sum2, g_unpaired; // for estimating the insert size distribution
 
@@ -53,7 +47,6 @@ static inline void set_bits(uint64_t *bits, const fmintv_t *p, const uint64_t *s
 
 static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int min, int j, int at5, fmintv_v *p, int inc_sentinel)
 { // requirement: seq[j] matches the end of a read
-	extern void fm_reverse_fmivec(fmintv_v *p);
 	int c, depth, dir, end;
 	fmintv_t ik, ok[6];
 	p->n = 0;
@@ -383,9 +376,8 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted)
+static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, fmnode_v *nodes)
 {
-	extern void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
 	uint64_t i;
 	int max_l = 0;
 	aux_t a;
@@ -414,9 +406,15 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 			}
 			memcpy(z.seq, str.s, z.l);
 			memcpy(z.cov, cov.s, z.l + 1);
-			msg_write_node(&z, i, &out);
-			fputs(out.s, stdout);
-			out.s[0] = 0; out.l = 0;
+			if (nodes) { // keep in the nodes array
+				fmnode_t *q;
+				kv_pushp(fmnode_t, *nodes, &q);
+				msg_nodecpy(q, &z);
+			} else { // print out
+				msg_write_node(&z, i, &out);
+				fputs(out.s, stdout);
+				out.s[0] = 0; out.l = 0;
+			}
 		}
 	}
 	__sync_fetch_and_add(&g_n, a.n);
@@ -439,7 +437,7 @@ typedef struct {
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	unitig_core(w->e, w->min_match, w->start, w->end, w->used, w->bend, w->visited, w->sorted);
+	unitig_core(w->e, w->min_match, w->start, w->end, w->used, w->bend, w->visited, w->sorted, 0);
 	return 0;
 }
 
@@ -476,4 +474,26 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 	avg = (double)g_sum / g_n;
 	fprintf(stderr, "[M::%s] avg=%.2f std.dev=%.2f #unpaired=%ld\n", __func__, avg, sqrt((double)g_sum2/g_n - avg * avg), (long)g_unpaired);
 	return 0;
+}
+
+/******************
+ * High-level API *
+ ******************/
+
+msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
+{
+	rld_t *e;
+	msg_t *g;
+	uint64_t i, *used, *bend, *visited;
+	for (i = 0; i < l; ++i)
+		if (seq[i] > 5) seq[i] = seq_nt6_table[(int)seq[i]];
+	e = fm6_build2(l, seq);
+	used    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
+	bend    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
+	visited = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
+	g = calloc(1, sizeof(msg_t));
+	unitig_core(e, min_match, 0, e->mcnt[1], used, bend, visited, 0, &g->nodes);
+	free(used); free(bend); free(visited);
+	rld_destroy(e);
+	return g;
 }

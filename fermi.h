@@ -67,6 +67,8 @@ typedef struct __kstring_t { // implemented in kstring.h
 #define fm6_comp(a) ((a) >= 1 && (a) <= 4? 5 - (a) : (a))
 #define fm6_set_intv(e, c, ik) ((ik).x[0] = (e)->cnt[(int)(c)], (ik).x[2] = (e)->cnt[(int)(c)+1] - (e)->cnt[(int)(c)], (ik).x[1] = (e)->cnt[fm6_comp(c)], (ik).info = 0)
 
+extern unsigned char seq_nt6_table[128];
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -75,6 +77,7 @@ extern "C" {
 	struct __rld_t *fm_bwtenc(int asize, int sbits, int64_t l, const uint8_t *s);
 	struct __rld_t *fm_append(struct __rld_t *e0, int len, const uint8_t *T);
 	struct __rld_t *fm_build(struct __rld_t *e0, int asize, int sbits, int64_t l, uint8_t *s);
+	struct __rld_t *fm6_build2(int64_t l, const char *s);
 
 	/**
 	 * Backward search for a generic FM-Index
@@ -94,7 +97,7 @@ extern "C" {
 	 *
 	 * @param e  FM-Index
 	 * @param x  string to retrieve (x >= 0)
-	 * @param s  output string
+	 * @param s  output string (reversed)
 	 */
 	int64_t fm_retrieve(const struct __rld_t *e, uint64_t x, kstring_t *s);
 
@@ -124,16 +127,16 @@ extern "C" {
 	 */
 	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
-	int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads, const uint64_t *sorted);
-
-	int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads);
-
 	msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio);
 	void msg_amend(msg_t *g);
-	void msg_join_unambi(msg_t *g);
 	void msg_clean(msg_t *g, const fmclnopt_t *opt);
 	void msg_print(const fmnode_v *nodes);
 	void msg_destroy(msg_t *g);
+
+	int64_t fm6_api_readseq(const char *fn, char **_seq, char **_qual);
+	void fm6_api_writeseq(int64_t l, char *seq, char *qual);
+	int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual);
+	msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq);
 
 #ifdef __cplusplus
 }
