@@ -87,12 +87,24 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
 	rd.l = seq.l = rd.m = seq.m = 0; rd.s = seq.s = 0;
 	for (i = start; i < n; i += step) {
 		ext1_t *p = &buf[i];
-		kputsn(p->semitig, p->len + 1, &seq); // +1 to include the ending NULL
+		msg_t *g;
+		int tmp;
+		seq.l = 0;
+		kputsn((char*)p->semitig, p->len + 1, &seq); // +1 to include the ending NULL
 		for (j = 0; j < p->reads.n; ++j) {
 			assert(p->reads.a[j] < e->mcnt[1]);
 			fm_retrieve(e, p->reads.a[j], &rd);
 			seq_reverse(rd.l, (uint8_t*)rd.s);
 			kputsn(rd.s, rd.l + 1, &seq);
+		}
+		tmp = fm_verbose; fm_verbose = 1;
+		g = fm6_api_unitig();
+		//printf("=== %d ===\n", i);
+		if (i == 1) {
+		for (j = 0; j < seq.l; ++j) {
+			if (seq.s[j] == 0) putchar('\n');
+			else putchar("$ACGTN"[(int)seq.s[j]]);
+		}
 		}
 	}
 	free(rd.s); free(seq.s);
