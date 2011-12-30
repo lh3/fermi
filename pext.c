@@ -72,7 +72,7 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 			p->semitig = calloc(p->len + 1, 1);
 			for (k = 0; k < p->len; ++k)
 				p->semitig[k] = seq_nt6_table[(int)kseq->seq.s[k + beg]];
-		}
+		} else --j;
 		if (j + 1 >= n) break;
 	}
 	return j;
