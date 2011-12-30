@@ -5,7 +5,7 @@
 
 int main_example(int argc, char *argv[])
 {
-	int c, do_ec = 0, skip_unitig = 0, ec_k = 19, unitig_k = 30;
+	int c, do_ec = 0, skip_unitig = 0, ec_k = -1, unitig_k = -1;
 	char *seq, *qual;
 	int64_t l;
 	while ((c = getopt(argc, argv, "eUk:l:")) >= 0) {

@@ -360,6 +360,10 @@ int main_trimseq(int argc, char *argv[])
  * High-level APIs *
  *******************/
 
+#include "kvec.h"
+#include "ksort.h"
+KSORT_INIT_GENERIC(int)
+
 #define DEFAULT_QUAL 20
 
 int64_t fm6_api_readseq(const char *fn, char **_seq, char **_qual)
@@ -405,4 +409,20 @@ void fm6_api_writeseq(int64_t l, char *seq, char *qual)
 		}
 	}
 	free(s.s); free(q.s);
+}
+
+int fm6_api_seqlen(int64_t l, const char *seq, double quantile)
+{
+	int64_t beg, i, cnt, j;
+	int *len, ret;
+	for (i = cnt = 0; i < l; ++i)
+		if (seq[i] == 0) ++cnt;
+	len = malloc(cnt * sizeof(int));
+	for (beg = i = j = 0; i < l; ++i)
+		if (seq[i] == 0)
+			len[j++] = i - beg, beg = i + 1;
+	assert(j == cnt);
+	ret = ks_ksmall(int, cnt, len, cnt * quantile);
+	free(len);
+	return ret;
 }
