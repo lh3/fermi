@@ -99,12 +99,12 @@ static inline void rmdup_128v(fm128_v *r)
 	ks_introsort(128x, r->n, r->a);
 	x = r->a[0].x;
 	for (l = 1, cnt = 0; l < r->n; ++l) {
-		if (r->a[l].x == 0 || r->a[l].x == x) r->a[l].x = 0, ++cnt;
+		if (r->a[l].x == (uint64_t)-2 || r->a[l].x == x) r->a[l].x = 0, ++cnt;
 		else x = r->a[l].x;
 	}
 	if (cnt) {
 		for (l = 0, cnt = 0; l < r->n; ++l)
-			if (r->a[l].x) r->a[cnt++] = r->a[l];
+			if (r->a[l].x != (uint64_t)-2) r->a[cnt++] = r->a[l];
 		r->n = cnt;
 	}
 }
@@ -282,7 +282,7 @@ void msg_amend(msg_t *g)
 				uint64_t z = get_node_id(g->h, x);
 				if (z == (uint64_t)-1) {
 					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
-					p->nei[j].a[l].x = 0;
+					p->nei[j].a[l].x = (uint64_t)-2;
 					++cnt0;
 					continue;
 				}
@@ -299,7 +299,7 @@ void msg_amend(msg_t *g)
 			if (cnt1 >= 2) rmdup_128v(&p->nei[j]);
 			else if (cnt0) {
 				for (l = cnt0 = 0, r = &p->nei[j]; l < r->n; ++l)
-					if (r->a[l].x) r->a[cnt0++] = r->a[l];
+					if (r->a[l].x != (uint64_t)-2) r->a[cnt0++] = r->a[l];
 				r->n = cnt0;
 			}
 		}
@@ -349,13 +349,13 @@ static void drop_arc(msg_t *g, size_t id, int min_ovlp, float min_ovlp_ratio)
 			if (r->a[l].y < min_ovlp || (double)r->a[l].y/max < min_ovlp_ratio) {
 				if (r->a[l].x != p->k[0] && r->a[l].x != p->k[1])
 					cut_arc(g, r->a[l].x, p->k[j], 1);
-				r->a[l].x = 0; // mark the link to delete
+				r->a[l].x = (uint64_t)-2; // mark the link to delete
 				++cnt;
 			}
 		}
 		if (cnt) {
 			for (l = cnt = 0; l < r->n; ++l)
-				if (r->a[l].x) r->a[cnt++] = r->a[l];
+				if (r->a[l].x != (uint64_t)-2) r->a[cnt++] = r->a[l];
 			r->n = cnt;
 		}
 	}
