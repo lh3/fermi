@@ -863,7 +863,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	if (opt->aggressive_pop) {
-		pop_all_complex_bubbles(g, 500, 20, &paux);
+		pop_all_complex_bubbles(g, opt->max_bub_len, 25, &paux);
 		msg_rm_tips(g, opt->min_tip_len, 1e4);
 		msg_join_unambi(g);
 	} else if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {

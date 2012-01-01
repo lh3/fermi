@@ -476,11 +476,12 @@ int main_clean(int argc, char *argv[])
 	opt.aggressive_pop = 0;
 	opt.min_tip_len = 200;
 	opt.min_weak_cov= 1.01;
-	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3;
+	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3; opt.max_bub_len = 500;
 	opt.min_ovlp    = 60;  opt.min_ovlp_ratio=0.8;
 	opt.n_iter = 3;
-	while ((c = getopt(argc, argv, "CAl:c:T:r:w:o:R:n:N:d:")) >= 0) {
+	while ((c = getopt(argc, argv, "CAl:c:T:r:w:o:R:n:N:d:b:")) >= 0) {
 		switch (c) {
+			case 'b': opt.max_bub_len =  atoi(optarg); break;
 			case 'l': opt.min_tip_len =  atoi(optarg); break;
 			case 'c': opt.min_weak_cov=  atof(optarg); break;
 			case 'w': opt.min_bub_cov =  atof(optarg); break;
@@ -506,6 +507,7 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "         -c FLOAT    minimum node coverage [%.1f]\n", opt.min_weak_cov);
 		fprintf(stderr, "         -n INT      number of iterations [%d]\n", opt.n_iter);
 		fprintf(stderr, "         -A          aggressive bubble popping\n");
+		fprintf(stderr, "         -b INT      maximum bubble length (effective with -A) [%d]\n", opt.max_bub_len);
 		fprintf(stderr, "         -w FLOAT    minimum simple bubble coverage [%.1f]\n", opt.min_bub_cov);
 		fprintf(stderr, "         -r FLOAT    minimum simple bubble ratio [%.2f]\n", opt.min_bub_ratio);
 		fprintf(stderr, "\n");
