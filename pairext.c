@@ -121,7 +121,7 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
 	free(rd.s); free(seq.s); free(out.s);
 }
 
-int fm6_pext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, double avg, double std)
+int fm6_pairext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, double avg, double std)
 {
 	int min_dist, max_dist;
 	kseq_t *kseq;
