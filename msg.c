@@ -99,7 +99,7 @@ static inline void rmdup_128v(fm128_v *r)
 	ks_introsort(128x, r->n, r->a);
 	x = r->a[0].x;
 	for (l = 1, cnt = 0; l < r->n; ++l) {
-		if (r->a[l].x == (uint64_t)-2 || r->a[l].x == x) r->a[l].x = 0, ++cnt;
+		if (r->a[l].x == (uint64_t)-2 || r->a[l].x == x) r->a[l].x = (uint64_t)-2, ++cnt;
 		else x = r->a[l].x;
 	}
 	if (cnt) {
@@ -193,7 +193,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 			ovlp_thres = (int)(max_ovlp2 * diff_ratio + .499);
 			for (i = 0; i < nei.n; ++i)
 				if (nei.a[i].y < ovlp_thres)
-					nei.a[i].x = 0; // to be deleted in rmdup_128v()
+					nei.a[i].x = (uint64_t)-2; // to be deleted in rmdup_128v()
 			rmdup_128v(&nei);
 			if (nei.n > max_arc) { // excessive connections; keep the top ones
 				int thres;
@@ -330,7 +330,8 @@ static void cut_arc(msg_t *g, uint64_t u, uint64_t v, int remove) // delete v fr
 		r->n = i;
 	} else {
 		for (j = 0; j < r->n; ++j)
-			if (r->a[j].x == v) r->a[j].x = r->a[j].y = 0;
+			if (r->a[j].x == v)
+				r->a[j].x = (uint64_t)-2, r->a[j].y = 0;
 	}
 }
 
