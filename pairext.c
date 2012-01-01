@@ -100,11 +100,9 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
 		}
 		if (max_len >= p->len) continue; // a read is longer than the semitig? stop; FIXME: this can be improved
 		// de novo assembly
-		tmp = fm_verbose; fm_verbose = 1; // surpress messages and warnings
 		g = fm6_api_unitig(-1, seq.l, seq.s);
 		msg_rm_tips(g, max_len + 1, 1.01); // very mild tip removal; note that max_len+1 <= p->len
 		msg_join_unambi(g);
-		fm_verbose = tmp;
 		// decide if keep the longest contig
 		for (j = 0, max_len = 0, tmp = -1; j < g->nodes.n; ++j)
 			if (g->nodes.a[j].l >= max_len)
@@ -144,7 +142,7 @@ int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, doub
 	kseq_t *kseq;
 	gzFile fp;
 	ext1_t *buf;
-	int i, n;
+	int i, n, old_verbose;
 
 	max_dist = (int)(avg + std * 2. + .499);
 	min_dist = (int)(avg - std * 2. + .499);
@@ -164,10 +162,13 @@ int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, doub
 		w[i].start = i;
 		w[i].step = n_threads;
 	}
+	old_verbose = fm_verbose; fm_verbose = 1; // to suppress messages and warnings
 	while ((n = read_unitigs(kseq, BUF_SIZE, buf, min_dist, max_dist)) > 0) {
+		for (i = 0; i < n_threads; ++i) w[i].n = n;
 		for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], &attr, worker, w + i);
 		for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 	}
+	fm_verbose = old_verbose;
 
 	for (i = 0; i < BUF_SIZE; ++i) {
 		free(buf[i].semitig);
