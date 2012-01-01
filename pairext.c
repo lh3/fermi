@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <pthread.h>
 #include "priv.h"
 #include "kstring.h"
 #include "kvec.h"
@@ -121,8 +122,24 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
 	free(rd.s); free(seq.s); free(out.s);
 }
 
-int fm6_pairext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, double avg, double std)
+typedef struct {
+	const rld_t *e;
+	ext1_t *buf;
+	int n, start, step;
+} worker_t;
+
+static void *worker(void *_w)
 {
+	worker_t *w = (worker_t*)_w;
+	pext_core(w->e, w->n, w->buf, w->start, w->step);
+	return 0;
+}
+
+int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, double std)
+{
+	pthread_t *tid;
+	pthread_attr_t attr;
+	worker_t *w;
 	int min_dist, max_dist;
 	kseq_t *kseq;
 	gzFile fp;
@@ -137,8 +154,19 @@ int fm6_pairext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, do
 	kseq = kseq_init(fp);
 	buf = calloc(BUF_SIZE, sizeof(ext1_t));
 
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
+	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
+	for (i = 0; i < n_threads; ++i) {
+		w[i].e = e;
+		w[i].buf = buf;
+		w[i].start = i;
+		w[i].step = n_threads;
+	}
 	while ((n = read_unitigs(kseq, BUF_SIZE, buf, min_dist, max_dist)) > 0) {
-		pext_core(e, n, buf, 0, 1);
+		for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], &attr, worker, w + i);
+		for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 	}
 
 	for (i = 0; i < BUF_SIZE; ++i) {
@@ -146,6 +174,7 @@ int fm6_pairext(const rld_t *e, const char *fng, int min_ovlp, int n_threads, do
 		free(buf[i].reads.a);
 	}
 	free(buf);
+	free(tid); free(w);
 	kseq_destroy(kseq);
 	gzclose(fp);
 	return 0;

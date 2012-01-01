@@ -210,25 +210,20 @@ int main_unitig(int argc, char *argv[])
 
 int main_pairext(int argc, char *argv[])
 {
-	int c, use_mmap = 0, n_threads = 1, min_match = 30;
+	int c, use_mmap = 0, n_threads = 1;
 	rld_t *e;
 	while ((c = getopt(argc, argv, "Ml:t:")) >= 0) {
 		switch (c) {
-			case 'l': min_match = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
 		}
 	}
 	if (optind + 4 > argc) {
-		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi pairext [options] <reads.fmd> <graph.msg> <avg> <std>\n\n");
-		fprintf(stderr, "Options: -l INT      min match [%d]\n", min_match);
-		fprintf(stderr, "         -t INT      number of threads [1]\n");
-		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage: fermi pairext [-t nThreads] <reads.fmd> <graph.msg> <avg> <std>\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	fm6_pairext(e, argv[optind+1], min_match, n_threads, atof(argv[optind+2]), atof(argv[optind+3]));
+	fm6_pairext(e, argv[optind+1], n_threads, atof(argv[optind+2]), atof(argv[optind+3]));
 	rld_destroy(e);
 	return 0;
 }
