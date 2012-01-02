@@ -147,7 +147,7 @@ int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, doub
 	max_dist = (int)(avg + std * 2. + .499);
 	min_dist = (int)(avg - std * 2. + .499);
 	if (min_dist < MIN_INSERT) min_dist = MIN_INSERT;
-	fp = gzopen(fng, "rb");
+	fp = strcmp(fng, "-")? gzopen(fng, "rb") : gzdopen(fileno(stdin), "rb");
 	if (fp == 0) return -1;
 	kseq = kseq_init(fp);
 	buf = calloc(BUF_SIZE, sizeof(ext1_t));
