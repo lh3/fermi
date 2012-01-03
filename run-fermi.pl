@@ -11,6 +11,7 @@ sub main {
 	getopts('e:t:p:Pcf:k:A', \%opts);
 	$opts{P} = 1 if defined($opts{c});
 	$opts{A} = defined($opts{A})? "A" : "";
+	my $n_threads2 = $opts{t} > 1? int($opts{t}/2) : 1;
 
 	die(qq/
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
@@ -70,23 +71,23 @@ Options: -P        the input is paired
 
 		push(@lines, "# Extension using the pairing information");
 		push(@lines, "$opts{p}.c0.msg.gz:$opts{p}.msg.gz");
-		push(@lines, "\t\$(FERMI) clean \$< > \$@ 2> \$@.log");
+		push(@lines, "\t\$(FERMI) clean \$< 2> \$@.log | gzip -1 > \$@");
 		push(@lines, "$opts{p}.c1.msg.gz:$opts{p}.c0.msg.gz");
-		push(@lines, "\t\$(FERMI) clean -CA \$< > \$@ 2> \$@.log");
+		push(@lines, "\t\$(FERMI) clean -CA \$< 2> \$@.log | gzip -1 > \$@");
 		push(@lines, "$opts{p}.ext0.fa.gz:$opts{p}.ec.fmd $opts{p}.c0.msg.gz");
-		push(@lines, qq[\t\$(FERMI) pairext -$opts{A}t $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg=(\\S+) std.dev=(\\S+)/' $opts{p}.msg.gz.log` 2> \$@.log | gzip -1 > \$@]);
+		push(@lines, qq[\t\$(FERMI) pairext -$opts{A}t $n_threads2 \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg=(\\S+) std.dev=(\\S+)/' $opts{p}.msg.gz.log` 2> \$@.log | gzip -1 > \$@]);
 		push(@lines, "$opts{p}.ext1.fa.gz:$opts{p}.ec.fmd $opts{p}.c1.msg.gz");
-		push(@lines, qq[\t\$(FERMI) pairext -$opts{A}t $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg=(\\S+) std.dev=(\\S+)/' $opts{p}.msg.gz.log` 2> \$@.log | gzip -1 > \$@\n]);
+		push(@lines, qq[\t\$(FERMI) pairext -$opts{A}t $n_threads2 \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg=(\\S+) std.dev=(\\S+)/' $opts{p}.msg.gz.log` 2> \$@.log | gzip -1 > \$@\n]);
 
 		$pre = "$opts{p}.ext";
 		push(@lines, "# Build FM-index for the extended sequences");
 		push(@lines, "$pre.split.log:$opts{p}.ext0.fa.gz $opts{p}.ext1.fa.gz");
 		push(@lines, "\tgzip -dc \$^ | \$(FERMI) splitfa - $pre $opts{t} 2> \$@\n");
 		&build_fmd(\@lines, $opts{t}, $pre);
-		push(@lines, "$opts{p}.final.fmd:$opts{p}.ec.fmd $opts{p}.ext.fmd");
-		push(@lines, "\t\$(FERMI) merge -t $opts{t} -fo \$@ \$^ 2> \$@.log");
-		push(@lines, "$opts{p}.ext.msg.gz:$opts{p}.final.fmd");
-		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) \$< 2> \$@.log | gzip -1 > \$@\n");
+		push(@lines, "$opts{p}.final.fmd.log:$opts{p}.ec.fmd $opts{p}.ext.fmd");
+		push(@lines, "\t\$(FERMI) merge -t $opts{t} -fo $opts{p}.final.fmd \$^ 2> \$@");
+		push(@lines, "$opts{p}.ext.msg.gz:$opts{p}.final.fmd.log");
+		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) $opts{p}.final.fmd 2> \$@.log | gzip -1 > \$@\n");
 	} else {
 		push(@lines, "# Generate unitigs");
 		push(@lines, "$opts{p}.msg.gz:$opts{p}.ec.fmd");

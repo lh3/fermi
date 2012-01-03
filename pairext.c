@@ -100,6 +100,7 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 		}
 		if (max_len >= p->len) continue; // a read is longer than the semitig? stop; FIXME: this can be improved
 		// de novo assembly
+		fm6_api_correct(16, seq.l, seq.s, 0);
 		g = fm6_api_unitig(-1, seq.l, seq.s);
 		msg_rm_tips(g, max_len + 1, 1.01); // very mild tip removal; note that max_len+1 <= p->len
 		msg_join_unambi(g);
