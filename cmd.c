@@ -210,11 +210,12 @@ int main_unitig(int argc, char *argv[])
 
 int main_pairext(int argc, char *argv[])
 {
-	int c, use_mmap = 0, n_threads = 1;
+	int c, use_mmap = 0, n_threads = 1, is_aggressive = 0;;
 	rld_t *e;
-	while ((c = getopt(argc, argv, "Ml:t:")) >= 0) {
+	while ((c = getopt(argc, argv, "Ml:t:A")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
+			case 'A': is_aggressive = 1; break;
 			case 't': n_threads = atoi(optarg); break;
 		}
 	}
@@ -223,7 +224,7 @@ int main_pairext(int argc, char *argv[])
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	fm6_pairext(e, argv[optind+1], n_threads, atof(argv[optind+2]), atof(argv[optind+3]));
+	fm6_pairext(e, argv[optind+1], n_threads, atof(argv[optind+2]), atof(argv[optind+3]), is_aggressive);
 	rld_destroy(e);
 	return 0;
 }

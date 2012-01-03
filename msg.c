@@ -619,12 +619,17 @@ end_popcomp:
 	}
 }
 
-static void pop_all_complex_bubbles(msg_t *g, int max_len, int max_nodes, popaux_t *aux)
+void msg_popbub(msg_t *g, int max_len, int max_nodes)
 {
 	fm128_v tmp;
 	size_t i;
-	kv_init(tmp);
 	double t = cputime();
+	popaux_t *aux;
+
+	kv_init(tmp);
+	aux = calloc(1, sizeof(popaux_t));
+	aux->h = kh_init(64);
+	aux->kept = kh_init(64);
 	for (i = 0; i < g->nodes.n; ++i) {
 		fm128_t x;
 		fmnode_t *p;
@@ -640,7 +645,11 @@ static void pop_all_complex_bubbles(msg_t *g, int max_len, int max_nodes, popaux
 		pop_complex_bubble(g, tmp.a[i].x<<1|0, max_len, max_nodes, aux);
 		pop_complex_bubble(g, tmp.a[i].x<<1|1, max_len, max_nodes, aux);
 	}
+
 	free(tmp.a);
+	kh_destroy(64, aux->h);
+	kh_destroy(64, aux->kept);
+	free(aux->heap.a); free(aux->visited.a);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] popped complex bubbles in %.3f sec.\n", __func__, cputime() - t);
 }
@@ -835,16 +844,12 @@ void msg_join_unambi(msg_t *g)
 
 void msg_clean(msg_t *g, const fmclnopt_t *opt)
 {
-	popaux_t paux;
 	fm64_v stack;
 	size_t i;
 	int j;
 
 	kv_init(stack);
-	memset(&paux, 0, sizeof(popaux_t));
 	if (g->h == 0) g->h = build_hash(&g->nodes);
-	paux.h = kh_init(64);
-	paux.kept = kh_init(64);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		drop_all_weak_arcs(g, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
@@ -863,7 +868,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	if (opt->aggressive_pop) {
-		pop_all_complex_bubbles(g, opt->max_bub_len, 25, &paux);
+		msg_popbub(g, opt->max_bub_len, 25);
 		msg_rm_tips(g, opt->min_tip_len, 1e4);
 		msg_join_unambi(g);
 	} else if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
@@ -875,8 +880,5 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	// free
-	kh_destroy(64, paux.h);
-	kh_destroy(64, paux.kept);
-	free(paux.heap.a); free(paux.visited.a);
 	free(stack.a);
 }

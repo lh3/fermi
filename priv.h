@@ -16,7 +16,7 @@ void seq_revcomp6(int l, unsigned char *s);
 uint64_t *fm6_seqsort(const rld_t *e, int n_threads);
 int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads, const uint64_t *sorted);
 int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads);
-int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, double std);
+int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, double std, int aggressive);
 
 void fm_reverse_fmivec(fmintv_v *p);
 
@@ -25,6 +25,7 @@ uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, in
 void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
 void msg_nodecpy(fmnode_t *dst, const fmnode_t *src);
 void msg_rm_tips(msg_t *g, int min_len, double min_cov);
+void msg_popbub(msg_t *g, int max_len, int max_nodes);
 void msg_join_unambi(msg_t *g);
 
 #endif

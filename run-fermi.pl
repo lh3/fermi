@@ -8,8 +8,9 @@ use Getopt::Std;
 
 sub main {
 	my %opts = (e=>'fermi', t=>2, p=>'fmdef', f=>17, k=>50);
-	getopts('e:t:p:Pcf:k:', \%opts);
+	getopts('e:t:p:Pcf:k:A', \%opts);
 	$opts{P} = 1 if defined($opts{c});
+	$opts{A} = defined($opts{A})? "A" : "";
 
 	die(qq/
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
@@ -73,9 +74,9 @@ Options: -P        the input is paired
 		push(@lines, "$opts{p}.c1.msg.gz:$opts{p}.c0.msg.gz");
 		push(@lines, "\t\$(FERMI) clean -CA \$< > \$@ 2> \$@.log");
 		push(@lines, "$opts{p}.ext0.fa.gz:$opts{p}.ec.fmd $opts{p}.c0.msg.gz");
-		push(@lines, qq[\t\$(FERMI) pairext -t $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg=(\\S+) std.dev=(\\S+)/' $opts{p}.msg.gz.log` 2> \$@.log | gzip -1 > \$@]);
+		push(@lines, qq[\t\$(FERMI) pairext -$opts{A}t $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg=(\\S+) std.dev=(\\S+)/' $opts{p}.msg.gz.log` 2> \$@.log | gzip -1 > \$@]);
 		push(@lines, "$opts{p}.ext1.fa.gz:$opts{p}.ec.fmd $opts{p}.c1.msg.gz");
-		push(@lines, qq[\t\$(FERMI) pairext -t $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg=(\\S+) std.dev=(\\S+)/' $opts{p}.msg.gz.log` 2> \$@.log | gzip -1 > \$@\n]);
+		push(@lines, qq[\t\$(FERMI) pairext -$opts{A}t $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg=(\\S+) std.dev=(\\S+)/' $opts{p}.msg.gz.log` 2> \$@.log | gzip -1 > \$@\n]);
 
 		$pre = "$opts{p}.ext";
 		push(@lines, "# Build FM-index for the extended sequences");

@@ -79,7 +79,7 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 	return j;
 }
 
-static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
+static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, int is_aggressive)
 {
 	extern void seq_reverse(int l, unsigned char *s);
 	kstring_t rd, seq, out;
@@ -103,6 +103,10 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
 		g = fm6_api_unitig(-1, seq.l, seq.s);
 		msg_rm_tips(g, max_len + 1, 1.01); // very mild tip removal; note that max_len+1 <= p->len
 		msg_join_unambi(g);
+		if (is_aggressive) { // aggressive bubble popping
+			msg_popbub(g, max_len * 2, 25);
+			msg_join_unambi(g);
+		}
 		// decide if keep the longest contig
 		for (j = 0, max_len = 0, tmp = -1; j < g->nodes.n; ++j)
 			if (g->nodes.a[j].l >= max_len)
@@ -123,17 +127,17 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step)
 typedef struct {
 	const rld_t *e;
 	ext1_t *buf;
-	int n, start, step;
+	int n, start, step, is_aggressive;
 } worker_t;
 
 static void *worker(void *_w)
 {
 	worker_t *w = (worker_t*)_w;
-	pext_core(w->e, w->n, w->buf, w->start, w->step);
+	pext_core(w->e, w->n, w->buf, w->start, w->step, w->is_aggressive);
 	return 0;
 }
 
-int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, double std)
+int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, double std, int is_aggressive)
 {
 	pthread_t *tid;
 	pthread_attr_t attr;
@@ -161,6 +165,7 @@ int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, doub
 		w[i].buf = buf;
 		w[i].start = i;
 		w[i].step = n_threads;
+		w[i].is_aggressive = is_aggressive;
 	}
 	old_verbose = fm_verbose; fm_verbose = 1; // to suppress messages and warnings
 	while ((n = read_unitigs(kseq, BUF_SIZE, buf, min_dist, max_dist)) > 0) {
