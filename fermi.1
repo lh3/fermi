@@ -6,7 +6,7 @@ fermi - FERragina-Manzini Index for DNA sequences
 
 .SH SYNOPSIS
 .PP
-run-fermi.pl -p pe -Pt 8 end1.fq end2.fq > assemble.mak
+run-fermi.pl -p prefix -Pt 8 end1.fq end2.fq > assemble.mak
 .PP
 make -f assemble.mak -j 8
 .PP
@@ -22,7 +22,7 @@ fermi clean -C pe.msg.gz > pe.contigs.fq
 .SS Quick assembly with run-fermi.pl
 
 .B run-fermi.pl
-.RB [ \-Pc ]
+.RB [ \-PAc ]
 .RB [ \-e
 .IR fermiExe ]
 .RB [ \-t
@@ -46,15 +46,17 @@ one should use
 .IR nCPUs ',
 where
 .I nCPUs
-is the option used for generating the Makefile. The end assembly output is
+is the option used for generating the Makefile. The end assembly output for single-end data is
 .IR prefix .msg.gz
 which is an overlap graph in a FASTQ-like format: a quality line in FASTQ
 gives the per-base read depth. One should further use the
 .B clean
-command or another assembler to remove tips and bubbles. 
+command or another assembler to remove tips and bubbles. For paired-end data, file 
+.IR prefix .ext.msg.gz
+is the final output which considers the pairing information during contig construction.
 
 In addition to the final assembly graph, the following files are also generated
-as useful intermediate results:
+as potentially useful intermediate results:
 .IR prefix .raw.fmd,
 the FM-index of the raw sequence reads;
 .IR prefix .ec.fq.gz,
@@ -197,33 +199,15 @@ Compute the rank of each sequence and output a binary file to be used with
 .IR nThreads ]
 .RB [ \-r
 .IR rankFile ]
-.RB [ \-s
-.IR seqFile ]
 .I in.fmd
 
 Construct the unitig graph from
 .I in.fmd
-by unambiguously and maximally extending each read. This command has three modes.
-Firstly, when neither
+by unambiguously and maximally extending each read. When
 .B -r
-nor
-.B -s
-is specified, the
-.B unitig
-command assumes the input is single-end data. It unambiguously extends a sequence
-until it meets a bifurcation. The resulting sequences are unitigs. The connections
-between unitigs are also kept.
-Secondly, when
-.B -r
-is in use, the command regards the input is paired-end data. It then tries to use
-the paired-end information to avoid some bifurcations. However, the output is not
-strictly unitigs and the command is unable to keep all the connections between
-output sequences. This makes it necessary to have a third mode: when 
-.B -s
-is specified, the
-.B unitig
-command only generates the overlap information between input sequences without extension.
-This mode aims to fix the missing connections in the paired-end mode.
+is specified, this command assumes the input are paired. It then estimates
+the mean and the standard deviation of the insert size distribution and
+records the read positions of unpaired reads.
 
 .B OPTIONS:
 .RS
@@ -242,16 +226,6 @@ The
 here must be generated from
 .IR in.fmd .
 When this option is in use, the (2*i) and (2*i+1)-th sequences form a pair. [null]
-.TP
-.BI \-s \ FILE
-The exact sequence file that is used to generate the index
-.IR in.fmd .
-The sequence file must contain the same number of sequences and
-in the same order as in the index file
-.IR in.fmd .
-When this option is in use, this command only generates overlaps between sequences
-but does not extend. The purpose of this option is to construct the overlap graph
-while retaining the quality/depth information in the input. [null]
 .RE
 
 
@@ -370,28 +344,46 @@ Find the super-maximal exact matches against the FM-index.
 .SH NOTES
 .sp
 \ 
+
 .SS Fermi and SGA
 .PP
 Fermi is fundamentally influenced by the string graph assembler (SGA) written
 by Jared Simpson. Although initially I was planning something quite different,
 most of my ideas turned out to be wrong or impractical once I started to
 implement them. At the end of day, fermi takes a very similar overall approach
-to SGA. On the other hand, fermi after all is a fresh implementation. The
+to SGA. On the other hand, fermi is entirely a fresh implementation. The
 FM-index data structure, the BWT construction algorithm, the error correction
 strategy, the overlap graph construction procedure are all different from those
 implemented in SGA.
 
 .SS Current development status
 .PP
-Fermi works fairly well for single-end HiSeq data. The corrected contiguity is
-comparable to or at times better than other assemblers. The number of
-misassemblies is unfortunately is a little higher in comparison to SGA and
-SOAPdenovo. For paired-end data, fermi relies on other assemblers for
-scaffolding. Thus by itself fermi is unable to produce scafftigs - ungapped
-fragments contained in scaffolds - which are frequently longer than the raw
-unitigs. To compensate the lack of functionality, fermi can construct unitigs
-with the pairing information and thus produces longer unitigs in the paired-end
-mode. Fermi is unable to make use of jumping libraries at the moment.
+Fermi works well for single-end HiSeq data. The corrected unitig N50 is
+comparable to or at times better than other assemblers, though the number of
+misassemblies may be a little higher in comparison to SGA and SOAPdenovo.
+For paired-end data, fermi locally assembles the ends of unitigs and takes
+the local assembly as long reads to perform another round of unitig
+construction for producing longer contigs that are of similar lengths to
+scaftigs assembled by other assemblers.
+
+.SS Unitig, contig, scaftig and scaffold
+.PP
+Given a haploid genome and sequence reads from the genome, a
+.I unitig
+is a subsequence of the genome that cannot be extended unambiguously with the
+sequence reads and is not contained in other unitigs. A unitig may have
+multiple copies in the genome, but these copies are indistinguishable from the
+sequence reads. Given paired-end data, a
+.I scaffold
+is a sequence consisting of unitigs and possibly gaps between them that are
+inferred from the pairing information. A contiguous subsequence
+in a scaffold is a
+.IR scaftig .
+As read pairs may resolve small repeats and reveal undetected overlaps, scaftigs
+are usually longer than unitigs. A
+.IR contig ,
+by definition, is a contiguous sequence. It is a more generic concept.
+We may regard unitigs, scaftigs or a walk along unitigs as contigs.
 
 
 .SH AUTHOR
