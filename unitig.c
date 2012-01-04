@@ -269,9 +269,9 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	return ret;
 }
 
-static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
+static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 {
-	int i, beg = beg0, rbeg, ori_l = s->l;
+	int i, beg = beg0, rbeg, ori_l = s->l, n_reads = 0;
 	while ((rbeg = try_right(a, beg, s, 1)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
 		if (a->nei.n > 1) { // forward bifurcation
@@ -287,6 +287,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		}
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0], a->sorted); // successful extension
+		++n_reads;
 		if (a->sorted) {
 			pair_add(a, &a->nei.a[0], rbeg, s->l);
 			for (i = 0; i < a->contained.n; ++i)
@@ -300,6 +301,7 @@ static void unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint
 		beg = rbeg; ori_l = s->l; a->a[0].n = a->a[1].n = 0; // prepare for the next round of loop
 	}
 	cov->l = s->l = ori_l; s->s[ori_l] = cov->s[ori_l] = 0;
+	return n_reads;
 }
 
 static void flip_seq(kstring_t *s, hash64_t *h)
@@ -327,14 +329,14 @@ static void copy_nei(fm128_v *dst, const fmintv_v *src)
 	}
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], fm128_v *mapping)
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], fm128_v *mapping, int *n_reads)
 {
 	fmintv_t intv0;
 	int seed_len, ret;
 	int64_t k;
 	size_t i;
 
-	nei[0].n = nei[1].n = 0;
+	*n_reads = nei[0].n = nei[1].n = 0;
 	if (a->h) kh_clear(64, a->h);
 	if (a->sorted && (a->used[seed>>6]>>(seed&0x3f)&1)) return -2; // used
 	// retrieve the sequence pointed by seed
@@ -347,6 +349,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	ret = fm6_is_contained(a->e, a->min_match, s, &intv0, &a->a[0]);
 	set_bits(a->used, &intv0, a->sorted); // mark the reads as used
 	if (ret < 0) return -3; // contained
+	*n_reads = 1;
 	// initialize the coverage string
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
@@ -355,13 +358,13 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	if (a->a[0].n) { // no need to extend to the right if there is no overlap
-		unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
+		*n_reads += unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
 		copy_nei(&nei[0], &a->nei);
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
 	flip_seq(s, a->h);
-	unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
+	*n_reads += unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	copy_nei(&nei[1], &a->nei);
 	if (a->h && mapping) {
 		khint_t iter;
@@ -393,7 +396,7 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	if (sorted) a.h = kh_init(64);
 	// the core loop
 	for (i = start|1; i < end; i += 2) {
-		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping) >= 0) { // then we keep the unitig
+		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping, &z.n) >= 0) { // then we keep the unitig
 			uint64_t *p[2], x[2];
 			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);

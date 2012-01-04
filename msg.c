@@ -29,7 +29,7 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 {
 	int j, k;
 	if (p->l <= 0) return;
-	kputc('@', out); kputl(id, out);
+	kputc('@', out); kputl(id, out); kputc('_', out); kputw(p->n, out); kputc('_', out); kputl(p->l, out);
 	for (j = 0; j < 2; ++j) {
 		kputc('\t', out);
 		kputl(p->k[j], out); kputc('>', out);
@@ -162,6 +162,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 		char *q;
 		kv_pushp(fmnode_t, g->nodes, &p);
 		kv_init(p->nei[0]); kv_init(p->nei[1]); kv_init(p->mapping);
+		if ((q = strchr(seq->name.s, '_')) != NULL) p->n = atoi(q + 1);
 		p->l = seq->seq.l;
 		tmp = p->l + 1;
 		kroundup32(tmp);
@@ -778,6 +779,7 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	assert(q->k[0] == p->nei[1].a[0].x);
 	assert(p->nei[1].a[0].y == q->nei[0].a[0].y);
 	assert(p->l >= p->nei[1].a[0].y && q->l >= p->nei[1].a[0].y); // "==" may happen due to end trimming
+	p->n += q->n;
 	new_l = p->l + q->l - p->nei[1].a[0].y;
 	tmp = p->l;
 	kroundup32(tmp);

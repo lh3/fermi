@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-r507"
+#define FERMI_VERSION "0.0-r509"
 
 #define FM_MASK30 0x3fffffff
 
@@ -41,7 +41,7 @@ typedef struct {
 typedef struct {
 	uint64_t k[2];
 	fm128_v nei[2], mapping;
-	int l;
+	int l, n;
 	float avg_cov;
 	int aux[2];
 	char *seq, *cov;
