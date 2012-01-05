@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "priv.h"
 #include "utils.h"
 #include "kstring.h"
@@ -24,6 +25,7 @@ typedef khash_t(64) hash64_t;
 
 static hash64_t *build_hash(const fmnode_v *nodes);
 static void flip(fmnode_t *p, hash64_t *h);
+double fmg_compute_rdist(const fmnode_v *n);
 
 void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 {
@@ -241,6 +243,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 		fprintf(stderr, "[%s] finished reading %ld nodes in %ld bp in %.2f sec (#tips: %ld; #arcs: %ld; #dropped: %ld)\n",
 				__func__, (long)g->nodes.n, (long)tot_len, cputime() - tcpu, (long)n_tips, (long)n_arcs, (long)n_arc_drop);
 	g->h = build_hash(&g->nodes);
+	g->rdist = fmg_compute_rdist(&g->nodes);
 	msg_amend(g);
 	return g;
 }
@@ -843,6 +846,60 @@ void msg_join_unambi(msg_t *g)
 	if (fm_verbose >= 2)
 		fprintf(stderr, "[M::%s] joined unambiguous arcs in %.2f sec\n", __func__, cputime() - tcpu);
 }
+
+/*********************************************
+ * A-statistics and simplistic flow analysis *
+ *********************************************/
+
+#define A_THRES 20.
+
+double fmg_compute_rdist(const fmnode_v *n)
+{
+	int j;
+	ssize_t i;
+	uint64_t *srt;
+	double rdist = -1., t;
+	int64_t sum_n_all, sum_n, sum_l;
+
+	t = cputime();
+	srt = calloc(n->n, 8);
+	for (i = 0, sum_n_all = 0; i < n->n; ++i) {
+		srt[i] = (uint64_t)n->a[i].n<<32 | i;
+		sum_n_all += n->a[i].n;
+	}
+	ks_introsort_uint64_t(n->n, srt);
+
+	for (j = 0; j < 2; ++j) {
+		sum_n = sum_l = 0;
+		for (i = n->n - 1; i >= 0; --i) {
+			const fmnode_t *p = &n->a[srt[i]<<32>>32];
+			int tmp1, tmp2;
+			tmp1 = tmp2 = 0;
+			if (p->nei[0].n) ++tmp1, tmp2 += p->nei[0].a[0].y;
+			if (p->nei[1].n) ++tmp1, tmp2 += p->nei[1].a[0].y;
+			if (tmp1) tmp2 /= tmp1;
+			if (rdist > 0.) {
+				double A = (p->l - tmp1) / rdist - p->n * M_LN2;
+				if (A < A_THRES) continue;
+			}
+			sum_n += p->n;
+			sum_l += p->l - tmp1;
+			if (sum_n >= sum_n_all * 0.75) break;
+		}
+		rdist = (double)sum_l / sum_n;
+	}
+	if (fm_verbose >= 3) {
+		fprintf(stderr, "[M::%s] average read distance %.3f, computed in %.3f seconds.\n", __func__, rdist, cputime() - t);
+		fprintf(stderr, "[M::%s] approximate genome size: %.0f\n", __func__, rdist * sum_n_all);
+	}
+
+	free(srt);
+	return rdist;
+}
+
+/**************
+ * Key portal *
+ **************/
 
 void msg_clean(msg_t *g, const fmclnopt_t *opt)
 {

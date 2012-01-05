@@ -9,6 +9,8 @@ int ksa_sa(const unsigned char *T, int *SA, int n, int k);
 int ksa_bwt(unsigned char *T, int n, int k);
 int ksa_bwt64(unsigned char *T, int64_t n, int k);
 
+void ks_introsort_uint64_t(size_t n, uint64_t *a);
+
 void seq_char2nt6(int l, unsigned char *s);
 void seq_reverse(int l, unsigned char *s);
 void seq_revcomp6(int l, unsigned char *s);
