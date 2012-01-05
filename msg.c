@@ -911,6 +911,7 @@ static void flow_flt1(fmgraph_t *g, size_t idd)
 	u = get_node_id(g->h, p->nei[idd&1].a[0].x);
 	if (u == (uint64_t)-1) return; // internal error
 	q = &g->nodes.a[u>>1];
+	if (p == q) return;
 	if (q->nei[u&1].n < 2) return; // well, p and q can be merged already
 	assert(q->l >= p->nei[idd&1].a[0].y);
 	A = (q->l - p->nei[idd&1].a[0].y) / g->rdist - q->n * M_LN2;
@@ -927,9 +928,10 @@ static void flow_flt1(fmgraph_t *g, size_t idd)
 			if (t->n <= 2 && t->nei[(v&1)^1].n == 0) to_cut = 1; // a small tip
 		} else to_cut = 1;
 		if (to_cut) {
-			++n;
-			cut_arc(g, r->a[i].x, u, 1); // remove q from its neighbor
+			if (r->a[i].x != q->k[0] && r->a[i].x != q->k[1])
+				cut_arc(g, r->a[i].x, q->k[u&1], 1); // remove q from its neighbor
 			r->a[i].x = (uint64_t)-2;
+			++n;
 		}
 	}
 	if (n) {
@@ -962,6 +964,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	kv_init(stack);
 	if (g->h == 0) g->h = build_hash(&g->nodes);
 	flow_flt(g);
+	msg_join_unambi(g);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		drop_all_weak_arcs(g, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
