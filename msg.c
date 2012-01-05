@@ -851,7 +851,8 @@ void msg_join_unambi(msg_t *g)
  * A-statistics and simplistic flow analysis *
  *********************************************/
 
-#define A_THRES 30.
+#define A_THRES 20.
+#define A_MIN_SUPP 5
 
 double fmg_compute_rdist(const fmnode_v *n)
 {
@@ -896,7 +897,7 @@ double fmg_compute_rdist(const fmnode_v *n)
 	return rdist;
 }
 
-static void flow_flt1(fmgraph_t *g, size_t idd)
+static void flow_flt1(fmgraph_t *g, size_t idd, double thres)
 {
 	fmnode_t *p, *q, *t;
 	double A;
@@ -907,7 +908,7 @@ static void flow_flt1(fmgraph_t *g, size_t idd)
 	p = &g->nodes.a[idd>>1];
 	if (p->nei[idd&1].n != 1) return; // deg != 1
 	A = (p->l - p->nei[idd&1].a[0].y) / g->rdist - p->n * M_LN2;
-	if (A < A_THRES) return; // p not significantly unique
+	if (A < thres && p->n < A_MIN_SUPP) return; // p not significantly unique
 	u = get_node_id(g->h, p->nei[idd&1].a[0].x);
 	if (u == (uint64_t)-1) return; // internal error
 	q = &g->nodes.a[u>>1];
@@ -915,7 +916,8 @@ static void flow_flt1(fmgraph_t *g, size_t idd)
 	if (q->nei[u&1].n < 2) return; // well, p and q can be merged already
 	assert(q->l >= p->nei[idd&1].a[0].y);
 	A = (q->l - p->nei[idd&1].a[0].y) / g->rdist - q->n * M_LN2;
-	if (A < A_THRES) return; // q not significantly unique
+	if (A < thres) return; // q not significantly unique
+//	fprintf(stderr, "%lld:%lld, %lld:%lld\n", p->k[0], p->k[1], q->k[0], q->k[1]);
 
 	r = &q->nei[u&1];
 	for (i = n = 0; i < r->n; ++i) {
@@ -942,12 +944,12 @@ static void flow_flt1(fmgraph_t *g, size_t idd)
 	}
 }
 
-static void flow_flt(fmgraph_t *g)
+static void flow_flt(fmgraph_t *g, double thres)
 {
 	size_t i;
 	for (i = 0; i < g->nodes.n; ++i) {
-		flow_flt1(g, i<<1|0);
-		flow_flt1(g, i<<1|1);
+		flow_flt1(g, i<<1|0, thres);
+		flow_flt1(g, i<<1|1, thres);
 	}
 }
 
@@ -963,7 +965,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 
 	kv_init(stack);
 	if (g->h == 0) g->h = build_hash(&g->nodes);
-	flow_flt(g);
+	flow_flt(g, A_THRES * 2.);
 	msg_join_unambi(g);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
@@ -982,7 +984,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_rm_tips(g, opt->min_tip_len, 1e4);
 		msg_join_unambi(g);
 	}
-	flow_flt(g);
+	flow_flt(g, A_THRES);
 	if (opt->aggressive_pop) {
 		msg_popbub(g, opt->max_bub_len, 25);
 		msg_rm_tips(g, opt->min_tip_len, 1e4);
