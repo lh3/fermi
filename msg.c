@@ -409,7 +409,7 @@ static void rmnode(msg_t *g, size_t id)
 	for (i = 0; i < p->nei[0].n; ++i) cut_arc(g, p->nei[0].a[i].x, p->k[0], 1);
 	for (i = 0; i < p->nei[1].n; ++i) cut_arc(g, p->nei[1].a[i].x, p->k[1], 1);
 	p->nei[0].n = p->nei[1].n = 0;
-	p->l = -1;
+	p->l = -1; p->n = 0;
 }
 
 void msg_rm_tips(msg_t *g, int min_len, double min_cov)
@@ -824,7 +824,7 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	kh_val((hash64_t*)g->h, kp) = w<<1|1;
 	// clean up q
 	free(q->cov); free(q->seq);
-	q->cov = q->seq = 0; q->l = -1;
+	q->cov = q->seq = 0; q->l = -1; q->n = 0;
 	free(q->nei[0].a); free(q->mapping.a);
 	q->nei[0].n = q->nei[0].m = q->nei[1].n = q->nei[1].m = q->mapping.n = q->mapping.m = 0;
 	q->nei[0].a = q->nei[1].a = q->mapping.a = 0; // q->nei[1] has been copied over to p->nei[1], so we can delete it
@@ -851,15 +851,14 @@ void msg_join_unambi(msg_t *g)
  * A-statistics and simplistic flow analysis *
  *********************************************/
 
-#define A_THRES 20.
+#define A_THRES 30.
 
 double fmg_compute_rdist(const fmnode_v *n)
 {
 	int j;
-	ssize_t i;
 	uint64_t *srt;
 	double rdist = -1., t;
-	int64_t sum_n_all, sum_n, sum_l;
+	int64_t i, sum_n_all, sum_n, sum_l;
 
 	t = cputime();
 	srt = calloc(n->n, 8);
@@ -897,6 +896,59 @@ double fmg_compute_rdist(const fmnode_v *n)
 	return rdist;
 }
 
+static void flow_flt1(fmgraph_t *g, size_t idd)
+{
+	fmnode_t *p, *q, *t;
+	double A;
+	uint64_t u, v;
+	fm128_v *r;
+	int i, n;
+
+	p = &g->nodes.a[idd>>1];
+	if (p->nei[idd&1].n != 1) return; // deg != 1
+	A = (p->l - p->nei[idd&1].a[0].y) / g->rdist - p->n * M_LN2;
+	if (A < A_THRES) return; // p not significantly unique
+	u = get_node_id(g->h, p->nei[idd&1].a[0].x);
+	if (u == (uint64_t)-1) return; // internal error
+	q = &g->nodes.a[u>>1];
+	if (q->nei[u&1].n < 2) return; // well, p and q can be merged already
+	assert(q->l >= p->nei[idd&1].a[0].y);
+	A = (q->l - p->nei[idd&1].a[0].y) / g->rdist - q->n * M_LN2;
+	if (A < A_THRES) return; // q not significantly unique
+
+	r = &q->nei[u&1];
+	for (i = n = 0; i < r->n; ++i) {
+		int to_cut = 0;
+		v = get_node_id(g->h, r->a[i].x);
+		if (v == (uint64_t)-1) continue;
+		t = &g->nodes.a[v>>1];
+		if (t->nei[v&1].n == 1) {
+			// Should we also consider to cut in this case? Perhaps does not matter.
+			if (t->n <= 2 && t->nei[(v&1)^1].n == 0) to_cut = 1; // a small tip
+		} else to_cut = 1;
+		if (to_cut) {
+			++n;
+			cut_arc(g, r->a[i].x, u, 1); // remove q from its neighbor
+			r->a[i].x = (uint64_t)-2;
+		}
+	}
+	if (n) {
+		for (i = n = 0; i < r->n; ++i)
+			if (r->a[i].x != (uint64_t)-2)
+				r->a[n++] = r->a[i];
+		r->n = n;
+	}
+}
+
+static void flow_flt(fmgraph_t *g)
+{
+	size_t i;
+	for (i = 0; i < g->nodes.n; ++i) {
+		flow_flt1(g, i<<1|0);
+		flow_flt1(g, i<<1|1);
+	}
+}
+
 /**************
  * Key portal *
  **************/
@@ -909,6 +961,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 
 	kv_init(stack);
 	if (g->h == 0) g->h = build_hash(&g->nodes);
+	flow_flt(g);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		drop_all_weak_arcs(g, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
@@ -926,6 +979,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_rm_tips(g, opt->min_tip_len, 1e4);
 		msg_join_unambi(g);
 	}
+	flow_flt(g);
 	if (opt->aggressive_pop) {
 		msg_popbub(g, opt->max_bub_len, 25);
 		msg_rm_tips(g, opt->min_tip_len, 1e4);
