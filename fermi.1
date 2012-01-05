@@ -1,4 +1,4 @@
-.TH fermi 1 "14 December 2011" "fermi-r457" "Bioinformatics tools"
+.TH fermi 1 "5 January 2012" "fermi-r513" "Bioinformatics tools"
 
 .SH NAME
 .PP
@@ -10,17 +10,22 @@ run-fermi.pl -p prefix -Pt 8 end1.fq end2.fq > assemble.mak
 .PP
 make -f assemble.mak -j 8
 .PP
-fermi clean -C pe.msg.gz > pe.contigs.fq
+fermi clean -C prefix.msg.gz > prefix.contigs.fq
 
 .SH DESCRIPTION
 .PP
-(to be added...)
+Fermi is a light-weight de novo assembler for Illumina sequence reads. It is
+one of the few assemblers that is capable of assembling a mammalian genome.
+Fermi is a good assembler for unitig construction, but its ultimate goal
+is not to become the best assembler but to provide an alternative approach to
+resequencing and to data compression. It relies on the `coherence' property of
+unitigs (Myers 2005) to represent (ideally) all information in reads such that
+further analyses can be carried on the unitigs rather than raw reads.
 
 .SH COMMANDS AND OPTIONS
 .sp
 \ 
 .SS Quick assembly with run-fermi.pl
-
 .B run-fermi.pl
 .RB [ \-PAc ]
 .RB [ \-e
@@ -48,8 +53,8 @@ where
 .I nCPUs
 is the option used for generating the Makefile. The end assembly output for single-end data is
 .IR prefix .msg.gz
-which is an overlap graph in a FASTQ-like format: a quality line in FASTQ
-gives the per-base read depth. One should further use the
+which is an overlap graph in a FASTQ-like format with the original quality line
+encoding the per-base read depth. One should further use the
 .B clean
 command or another assembler to remove tips and bubbles. For paired-end data, file 
 .IR prefix .ext.msg.gz
@@ -347,24 +352,38 @@ Find the super-maximal exact matches against the FM-index.
 
 .SS Fermi and SGA
 .PP
-Fermi is fundamentally influenced by the string graph assembler (SGA) written
+Fermi is fundamentally influenced by the string graph assembler (SGA; Simpson and Durbin, 2010 and 2012) written
 by Jared Simpson. Although initially I was planning something quite different,
 most of my ideas turned out to be wrong or impractical once I started to
-implement them. At the end of day, fermi takes a very similar overall approach
-to SGA. On the other hand, fermi is entirely a fresh implementation. The
-FM-index data structure, the BWT construction algorithm, the error correction
-strategy, the overlap graph construction procedure are all different from those
+implement them. In the end, fermi takes a very similar overall approach to SGA.
+On the other hand, fermi is entirely a fresh implementation. The FM-index data
+structure, the BWT construction algorithm, the error correction strategy, the
+overlap graph construction procedure are all different from those
 implemented in SGA.
 
-.SS Current development status
+.SS Limitations
+.PP
+As of now, fermi is designed and extensively tested for 100bp Illumina
+paired-end data from a single short-insert library or libraries of similar
+insert sizes. It is able to use the pairing information for the unitig
+construction, but it does not generate scaffolds and is unable to take
+advantage of reads from jumping libraries. Thus users may need a third-party
+scaffolder to construct scaffolds and/or to take advantage of reads with
+long-insert. In addition, fermi does not work with long reads having a high
+indel sequencing error rate, though it has the potential to be applied to such
+data in future.
+
+.SS Performance
 .PP
 Fermi works well for single-end HiSeq data. The corrected unitig N50 is
-comparable to or at times better than other assemblers, though the number of
-misassemblies may be a little higher in comparison to SGA and SOAPdenovo.
-For paired-end data, fermi locally assembles the ends of unitigs and takes
-the local assembly as long reads to perform another round of unitig
-construction for producing longer contigs that are of similar lengths to
-scaftigs assembled by other assemblers.
+usually longer than other assemblers, though as a tradeoff the misassembly rate
+may be a little higher in comparison to SGA and SOAPdenovo. For paired-end data,
+fermi extends unitigs by doing local assembly around the ends. This usually
+yields contigs of length comparable to the scaftigs produced by other assemblers.
+
+Like SGA, fermi effectively trades speed for a small memory footprint. It also
+strives for minimal disk usage, which further slows fermi down. Given 35X human
+data, fermi takes roughly 7 days using 16 CPUs with the memory peaking around 85GB.
 
 .SS Unitig, contig, scaftig and scaffold
 .PP
