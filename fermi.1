@@ -380,6 +380,8 @@ usually longer than other assemblers, though as a tradeoff the misassembly rate
 may be a little higher in comparison to SGA and SOAPdenovo. For paired-end data,
 fermi extends unitigs by doing local assembly around the ends. This usually
 yields contigs of length comparable to the scaftigs produced by other assemblers.
+Unitigs produced by fermi preserve most of information in reads, but it still
+misses a significant fraction of heterozygous SNPs.
 
 Like SGA, fermi effectively trades speed for a small memory footprint. It also
 strives for minimal disk usage, which further slows fermi down. Given 35X human
@@ -407,8 +409,7 @@ We may regard unitigs, scaftigs or a walk along unitigs as contigs.
 
 .SH AUTHOR
 .PP
-Heng Li <lh3@me.com> implemented
-.BR fermi .
+Heng Li <lh3@me.com>
 
 .SH SEE ALSO
 .PP
