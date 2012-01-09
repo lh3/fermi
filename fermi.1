@@ -22,6 +22,47 @@ resequencing and to data compression. It relies on the `coherence' property of
 unitigs (Myers 2005) to represent (ideally) all information in reads such that
 further analyses can be carried on the unitigs rather than raw reads.
 
+.SS Hardware requirement
+Fermi is designed for running on a multi-core machine with large shared memory.
+The peak memory is linear in the size of the genome and sublinear in the coverage.
+It requires a minimum 90GB memory to assemble a mammalian genome at 35-fold
+coverage. Probably fermi runs on x86_64 CPUs only due to the large memory
+requirements and assumptions on the byte order, though the latter can be
+relaxed in theory.
+
+.SS Running fermi
+The easiest way to run fermi is to use the
+.B run-fermi.pl
+script. This script takes multiple single-end or paired-end FASTQ files as input
+and outputs a Makefile which can be used with the
+.B make
+command to do the actual assembly. The end output after this procedure is a raw
+overlap graph with per-base coverage of non-contained reads. An additional
+graph cleaning step is needed, but future versions of fermi may incorporate
+this step in the Makefile as well. The following are a few examples:
+
+.IP o 2
+Assemble a bacterial genome:
+
+  run-fermi.pl -Pe ./fermi read1.fq.gz read2.fq.gz > Makefile
+  make
+  ./fermi clean -C fmdef.msg.gz > fmdef.contigs
+ 
+.IP o 2
+Assemble a C. elegans genome:
+
+  run-fermi.pl -t8 -Pk50 -p ce SRR065390_1.fq SRR065390_2.fq > ce.mak
+  make -j8 -f ce.mak
+  fermi clean -Co70 -l250 ce.msg.gz > ce.contigs
+
+.IP o 2
+Assemble a human genome:
+
+  run-fermi.pl -t16 -Pk50 -f18 s_1_1.fq s_1_2.fq s_2_1.fq s_2_2.fq > human.mak
+  make -j16 -f human.mak
+  fermi clean -C -r0.15 -o70 fmdef.msg.gz > human-reseq.ctg
+  fermi clean -CA fmdef.ext.msg.gz > human-long-N50.ctg
+
 .SH COMMANDS AND OPTIONS
 .sp
 \ 
@@ -346,7 +387,7 @@ Check the rank function or print the BWT in the text form.
 Find the super-maximal exact matches against the FM-index.
 
 
-.SH NOTES
+.SH FURTHER NOTES
 .sp
 \ 
 
@@ -380,8 +421,11 @@ usually longer than other assemblers, though as a tradeoff the misassembly rate
 may be a little higher in comparison to SGA and SOAPdenovo. For paired-end data,
 fermi extends unitigs by doing local assembly around the ends. This usually
 yields contigs of length comparable to the scaftigs produced by other assemblers.
-Unitigs produced by fermi preserve most of information in reads, but it still
-misses a significant fraction of heterozygous SNPs.
+
+During error correction, fermi rarely removes heterozygotes. For the NA12878
+35X data set, the error correction only significantly affects 0.2% of SNPs. As
+of now, unitigs may miss a significant fraction of heterozygous SNPs. Future
+versions are likely to be improved at this point.
 
 Like SGA, fermi effectively trades speed for a small memory footprint. It also
 strives for minimal disk usage, which further slows fermi down. Given 35X human
