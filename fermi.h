@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-r517"
+#define FERMI_VERSION "0.0-r519"
 
 #define FM_MASK30 0x3fffffff
 
@@ -33,7 +33,7 @@ typedef struct {
 } fmecopt_t;
 
 typedef struct {
-	float min_bub_ratio, min_bub_cov, min_ovlp_ratio;
+	float min_bub_ratio, min_bub_cov, min_ovlp_ratio, a_thres;
 	int min_ext_len, min_ext_cnt, min_int_cnt, min_ovlp, max_bub_len;
 	int n_iter, aggressive_pop;
 } fmclnopt_t;

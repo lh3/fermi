@@ -965,7 +965,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 
 	kv_init(stack);
 	if (g->h == 0) g->h = build_hash(&g->nodes);
-	flow_flt(g, A_THRES * 2.);
+//	if (opt->uniq_cut) flow_flt(g, A_THRES * 2.);
 	msg_join_unambi(g);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
@@ -984,7 +984,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_rm_tips(g, opt->min_ext_len, opt->min_ext_cnt);
 		msg_join_unambi(g);
 	}
-	flow_flt(g, A_THRES);
+	flow_flt(g, opt->a_thres > 20.? opt->a_thres : 20.);
 	if (opt->aggressive_pop) {
 		msg_popbub(g, opt->max_bub_len, 25);
 		msg_rm_tips(g, opt->min_ext_len, opt->min_ext_cnt);

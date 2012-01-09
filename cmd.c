@@ -480,7 +480,8 @@ int main_clean(int argc, char *argv[])
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3; opt.max_bub_len = 500;
 	opt.min_ovlp    = 60;  opt.min_ovlp_ratio=0.8;
 	opt.n_iter = 3;
-	while ((c = getopt(argc, argv, "CAl:e:i:T:r:w:o:R:n:N:d:b:")) >= 0) {
+	opt.a_thres = 100.;
+	while ((c = getopt(argc, argv, "CAl:e:i:T:r:w:o:R:n:N:d:b:a:")) >= 0) {
 		switch (c) {
 			case 'b': opt.max_bub_len =  atoi(optarg); break;
 			case 'l': opt.min_ext_len =  atoi(optarg); break;
@@ -495,6 +496,7 @@ int main_clean(int argc, char *argv[])
 			case 'd': read_diff_ratio =  atof(optarg); break;
 			case 'C': do_clean = 1; break;
 			case 'A': opt.aggressive_pop = 1; break;
+			case 'a': opt.a_thres = atof(optarg); break;
 		}
 	}
 	if (argc == optind) {
@@ -513,6 +515,7 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "         -b INT      maximum bubble length (effective with -A) [%d]\n", opt.max_bub_len);
 		fprintf(stderr, "         -w FLOAT    minimum simple bubble coverage [%.1f]\n", opt.min_bub_cov);
 		fprintf(stderr, "         -r FLOAT    minimum simple bubble ratio [%.2f]\n", opt.min_bub_ratio);
+		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n", opt.a_thres);
 		fprintf(stderr, "\n");
 		return 1;
 	}
