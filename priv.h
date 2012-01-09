@@ -26,7 +26,7 @@ uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, in
 
 void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
 void msg_nodecpy(fmnode_t *dst, const fmnode_t *src);
-void msg_rm_tips(msg_t *g, int min_len, double min_cov);
+void msg_rm_tips(msg_t *g, int min_len, int min_cnt);
 void msg_popbub(msg_t *g, int max_len, int max_nodes);
 void msg_join_unambi(msg_t *g);
 

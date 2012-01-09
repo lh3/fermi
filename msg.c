@@ -412,7 +412,7 @@ static void rmnode(msg_t *g, size_t id)
 	p->l = -1; p->n = 0;
 }
 
-void msg_rm_tips(msg_t *g, int min_len, double min_cov)
+void msg_rm_tips(msg_t *g, int min_len, int min_cnt)
 {
 	size_t i;
 	double t = cputime();
@@ -421,7 +421,7 @@ void msg_rm_tips(msg_t *g, int min_len, double min_cov)
 	for (i = 0; i < g->nodes.n; ++i) {
 		fmnode_t *p = &g->nodes.a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->l < min_len && p->avg_cov < min_cov) rmnode(g, i);
+		if (p->l < min_len && p->n < min_cnt) rmnode(g, i);
 	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] removed tips shorter than %dbp in %.3f sec.\n", __func__, min_len, cputime() - t);
@@ -890,7 +890,7 @@ double fmg_compute_rdist(const fmnode_v *n)
 	}
 	if (fm_verbose >= 3) {
 		fprintf(stderr, "[M::%s] average read distance %.3f, computed in %.3f seconds.\n", __func__, rdist, cputime() - t);
-		fprintf(stderr, "[M::%s] approximate genome size: %.0f\n", __func__, rdist * sum_n_all);
+		fprintf(stderr, "[M::%s] approximate genome size: %.0f (likely an underestimate)\n", __func__, rdist * sum_n_all);
 	}
 
 	free(srt);
@@ -970,31 +970,31 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		drop_all_weak_arcs(g, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
-		msg_rm_tips(g, opt->min_tip_len * r, 1e4); // FIXME: currently no restriction on the tip coverage
+		msg_rm_tips(g, opt->min_ext_len * r, opt->min_ext_cnt * r > 2.? opt->min_ext_cnt * r : 2);
 		msg_join_unambi(g);
 	}
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
-	if (opt->min_weak_cov > 1.) {
+	if (opt->min_int_cnt >= 2) {
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
-			if (g->nodes.a[i].avg_cov < opt->min_weak_cov)
+			if (g->nodes.a[i].n < opt->min_int_cnt)
 				rmnode(g, i);
 		fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
 		drop_all_weak_arcs(g, opt->min_ovlp, opt->min_ovlp_ratio);
-		msg_rm_tips(g, opt->min_tip_len, 1e4);
+		msg_rm_tips(g, opt->min_ext_len, opt->min_ext_cnt);
 		msg_join_unambi(g);
 	}
 	flow_flt(g, A_THRES);
 	if (opt->aggressive_pop) {
 		msg_popbub(g, opt->max_bub_len, 25);
-		msg_rm_tips(g, opt->min_tip_len, 1e4);
+		msg_rm_tips(g, opt->min_ext_len, opt->min_ext_cnt);
 		msg_join_unambi(g);
 	} else if (opt->min_bub_cov >= 1. && opt->min_bub_ratio < 1.) {
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
 			pop_simple_bubble(g, i, opt->min_bub_ratio, opt->min_bub_cov);
 		fprintf(stderr, "[M::%s] popped simple bubbles in %.3f sec.\n", __func__, cputime() - t);
-		msg_rm_tips(g, opt->min_tip_len, 1e4);
+		msg_rm_tips(g, opt->min_ext_len, opt->min_ext_cnt);
 		msg_join_unambi(g);
 	}
 	// free

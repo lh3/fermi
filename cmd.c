@@ -475,16 +475,17 @@ int main_clean(int argc, char *argv[])
 	float read_diff_ratio = 0.7;
 	fmclnopt_t opt;
 	opt.aggressive_pop = 0;
-	opt.min_tip_len = 200;
-	opt.min_weak_cov= 1.01;
+	opt.min_ext_len = 200; opt.min_ext_cnt = 4;
+	opt.min_int_cnt = 2;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3; opt.max_bub_len = 500;
 	opt.min_ovlp    = 60;  opt.min_ovlp_ratio=0.8;
 	opt.n_iter = 3;
-	while ((c = getopt(argc, argv, "CAl:c:T:r:w:o:R:n:N:d:b:")) >= 0) {
+	while ((c = getopt(argc, argv, "CAl:e:i:T:r:w:o:R:n:N:d:b:")) >= 0) {
 		switch (c) {
 			case 'b': opt.max_bub_len =  atoi(optarg); break;
-			case 'l': opt.min_tip_len =  atoi(optarg); break;
-			case 'c': opt.min_weak_cov=  atof(optarg); break;
+			case 'l': opt.min_ext_len =  atoi(optarg); break;
+			case 'e': opt.min_ext_cnt =  atoi(optarg); break;
+			case 'i': opt.min_int_cnt =  atoi(optarg); break;
 			case 'w': opt.min_bub_cov =  atof(optarg); break;
 			case 'r': opt.min_bub_ratio= atof(optarg); break;
 			case 'o': opt.min_ovlp    =  atoi(optarg); break;
@@ -502,10 +503,11 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "Options: -N INT      read maximum INT neighbors per node [%d]\n", max_arc);
 		fprintf(stderr, "         -d FLOAT    drop a neighbor if relative overlap ratio below FLOAT [%.2f]\n\n", read_diff_ratio); 
 		fprintf(stderr, "         -C          clean the graph\n");
-		fprintf(stderr, "         -l INT      minimum tip length [%d]\n", opt.min_tip_len);
+		fprintf(stderr, "         -l INT      minimum tip length [%d]\n", opt.min_ext_len);
+		fprintf(stderr, "         -e INT      minimum tip read count [%d]\n", opt.min_ext_cnt);
+		fprintf(stderr, "         -i INT      minimum internal unitig read count [%d]\n", opt.min_int_cnt);
 		fprintf(stderr, "         -o INT      minimum overlap [%d]\n", opt.min_ovlp);
 		fprintf(stderr, "         -R FLOAT    minimum relative overlap ratio [%.2f]\n", opt.min_ovlp_ratio);
-		fprintf(stderr, "         -c FLOAT    minimum node coverage [%.1f]\n", opt.min_weak_cov);
 		fprintf(stderr, "         -n INT      number of iterations [%d]\n", opt.n_iter);
 		fprintf(stderr, "         -A          aggressive bubble popping\n");
 		fprintf(stderr, "         -b INT      maximum bubble length (effective with -A) [%d]\n", opt.max_bub_len);
