@@ -222,7 +222,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 				if (*q++ == 0) break;
 			}
 		}
-		if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.000001) {
+		if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.001) {
 			if (drop_tip) {
 				free(p->nei[0].a); free(p->nei[1].a); free(p->cov); free(p->seq);
 				--g->nodes.n;
