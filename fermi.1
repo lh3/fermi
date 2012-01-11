@@ -423,9 +423,11 @@ fermi extends unitigs by doing local assembly around the ends. This usually
 yields contigs of length comparable to the scaftigs produced by other assemblers.
 
 During error correction, fermi rarely removes heterozygotes. For the NA12878
-35X data set, the error correction only significantly affects 0.2% of SNPs. As
-of now, unitigs may miss a significant fraction of heterozygous SNPs. Future
-versions are likely to be improved at this point.
+35X data set, the error correction only significantly affects 0.2% of SNPs. Unitigs
+also preserve most information in read and because assembly takes the advantage
+of nearby information, unitigs are more sensitive to longer short INDELs and
+some SNPs. Unitigs also retain the phasing information for SNP pairs with
+distance within the read length.
 
 Like SGA, fermi effectively trades speed for a small memory footprint. It also
 strives for minimal disk usage, which further slows fermi down. Given 35X human
