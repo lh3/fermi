@@ -778,6 +778,11 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	if (kh_val((hash64_t*)g->h, kq)&1) flip(q, g->h); // a "><" bidirectional arc; flip q
 	kp = kh_get(64, g->h, p->k[1]); assert(kp != kh_end((hash64_t*)g->h)); // get the iterator to p
 	kh_del(64, g->h, kp); kh_del(64, g->h, kq); // remove the two ends of the arc in the hash table
+	if (p->k[1] != q->nei[0].a[0].x || q->k[0] != p->nei[1].a[0].x) {
+		fprintf(stderr, "[W::%s] a rare bug prevents merging: %ld != %ld or %ld != %ld. Continue anyway.\n",
+				__func__, (long)p->k[1], (long)q->nei[0].a[0].x, (long)q->k[0], (long)p->nei[1].a[0].x);
+		return -4;
+	}
 	assert(p->k[1] == q->nei[0].a[0].x);
 	assert(q->k[0] == p->nei[1].a[0].x);
 	assert(p->nei[1].a[0].y == q->nei[0].a[0].y);
