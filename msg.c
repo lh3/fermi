@@ -388,12 +388,12 @@ static void add_arc(msg_t *g, uint64_t u, uint64_t v, int ovlp)
 	kv_push(fm128_t, *r, z);
 }
 
-static void rmnode(msg_t *g, size_t id)
+static void rmnode(msg_t *g, size_t id, int trans_arc)
 {
 	int i, j;
 	fmnode_t *p = &g->nodes.a[id];
 	if (p->l < 0) return;
-	if (p->nei[0].n && p->nei[1].n) {
+	if (trans_arc && p->nei[0].n && p->nei[1].n) {
 		for (i = 0; i < p->nei[0].n; ++i) {
 			if (p->nei[0].a[i].x == p->k[0] || p->nei[0].a[i].x == p->k[1]) continue;
 			for (j = 0; j < p->nei[1].n; ++j) {
@@ -421,7 +421,7 @@ void msg_rm_tips(msg_t *g, int min_len, int min_cnt)
 	for (i = 0; i < g->nodes.n; ++i) {
 		fmnode_t *p = &g->nodes.a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->l < min_len && p->n < min_cnt) rmnode(g, i);
+		if (p->l < min_len && p->n < min_cnt) rmnode(g, i, 0);
 	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] removed tips shorter than %dbp in %.3f sec.\n", __func__, min_len, cputime() - t);
@@ -612,7 +612,7 @@ static void pop_complex_bubble(msg_t *g, size_t idd, int max_len, int max_nodes,
 	for (j = 0; j < aux->visited.n; ++j) {
 		khint_t k = kh_get(64, aux->kept, aux->visited.a[j]>>1);
 		if (k == kh_end(aux->kept)) {
-			rmnode(g, aux->visited.a[j]>>1);
+			rmnode(g, aux->visited.a[j]>>1, 1);
 			//fprintf(stderr, "del %lld[%lld,%lld]\n", aux->visited.a[j], nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
 		}
 	}
@@ -970,8 +970,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 
 	kv_init(stack);
 	if (g->h == 0) g->h = build_hash(&g->nodes);
-//	if (opt->uniq_cut) flow_flt(g, A_THRES * 2.);
-	msg_join_unambi(g);
+//	if (opt->uniq_cut) { flow_flt(g, A_THRES * 2.); msg_join_unambi(g); }
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		drop_all_weak_arcs(g, opt->min_ovlp * r, opt->min_ovlp_ratio * r);
@@ -981,9 +980,11 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
 	if (opt->min_int_cnt >= 2) {
 		double t = cputime();
-		for (i = 0; i < g->nodes.n; ++i)
-			if (g->nodes.a[i].n < opt->min_int_cnt)
-				rmnode(g, i);
+		for (i = 0; i < g->nodes.n; ++i) {
+			fmnode_t *p = &g->nodes.a[i];
+			if (p->n < opt->min_int_cnt && (p->nei[0].n < 2 || p->nei[1].n < 2))
+				rmnode(g, i, 1);
+		}
 		fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
 		drop_all_weak_arcs(g, opt->min_ovlp, opt->min_ovlp_ratio);
 		msg_rm_tips(g, opt->min_ext_len, opt->min_ext_cnt);
