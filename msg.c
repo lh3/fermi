@@ -377,34 +377,16 @@ static void drop_all_weak_arcs(msg_t *g, int min_ovlp, float min_ovlp_ratio)
 				__func__, min_ovlp, min_ovlp_ratio, cputime() - t);
 }
 
-static void add_arc(msg_t *g, uint64_t u, uint64_t v, int ovlp)
-{
-	uint64_t x = get_node_id(g->h, u);
-	fm128_v *r;
-	fm128_t z;
-	if (x == (uint64_t)-1) return;
-	r = &g->nodes.a[x>>1].nei[x&1];
-	z.x = v; z.y = ovlp;
-	kv_push(fm128_t, *r, z);
-}
-
-static void rmnode(msg_t *g, size_t id, int trans_arc)
+static void rmnode(msg_t *g, size_t id, int test_trans)
 {
 	int i, j;
 	fmnode_t *p = &g->nodes.a[id];
 	if (p->l < 0) return;
-	if (trans_arc && p->nei[0].n && p->nei[1].n) {
-		for (i = 0; i < p->nei[0].n; ++i) {
-			if (p->nei[0].a[i].x == p->k[0] || p->nei[0].a[i].x == p->k[1]) continue;
-			for (j = 0; j < p->nei[1].n; ++j) {
-				int ovlp = (int)(p->nei[0].a[i].y + p->nei[1].a[j].y) - p->l;
-				if (p->nei[1].a[j].x == p->k[0] || p->nei[1].a[j].x == p->k[1]) continue;
-				if (ovlp >= g->min_ovlp) {
-					add_arc(g, p->nei[0].a[i].x, p->nei[1].a[j].x, ovlp);
-					add_arc(g, p->nei[1].a[j].x, p->nei[0].a[i].x, ovlp);
-				}
-			}
-		}
+	if (test_trans && p->nei[0].n && p->nei[1].n) {
+		for (i = 0; i < p->nei[0].n; ++i)
+			for (j = 0; j < p->nei[1].n; ++j)
+				if ((int)(p->nei[0].a[i].y + p->nei[1].a[j].y) - p->l >= g->min_ovlp)
+					return; // do not remove if removing this node breaks the connectivity
 	}
 	for (i = 0; i < p->nei[0].n; ++i) cut_arc(g, p->nei[0].a[i].x, p->k[0], 1);
 	for (i = 0; i < p->nei[1].n; ++i) cut_arc(g, p->nei[1].a[i].x, p->k[1], 1);
@@ -612,7 +594,7 @@ static void pop_complex_bubble(msg_t *g, size_t idd, int max_len, int max_nodes,
 	for (j = 0; j < aux->visited.n; ++j) {
 		khint_t k = kh_get(64, aux->kept, aux->visited.a[j]>>1);
 		if (k == kh_end(aux->kept)) {
-			rmnode(g, aux->visited.a[j]>>1, 1);
+			rmnode(g, aux->visited.a[j]>>1, 0);
 			//fprintf(stderr, "del %lld[%lld,%lld]\n", aux->visited.a[j], nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
 		}
 	}
