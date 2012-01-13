@@ -125,10 +125,11 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 #define DIFF_FACTOR  13
 #define MISS_PENALTY 40
 #define MAX_HEAP    256
+#define MAX_SC_DIFF  60
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
-	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1;
+	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
 	fm128_t z, rst[2];
 
 	if (s->l <= opt->w) return 0xffff;
@@ -157,6 +158,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 			if (n_rst == 2) break;
 			continue;
 		}
+		if (n_rst && (int)(z.y>>48) + MAX_SC_DIFF < (int)(rst[0].y>>48)) break;
 		i = (z.y&0xffff) - 1; parent = (int)(z.y>>16);
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
@@ -181,7 +183,10 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - (qual[i] - 33), shift, 0);
 	}
 	assert(n_rst == 1 || n_rst == 2);
-	if (rst[0].y>>48 == 0) return 0xfff<<18; // no corrections are made
+	score_diff = n_rst == 1? MAX_SC_DIFF : (int)(rst[1].y>>48) - (int)(rst[0].y>>48);
+	assert(score_diff >= 0);
+	if (score_diff >= MAX_SC_DIFF) score_diff = MAX_SC_DIFF;
+	if (rst[0].y>>48 == 0) return score_diff<<18; // no corrections are made
 	// backtrack
 	i = 0; qsum = 0; l = (uint32_t)(rst[0].y>>16);
 	while (l) {
@@ -192,10 +197,8 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		++i;
 		l = fa->stack.a[l]<<4>>4;
 	}
-	l = n_rst == 2? (rst[1].y>>48) - (rst[0].y>>48) : 0xfff;
-	if (l > 0xfff) l = 0xfff;
 	// return value: score_diff:14, (empty):2, sum_modified_qual:16
-	return qsum | l<<18 | no_hits<<17;
+	return qsum | score_diff<<18 | no_hits<<17;
 }
 
 static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
