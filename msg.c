@@ -964,7 +964,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i) {
 			fmnode_t *p = &g->nodes.a[i];
-			if (p->n < opt->min_int_cnt && (p->nei[0].n < 2 || p->nei[1].n < 2))
+			if (p->n < opt->min_int_cnt)
 				rmnode(g, i, 1);
 		}
 		fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
