@@ -27,6 +27,9 @@ static hash64_t *build_hash(const fmnode_v *nodes);
 static void flip(fmnode_t *p, hash64_t *h);
 double fmg_compute_rdist(const fmnode_v *n);
 
+#define arc_mark_del(_x) ((_x).x = (uint64_t)-2, (_x).y = 0)
+#define arc_is_del(_x)   ((_x).x == (uint64_t)-2 || (_x).y == 0)
+
 void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 {
 	int j, k;
@@ -99,14 +102,22 @@ static inline void rmdup_128v(fm128_v *r)
 	uint64_t x;
 	if (r->n < 2) return;
 	ks_introsort(128x, r->n, r->a);
-	x = r->a[0].x;
-	for (l = 1, cnt = 0; l < r->n; ++l) {
-		if (r->a[l].x == (uint64_t)-2 || r->a[l].x == x) r->a[l].x = (uint64_t)-2, ++cnt;
+	for (l = cnt = 0; l < r->n; ++l) // jump to the first node to be retained
+		if (arc_is_del(r->a[l])) ++cnt;
+		else break;
+	if (l == r->n) { // no good arcs
+		r->n = 0;
+		return;
+	}
+	x = r->a[l].x;
+	for (++l; l < r->n; ++l) { // mark duplicated node
+		if (arc_is_del(r->a[l]) || r->a[l].x == x)
+			arc_mark_del(r->a[l]), ++cnt;
 		else x = r->a[l].x;
 	}
-	if (cnt) {
+	if (cnt) { // we need to shrink the array
 		for (l = 0, cnt = 0; l < r->n; ++l)
-			if (r->a[l].x != (uint64_t)-2) r->a[cnt++] = r->a[l];
+			if (!arc_is_del(r->a[l])) r->a[cnt++] = r->a[l];
 		r->n = cnt;
 	}
 }
@@ -195,8 +206,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 			n_arcs += (ori_n = nei.n);
 			ovlp_thres = (int)(max_ovlp2 * diff_ratio + .499);
 			for (i = 0; i < nei.n; ++i)
-				if (nei.a[i].y < ovlp_thres)
-					nei.a[i].x = (uint64_t)-2; // to be deleted in rmdup_128v()
+				if (nei.a[i].y < ovlp_thres) nei.a[i].y = 0; // to be deleted in rmdup_128v()
 			rmdup_128v(&nei);
 			if (nei.n > max_arc) { // excessive connections; keep the top ones
 				int thres;
@@ -286,7 +296,7 @@ void msg_amend(msg_t *g)
 				uint64_t z = get_node_id(g->h, x);
 				if (z == (uint64_t)-1) {
 					if (fm_verbose >= 5) fprintf(stderr, "[W::%s] tip %ld is non-existing.\n", __func__, (long)x);
-					p->nei[j].a[l].x = (uint64_t)-2;
+					arc_mark_del(p->nei[j].a[l]); // FIXME: should we set -1 or delete it?
 					++cnt0;
 					continue;
 				}
@@ -300,12 +310,7 @@ void msg_amend(msg_t *g)
 					continue;
 				}
 			}
-			if (cnt1 >= 2) rmdup_128v(&p->nei[j]);
-			else if (cnt0) {
-				for (l = cnt0 = 0, r = &p->nei[j]; l < r->n; ++l)
-					if (r->a[l].x != (uint64_t)-2) r->a[cnt0++] = r->a[l];
-				r->n = cnt0;
-			}
+			rmdup_128v(&p->nei[j]);
 		}
 		if (fm_verbose >= 4 && (i+1) % 100000 == 0)
 			fprintf(stderr, "[M::%s] amended %ld nodes in %.2f sec\n", __func__, i+1, cputime() - tcpu);
@@ -334,8 +339,7 @@ static void cut_arc(msg_t *g, uint64_t u, uint64_t v, int remove) // delete v fr
 		r->n = i;
 	} else {
 		for (j = 0; j < r->n; ++j)
-			if (r->a[j].x == v)
-				r->a[j].x = (uint64_t)-2, r->a[j].y = 0;
+			if (r->a[j].x == v) arc_mark_del(r->a[j]);
 	}
 }
 
@@ -354,13 +358,13 @@ static void drop_arc(msg_t *g, size_t id, int min_ovlp, float min_ovlp_ratio)
 			if (r->a[l].y < min_ovlp || (double)r->a[l].y/max < min_ovlp_ratio) {
 				if (r->a[l].x != p->k[0] && r->a[l].x != p->k[1])
 					cut_arc(g, r->a[l].x, p->k[j], 1);
-				r->a[l].x = (uint64_t)-2; // mark the link to delete
+				arc_mark_del(r->a[l]);
 				++cnt;
 			}
 		}
 		if (cnt) {
 			for (l = cnt = 0; l < r->n; ++l)
-				if (r->a[l].x != (uint64_t)-2) r->a[cnt++] = r->a[l];
+				if (!arc_is_del(r->a[l])) r->a[cnt++] = r->a[l];
 			r->n = cnt;
 		}
 	}
@@ -377,21 +381,62 @@ static void drop_all_weak_arcs(msg_t *g, int min_ovlp, float min_ovlp_ratio)
 				__func__, min_ovlp, min_ovlp_ratio, cputime() - t);
 }
 
-static void rmnode(msg_t *g, size_t id, int test_trans)
+static inline void rmnode_force(msg_t *g, fmnode_t *p)
 {
-	int i, j;
-	fmnode_t *p = &g->nodes.a[id];
-	if (p->l < 0) return;
-	if (test_trans && p->nei[0].n && p->nei[1].n) {
-		for (i = 0; i < p->nei[0].n; ++i)
-			for (j = 0; j < p->nei[1].n; ++j)
-				if ((int)(p->nei[0].a[i].y + p->nei[1].a[j].y) - p->l >= g->min_ovlp)
-					return; // do not remove if removing this node breaks the connectivity
-	}
-	for (i = 0; i < p->nei[0].n; ++i) cut_arc(g, p->nei[0].a[i].x, p->k[0], 1);
-	for (i = 0; i < p->nei[1].n; ++i) cut_arc(g, p->nei[1].a[i].x, p->k[1], 1);
+	int i;
+	for (i = 0; i < p->nei[0].n; ++i)
+		if (p->nei[0].a[i].x != p->k[0] && p->nei[0].a[i].x != p->k[1])
+			cut_arc(g, p->nei[0].a[i].x, p->k[0], 1);
+	for (i = 0; i < p->nei[1].n; ++i)
+		if (p->nei[1].a[i].x != p->k[0] && p->nei[1].a[i].x != p->k[1])
+			cut_arc(g, p->nei[1].a[i].x, p->k[1], 1);
 	p->nei[0].n = p->nei[1].n = 0;
 	p->l = -1; p->n = 0;
+}
+
+static inline void rmnode_sgl_nei(msg_t *g, fmnode_t *p)
+{ // one end has only one neighbor
+	int i, j, dir;
+	fm128_v *r, *s, *t;
+	uint64_t nei_idd;
+
+	assert(p->nei[0].n == 1 || p->nei[1].n == 1);
+	assert(p->nei[0].n != 0 && p->nei[1].n != 0);
+	dir = p->nei[0].n != 1? 0 : 1;
+	nei_idd = get_node_id(g->h, p->nei[dir^1].a[0].x);
+	if (nei_idd == (uint64_t)-1 || p->nei[dir^1].a[0].x == p->k[0] || p->nei[dir^1].a[0].x == p->k[1]) {
+		rmnode_force(g, p);
+		return;
+	}
+	s = &g->nodes.a[nei_idd>>1].nei[nei_idd&1];
+	cut_arc(g, p->nei[dir^1].a[0].x, p->k[dir^1], 1);
+	r = &p->nei[dir];
+	for (i = 0; i < r->n; ++i) { // move p->nei[dir^1] to p->nei[dir] and visa versa
+		int ovlp = (int)(r->a[i].y + p->nei[dir^1].a[0].y) - p->l;
+		fm128_t z;
+		if (r->a[i].x == p->k[0] || r->a[i].x == p->k[1]) continue; // loop
+		if (ovlp < g->min_ovlp) ovlp = 0;
+		nei_idd = get_node_id(g->h, r->a[i].x);
+		t = &g->nodes.a[nei_idd>>1].nei[nei_idd&1];
+		z.x = r->a[i].x, z.y = ovlp;
+		kv_push(fm128_t, *s, z); // add p->nei[dir] to p->nei[dir^1]
+		for (j = 0; j < t->n; ++j) { // in p->nei[dir], replace p with p->nei[dir^1]
+			if (t->a[j].x == p->k[dir]) {
+				t->a[j].x = p->nei[dir^1].a[0].x;
+				t->a[j].y = ovlp;
+			}
+		}
+	}
+	p->nei[0].n = p->nei[1].n = 0;
+	p->l = -1; p->n = 0;
+}
+
+static void rmnode(msg_t *g, size_t id)
+{
+	fmnode_t *p = &g->nodes.a[id];
+	if (p->l < 0) return;
+	if (p->nei[0].n == 0 || p->nei[1].n == 0) rmnode_force(g, p);
+	else if (p->nei[0].n == 1 || p->nei[1].n == 1) rmnode_sgl_nei(g, p);
 }
 
 void msg_rm_tips(msg_t *g, int min_len, int min_cnt)
@@ -403,7 +448,7 @@ void msg_rm_tips(msg_t *g, int min_len, int min_cnt)
 	for (i = 0; i < g->nodes.n; ++i) {
 		fmnode_t *p = &g->nodes.a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->l < min_len && p->n < min_cnt) rmnode(g, i, 0);
+		if (p->l < min_len && p->n < min_cnt) rmnode(g, i);
 	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] removed tips shorter than %dbp in %.3f sec.\n", __func__, min_len, cputime() - t);
@@ -594,7 +639,7 @@ static void pop_complex_bubble(msg_t *g, size_t idd, int max_len, int max_nodes,
 	for (j = 0; j < aux->visited.n; ++j) {
 		khint_t k = kh_get(64, aux->kept, aux->visited.a[j]>>1);
 		if (k == kh_end(aux->kept)) {
-			rmnode(g, aux->visited.a[j]>>1, 0);
+			rmnode_force(g, &g->nodes.a[aux->visited.a[j]>>1]);
 			//fprintf(stderr, "del %lld[%lld,%lld]\n", aux->visited.a[j], nodes->a[aux->visited.a[j]>>1].k[0], nodes->a[aux->visited.a[j]>>1].k[1]);
 		}
 	}
@@ -709,7 +754,7 @@ static void pop_simple_bubble(msg_t *g, size_t id, double min_bub_ratio, double 
 		}
 	}
 	for (j = 0, cnt = 0; j < r[0]->n; ++j)
-		if (r[0]->a[j].x) r[0]->a[cnt++] = r[0]->a[j];
+		if (!arc_is_del(r[0]->a[j])) r[0]->a[cnt++] = r[0]->a[j];
 	r[0]->n = cnt;
 }
 
@@ -919,13 +964,13 @@ static void flow_flt1(fmgraph_t *g, size_t idd, double thres)
 		if (to_cut) {
 			if (r->a[i].x != q->k[0] && r->a[i].x != q->k[1])
 				cut_arc(g, r->a[i].x, q->k[u&1], 1); // remove q from its neighbor
-			r->a[i].x = (uint64_t)-2;
+			arc_mark_del(r->a[i]);
 			++n;
 		}
 	}
 	if (n) {
 		for (i = n = 0; i < r->n; ++i)
-			if (r->a[i].x != (uint64_t)-2)
+			if (!arc_is_del(r->a[i]))
 				r->a[n++] = r->a[i];
 		r->n = n;
 	}
@@ -962,11 +1007,10 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
 	if (opt->min_int_cnt >= 2) {
 		double t = cputime();
-		for (i = 0; i < g->nodes.n; ++i) {
-			fmnode_t *p = &g->nodes.a[i];
-			if (p->n < opt->min_int_cnt)
-				rmnode(g, i, 1);
-		}
+		for (i = 0; i < g->nodes.n; ++i)
+			if (g->nodes.a[i].n < opt->min_int_cnt)
+				rmnode(g, i);
+		for (i = 0; i < g->nodes.n; ++i) rm_dup_arc(&g->nodes.a[i]);
 		fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
 		drop_all_weak_arcs(g, opt->min_ovlp, opt->min_ovlp_ratio);
 		msg_rm_tips(g, opt->min_ext_len, opt->min_ext_cnt);
