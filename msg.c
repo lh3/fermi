@@ -384,6 +384,7 @@ static void drop_all_weak_arcs(msg_t *g, int min_ovlp, float min_ovlp_ratio)
 static inline void rmnode_force(msg_t *g, fmnode_t *p)
 {
 	int i;
+	if (p->l < 0) return;
 	for (i = 0; i < p->nei[0].n; ++i)
 		if (p->nei[0].a[i].x != p->k[0] && p->nei[0].a[i].x != p->k[1])
 			cut_arc(g, p->nei[0].a[i].x, p->k[0], 1);
@@ -394,49 +395,36 @@ static inline void rmnode_force(msg_t *g, fmnode_t *p)
 	p->l = -1; p->n = 0;
 }
 
-static inline void rmnode_sgl_nei(msg_t *g, fmnode_t *p)
-{ // one end has only one neighbor
-	int i, j, dir;
-	fm128_v *r, *s, *t;
-	uint64_t nei_idd;
+static inline void add_arc(msg_t *g, uint64_t u, uint64_t v, int ovlp)
+{
+	fm128_v *r;
+	fm128_t z;
+	uint64_t x = get_node_id(g->h, u);
+	if (x == (uint64_t)-1) return;
+	r = &g->nodes.a[x>>1].nei[x&1];
+	z.x = v; z.y = ovlp;
+	kv_push(fm128_t, *r, z);
+}
 
-	assert(p->nei[0].n == 1 || p->nei[1].n == 1);
-	assert(p->nei[0].n != 0 && p->nei[1].n != 0);
-	dir = p->nei[0].n != 1? 0 : 1;
-	nei_idd = get_node_id(g->h, p->nei[dir^1].a[0].x);
-	if (nei_idd == (uint64_t)-1 || p->nei[dir^1].a[0].x == p->k[0] || p->nei[dir^1].a[0].x == p->k[1]) {
-		rmnode_force(g, p);
-		return;
-	}
-	s = &g->nodes.a[nei_idd>>1].nei[nei_idd&1];
-	cut_arc(g, p->nei[dir^1].a[0].x, p->k[dir^1], 1);
-	r = &p->nei[dir];
-	for (i = 0; i < r->n; ++i) { // move p->nei[dir^1] to p->nei[dir] and visa versa
-		int ovlp = (int)(r->a[i].y + p->nei[dir^1].a[0].y) - p->l;
-		fm128_t z;
-		if (r->a[i].x == p->k[0] || r->a[i].x == p->k[1]) continue; // loop
-		if (ovlp < g->min_ovlp) ovlp = 0;
-		nei_idd = get_node_id(g->h, r->a[i].x);
-		t = &g->nodes.a[nei_idd>>1].nei[nei_idd&1];
-		z.x = r->a[i].x, z.y = ovlp;
-		kv_push(fm128_t, *s, z); // add p->nei[dir] to p->nei[dir^1]
-		for (j = 0; j < t->n; ++j) { // in p->nei[dir], replace p with p->nei[dir^1]
-			if (t->a[j].x == p->k[dir]) {
-				t->a[j].x = p->nei[dir^1].a[0].x;
-				t->a[j].y = ovlp;
+static void rmnode_int(msg_t *g, size_t id)
+{
+	int i, j;
+	fmnode_t *p = &g->nodes.a[id];
+	if (p->l < 0) return;
+	if (p->nei[0].n && p->nei[1].n) {
+		for (i = 0; i < p->nei[0].n; ++i) {
+			if (p->nei[0].a[i].x == p->k[0] || p->nei[0].a[i].x == p->k[1]) continue;
+			for (j = 0; j < p->nei[1].n; ++j) {
+				int ovlp = (int)(p->nei[0].a[i].y + p->nei[1].a[j].y) - p->l;
+				if (p->nei[1].a[j].x == p->k[0] || p->nei[1].a[j].x == p->k[1]) continue;
+				if (ovlp >= g->min_ovlp) {
+					add_arc(g, p->nei[0].a[i].x, p->nei[1].a[j].x, ovlp);
+					add_arc(g, p->nei[1].a[j].x, p->nei[0].a[i].x, ovlp);
+				}
 			}
 		}
 	}
-	p->nei[0].n = p->nei[1].n = 0;
-	p->l = -1; p->n = 0;
-}
-
-static void rmnode(msg_t *g, size_t id)
-{
-	fmnode_t *p = &g->nodes.a[id];
-	if (p->l < 0) return;
-	if (p->nei[0].n == 0 || p->nei[1].n == 0) rmnode_force(g, p);
-	else if (p->nei[0].n == 1 || p->nei[1].n == 1) rmnode_sgl_nei(g, p);
+	rmnode_force(g, p);
 }
 
 void msg_rm_tips(msg_t *g, int min_len, int min_cnt)
@@ -448,7 +436,7 @@ void msg_rm_tips(msg_t *g, int min_len, int min_cnt)
 	for (i = 0; i < g->nodes.n; ++i) {
 		fmnode_t *p = &g->nodes.a[i];
 		if (p->nei[0].n && p->nei[1].n) continue; // not a tip
-		if (p->l < min_len && p->n < min_cnt) rmnode(g, i);
+		if (p->l < min_len && p->n < min_cnt) rmnode_force(g, p);
 	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] removed tips shorter than %dbp in %.3f sec.\n", __func__, min_len, cputime() - t);
@@ -1009,7 +997,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
 			if (g->nodes.a[i].n < opt->min_int_cnt)
-				rmnode(g, i);
+				rmnode_int(g, i);
 		for (i = 0; i < g->nodes.n; ++i) rm_dup_arc(&g->nodes.a[i]);
 		fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
 		drop_all_weak_arcs(g, opt->min_ovlp, opt->min_ovlp_ratio);
