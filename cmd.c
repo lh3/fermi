@@ -475,7 +475,7 @@ int main_clean(int argc, char *argv[])
 	float read_diff_ratio = 0.7;
 	fmclnopt_t opt;
 	opt.aggressive_pop = 0;
-	opt.min_ext_len = 200; opt.min_ext_cnt = 4;
+	opt.min_ext_len = 300; opt.min_ext_cnt = 4;
 	opt.min_int_cnt = 2;
 	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3; opt.max_bub_len = 500;
 	opt.min_ovlp    = 60;  opt.min_ovlp_ratio=0.8;

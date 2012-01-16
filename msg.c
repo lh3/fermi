@@ -932,7 +932,7 @@ static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 			double r_diff, n_diff;
 			n_diff = .25 * (l_qry - aux.score);
 			r_diff = n_diff / l_qry;
-			if ((int)(n_diff + .499) == 1 || r_diff < 0.1) break;
+			if ((int)(n_diff + .499) <= 1 || r_diff < 0.1) break;
 		}
 	}
 	if (i != r->n) rmnode_force(g, p);
@@ -1066,15 +1066,20 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
-	for (i = 0; i < g->nodes.n; ++i)
-		tip_sw(g, i, opt->min_ext_len, opt->min_ext_cnt);
+	{
+		double t = cputime();
+		for (i = 0; i < g->nodes.n; ++i)
+			tip_sw(g, i, opt->min_ext_len, opt->min_ext_cnt);
+		msg_join_unambi(g);
+		if (fm_verbose >= 3) fprintf(stderr, "[M::%s] removed bubble tips in %.3f sec.\n", __func__, cputime() - t);
+	}
 	if (opt->min_int_cnt >= 2) {
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
 			if (g->nodes.a[i].n < opt->min_int_cnt)
 				rmnode_int(g, i);
 		for (i = 0; i < g->nodes.n; ++i) rm_dup_arc(&g->nodes.a[i]);
-		fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
+		if (fm_verbose >= 3) fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
 		drop_all_weak_arcs(g, opt->min_ovlp, opt->min_ovlp_ratio);
 		msg_rm_tips(g, opt->min_ext_len, opt->min_ext_cnt);
 		msg_join_unambi(g);
