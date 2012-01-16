@@ -1066,7 +1066,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
-	{
+	if (opt->aggressive_pop) {
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
 			tip_sw(g, i, opt->min_ext_len, opt->min_ext_cnt);
