@@ -875,10 +875,9 @@ void msg_join_unambi(msg_t *g)
 
 static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 {
-	int i, j, k, dir, max_l, l_qry;
+	int i, j, k, l, dir, max_l, l_qry;
 	fmnode_t *p, *q, *t;
-	fm128_v *r;
-	uint64_t w;
+	fm128_v *r, *s;
 	uint8_t *seq;
 	int8_t mat[16];
 	ksw_query_t *qry;
@@ -886,58 +885,79 @@ static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 
 	p = &g->nodes.a[id];
 	if (p->l < 0 || p->n < min_cnt || p->l > tip_len) return;
-	if (p->nei[0].n + p->nei[1].n != 1) return;
+	if (p->nei[0].n && p->nei[1].n) return;
 	dir = p->nei[0].n? 0 : 1;
-	w = get_node_id(g->h, p->nei[dir].a[0].x);
-	if (w == (uint64_t)-1) return;
-	q = &g->nodes.a[w>>1];
-	if (q->nei[w&1].n == 1) return; // this is already merge-able
-
-	// get the query ready
-	max_l = (p->l - p->nei[dir].a[0].y) * 2;
 	for (i = k = 0; i < 4; ++i)
 		for (j = 0; j < 4; ++j)
 			mat[k++] = i == j? 1 : -3;
-	seq = malloc(max_l + 1);
-	if (dir == 0) { // forward strand
-		for (j = p->nei[dir].a[0].y, k = 0; j < p->l; ++j)
-			seq[k++] = p->seq[j] - 1;
-	} else { // reverse
-		for (j = p->l - p->nei[dir].a[0].y - 1, k = 0; j >= 0; --j)
-			seq[k++] = 4 - p->seq[j];
-	}
-	l_qry = k;
-	qry = ksw_qinit(2, l_qry, seq, 4, mat);
-	aux.gapo = 3; aux.gape = 2; aux.T = l_qry / 2;
-	//fprintf(stderr, "===> %lld:%lld, %d, %ld <===\n", p->k[0], p->k[1], p->n, q->nei[w&1].n);
-	//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fputc('\n', stderr);
-
-	r = &q->nei[w&1];
-	for (i = 0; i < r->n; ++i) {
-		if (r->a[i].x == p->k[dir]) continue;
-		w = get_node_id(g->h, r->a[i].x);
-		if (w == (uint64_t)-1) continue;
-		// get the target sequence
-		t = &g->nodes.a[w>>1];
-		if (w&1) { // reverse strand
-			for (j = t->l - r->a[i].y - 1, k = 0; j >= 0 && k < max_l; --j)
-				seq[k++] = 4 - t->seq[j];
-		} else {
-			for (j = r->a[i].y, k = 0; j < t->l && k < max_l; ++j)
-				seq[k++] = t->seq[j] - 1;
+	aux.gapo = 3; aux.gape = 2;
+	
+	s = &p->nei[dir];
+	for (l = 0; l < s->n; ++l) {
+		uint64_t v;
+		v = get_node_id(g->h, s->a[l].x);
+		if (v == (uint64_t)-1) continue;
+		q = &g->nodes.a[v>>1];
+		if (q == p || q->nei[v&1].n == 1) continue;
+		// get the query ready
+		max_l = (p->l - s->a[l].y) * 2;
+		seq = malloc(max_l + 1);
+		if (dir == 0) { // forward strand
+			for (j = s->a[l].y, k = 0; j < p->l; ++j)
+				seq[k++] = p->seq[j] - 1;
+		} else { // reverse
+			for (j = p->l - s->a[l].y - 1, k = 0; j >= 0; --j)
+				seq[k++] = 4 - p->seq[j];
 		}
-		ksw_sse2(qry, k, seq, &aux);
-		//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fprintf(stderr, "\t%d\n", aux.score);
-		if (aux.score) {
-			double r_diff, n_diff;
-			n_diff = .25 * (l_qry - aux.score);
-			r_diff = n_diff / l_qry;
-			if ((int)(n_diff + .499) <= 1 || r_diff < 0.1) break;
-		}
-	}
-	if (i != r->n) rmnode_force(g, p);
+		l_qry = k; aux.T = l_qry / 2;
+		qry = ksw_qinit(2, l_qry, seq, 4, mat);
+		//fprintf(stderr, "===> %lld:%lld:%d[%d], %d, %ld <===\n", p->k[0], p->k[1], s->n, l, p->n, q->nei[v&1].n);
+		//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fputc('\n', stderr);
 
-	free(seq); free(qry);
+		r = &q->nei[v&1];
+		for (i = 0; i < r->n; ++i) {
+			uint64_t w;
+			if (r->a[i].x == p->k[dir]) continue;
+			w = get_node_id(g->h, r->a[i].x);
+			if (w == (uint64_t)-1) continue;
+			// get the target sequence
+			t = &g->nodes.a[w>>1];
+			if (w&1) { // reverse strand
+				for (j = t->l - r->a[i].y - 1, k = 0; j >= 0 && k < max_l; --j)
+					seq[k++] = 4 - t->seq[j];
+			} else {
+				for (j = r->a[i].y, k = 0; j < t->l && k < max_l; ++j)
+					seq[k++] = t->seq[j] - 1;
+			}
+			ksw_sse2(qry, k, seq, &aux);
+			//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fprintf(stderr, "\t%d\n", aux.score);
+			if (aux.score) {
+				double r_diff, n_diff;
+				n_diff = .25 * (l_qry - aux.score);
+				r_diff = n_diff / l_qry;
+				if ((int)(n_diff + .499) <= 1 || r_diff < 0.1) break;
+			}
+		}
+
+		if (i != r->n) {
+			// mark delete in p and delete in q
+			arc_mark_del(s->a[l]);
+			for (i = 0; i < r->n; ++i)
+				if (r->a[i].x == p->k[dir])
+					arc_mark_del(r->a[i]);
+			for (i = j = 0; i < r->n; ++i)
+				if (!arc_is_del(r->a[i]))
+					r->a[j++] = r->a[i];
+			r->n = j;
+		}
+		free(seq); free(qry);
+	}
+
+	for (i = j = 0; i < s->n; ++i)
+		if (!arc_is_del(s->a[i]))
+			s->a[j++] = s->a[i];
+	s->n = j;
+	if (s->n == 0) rmnode_force(g, p);
 }
 
 /*********************************************
