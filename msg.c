@@ -942,11 +942,8 @@ static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 		if (i != r->n) {
 			// mark delete in p and delete in q
 			arc_mark_del(s->a[l]);
-			for (i = 0; i < r->n; ++i)
-				if (r->a[i].x == p->k[dir])
-					arc_mark_del(r->a[i]);
 			for (i = j = 0; i < r->n; ++i)
-				if (!arc_is_del(r->a[i]))
+				if (r->a[i].x != p->k[dir])
 					r->a[j++] = r->a[i];
 			r->n = j;
 		}
@@ -1086,7 +1083,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
-	{
+	if (opt->aggressive_pop) {
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
 			tip_sw(g, i, opt->min_ext_len, opt->min_ext_cnt);
