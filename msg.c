@@ -867,6 +867,72 @@ void msg_join_unambi(msg_t *g)
 		fprintf(stderr, "[M::%s] joined unambiguous arcs in %.2f sec\n", __func__, cputime() - tcpu);
 }
 
+/*************************
+ * SW high-coverage tips *
+ *************************/
+
+#include "ksw.h"
+
+static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
+{
+	int i, j, k, dir, max_l;
+	fmnode_t *p, *q, *t;
+	fm128_v *r;
+	uint64_t w;
+	uint8_t *seq;
+	int8_t mat[16];
+	ksw_query_t *qry;
+	ksw_aux_t aux;
+
+	p = &g->nodes.a[id];
+	if (p->l < 0 || p->n < min_cnt || p->l > tip_len) return;
+	if (p->nei[0].n + p->nei[1].n != 1) return;
+	dir = p->nei[0].n? 0 : 1;
+	w = get_node_id(g->h, p->nei[dir].a[0].x);
+	if (w == (uint64_t)-1) return;
+	q = &g->nodes.a[w>>1];
+	if (q->nei[w&1].n == 1) return; // this is already merge-able
+
+	// get the query ready
+	max_l = (p->l - p->nei[dir].a[0].y) * 2;
+	for (i = k = 0; i < 4; ++i)
+		for (j = 0; j < 4; ++j)
+			mat[k++] = i == j? 1 : -3;
+	seq = malloc(max_l + 1);
+	if (dir == 0) { // forward strand
+		for (j = p->nei[dir].a[0].y, k = 0; j < p->l; ++j)
+			seq[k++] = p->seq[j] - 1;
+	} else { // reverse
+		for (j = p->l - p->nei[dir].a[0].y - 1, k = 0; j >= 0; --j)
+			seq[k++] = 4 - p->seq[j];
+	}
+
+	qry = ksw_qinit(2, k, seq, 4, mat);
+	aux.gapo = 3; aux.gape = 2; aux.T = p->l / 2;
+	fprintf(stderr, "===> %lld:%lld, %d, %ld <===\n", p->k[0], p->k[1], p->n, q->nei[w&1].n);
+	for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fputc('\n', stderr);
+
+	r = &q->nei[w&1];
+	for (i = 0; i < r->n; ++i) {
+		if (r->a[i].x == p->k[dir]) continue;
+		w = get_node_id(g->h, r->a[i].x);
+		if (w == (uint64_t)-1) continue;
+		// get the target sequence
+		t = &g->nodes.a[w>>1];
+		if (w&1) { // reverse strand
+			for (j = t->l - r->a[i].y - 1, k = 0; j >= 0 && k < max_l; --j)
+				seq[k++] = 4 - t->seq[j];
+		} else {
+			for (j = r->a[i].y, k = 0; j < t->l && k < max_l; ++j)
+				seq[k++] = t->seq[j] - 1;
+		}
+		ksw_sse2(qry, k, seq, &aux);
+		for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fprintf(stderr, "\t%d\n", aux.score);
+	}
+
+	free(seq); free(qry);
+}
+
 /*********************************************
  * A-statistics and simplistic flow analysis *
  *********************************************/
@@ -993,6 +1059,8 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 		msg_join_unambi(g);
 	}
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
+	for (i = 0; i < g->nodes.n; ++i)
+		tip_sw(g, i, opt->min_ext_len, opt->min_ext_cnt);
 	if (opt->min_int_cnt >= 2) {
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
