@@ -875,7 +875,7 @@ void msg_join_unambi(msg_t *g)
 
 static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 {
-	int i, j, k, dir, max_l;
+	int i, j, k, dir, max_l, l_qry;
 	fmnode_t *p, *q, *t;
 	fm128_v *r;
 	uint64_t w;
@@ -906,11 +906,11 @@ static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 		for (j = p->l - p->nei[dir].a[0].y - 1, k = 0; j >= 0; --j)
 			seq[k++] = 4 - p->seq[j];
 	}
-
-	qry = ksw_qinit(2, k, seq, 4, mat);
-	aux.gapo = 3; aux.gape = 2; aux.T = p->l / 2;
-	fprintf(stderr, "===> %lld:%lld, %d, %ld <===\n", p->k[0], p->k[1], p->n, q->nei[w&1].n);
-	for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fputc('\n', stderr);
+	l_qry = k;
+	qry = ksw_qinit(2, l_qry, seq, 4, mat);
+	aux.gapo = 3; aux.gape = 2; aux.T = l_qry / 2;
+	//fprintf(stderr, "===> %lld:%lld, %d, %ld <===\n", p->k[0], p->k[1], p->n, q->nei[w&1].n);
+	//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fputc('\n', stderr);
 
 	r = &q->nei[w&1];
 	for (i = 0; i < r->n; ++i) {
@@ -927,8 +927,15 @@ static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 				seq[k++] = t->seq[j] - 1;
 		}
 		ksw_sse2(qry, k, seq, &aux);
-		for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fprintf(stderr, "\t%d\n", aux.score);
+		//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fprintf(stderr, "\t%d\n", aux.score);
+		if (aux.score) {
+			double r_diff, n_diff;
+			n_diff = .25 * (l_qry - aux.score);
+			r_diff = n_diff / l_qry;
+			if ((int)(n_diff + .499) == 1 || r_diff < 0.1) break;
+		}
 	}
+	if (i != r->n) rmnode_force(g, p);
 
 	free(seq); free(qry);
 }
