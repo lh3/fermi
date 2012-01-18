@@ -940,6 +940,16 @@ static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 	free(seq); free(qry);
 }
 
+void msg_popbub_open(msg_t *g, int tip_len, int min_cnt)
+{
+	double t = cputime();
+	ssize_t i;
+	for (i = g->nodes.n - 1; i >= 0; --i)
+		tip_sw(g, i, tip_len, min_cnt);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] popped open bubble in %.3f sec.\n", __func__, cputime() - t);
+}
+
 /*********************************************
  * A-statistics and simplistic flow analysis *
  *********************************************/
@@ -1067,11 +1077,8 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	}
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
 	if (opt->aggressive_pop) {
-		double t = cputime();
-		for (i = 0; i < g->nodes.n; ++i)
-			tip_sw(g, i, opt->min_ext_len, opt->min_ext_cnt);
+		msg_popbub_open(g, opt->min_ext_len, opt->min_ext_cnt);
 		msg_join_unambi(g);
-		if (fm_verbose >= 3) fprintf(stderr, "[M::%s] removed bubble tips in %.3f sec.\n", __func__, cputime() - t);
 	}
 	if (opt->min_int_cnt >= 2) {
 		double t = cputime();

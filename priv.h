@@ -28,6 +28,7 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out);
 void msg_nodecpy(fmnode_t *dst, const fmnode_t *src);
 void msg_rm_tips(msg_t *g, int min_len, int min_cnt);
 void msg_popbub(msg_t *g, int max_len, int max_nodes);
+void msg_popbub_open(msg_t *g, int tip_len, int min_cnt);
 void msg_join_unambi(msg_t *g);
 
 #endif
