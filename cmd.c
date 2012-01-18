@@ -220,7 +220,7 @@ int main_pairext(int argc, char *argv[])
 		}
 	}
 	if (optind + 4 > argc) {
-		fprintf(stderr, "Usage: fermi pairext [-t nThreads] <reads.fmd> <graph.msg> <avg> <std>\n");
+		fprintf(stderr, "Usage: fermi pairext [-A] [-t nThreads] <reads.fmd> <graph.msg> <avg> <std>\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);

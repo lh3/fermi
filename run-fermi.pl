@@ -17,6 +17,7 @@ sub main {
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
 Options: -P        the input is paired
          -c        the input is collated FASTQ (two ends in the same file)
+		 -A        aggressive bubble popping in pairext
          -e FILE   fermi executable [$opts{e}]
          -t INT    number of threads [$opts{t}]
          -p STR    prefix of output files [$opts{p}]
