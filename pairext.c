@@ -105,8 +105,7 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 		msg_rm_tips(g, max_len + 1, 2); // very mild tip removal; note that max_len+1 <= p->len
 		msg_join_unambi(g);
 		if (is_aggressive) { // aggressive bubble popping
-			msg_popbub_open(g, max_len - 1, 1);
-			msg_join_unambi(g);
+			//msg_popbub_open(g, max_len - 1, 1); msg_join_unambi(g);
 			msg_popbub(g, max_len * 2, 25);
 			msg_join_unambi(g);
 		}
