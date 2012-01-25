@@ -1083,7 +1083,7 @@ void msg_clean(msg_t *g, const fmclnopt_t *opt)
 	if (opt->min_int_cnt >= 2) {
 		double t = cputime();
 		for (i = 0; i < g->nodes.n; ++i)
-			if (g->nodes.a[i].n < opt->min_int_cnt)
+			if (g->nodes.a[i].n < opt->min_int_cnt && g->nodes.a[i].l < opt->min_ext_len)
 				rmnode_int(g, i);
 		for (i = 0; i < g->nodes.n; ++i) rm_dup_arc(&g->nodes.a[i]);
 		if (fm_verbose >= 3) fprintf(stderr, "[M::%s] removed weak arcs in %.3f sec.\n", __func__, cputime() - t);
