@@ -54,6 +54,9 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 			kputw(q->y>>32, out); kputc(':', out);
 			kputw(q->y<<32>>33, out);
 		}
+		if (p->pcv) {
+			kputc('\t', out); kputsn(p->pcv, p->l, out);
+		}
 	}
 	kputc('\n', out);
 	ks_resize(out, out->l + 2 * p->l + 5);
@@ -229,12 +232,18 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 				x.y |= (uint64_t)strtol(q, &q, 10)<<32; ++q;
 				x.y |= strtol(q, &q, 10)<<1;
 				kv_push(fm128_t, p->mapping, x);
-				if (*q++ == 0) break;
+				if (*q == 0 || *q == '\t') break;
+				++q;
+			}
+			if (seq->comment.l - (q - seq->comment.s) > p->l) {
+				p->pcv = malloc(tmp);
+				memcpy(p->pcv, q + 1, p->l);
+				p->pcv[p->l] = 0;
 			}
 		}
 		if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->avg_cov < 1.001) {
 			if (drop_tip) {
-				free(p->nei[0].a); free(p->nei[1].a); free(p->cov); free(p->seq);
+				free(p->nei[0].a); free(p->nei[1].a); free(p->cov); free(p->seq); free(p->pcv); free(p->mapping.a);
 				--g->nodes.n;
 			}
 			++n_tips;
@@ -265,10 +274,11 @@ void msg_destroy(msg_t *g)
 		fmnode_t *p = &g->nodes.a[i];
 		if (p->l < 0) continue;
 		free(p->nei[0].a); free(p->nei[1].a); free(p->mapping.a);
-		free(p->seq); free(p->cov);
+		free(p->seq); free(p->cov); free(p->pcv);
 	}
 	free(g->nodes.a);
 	kh_destroy(64, g->h);
+	free(g);
 }
 
 static inline uint64_t get_node_id(hash64_t *h, uint64_t tid)
@@ -758,6 +768,7 @@ static void flip(fmnode_t *p, hash64_t *h)
 	khint_t k;
 	seq_revcomp6(p->l, (uint8_t*)p->seq);
 	seq_reverse(p->l, (uint8_t*)p->cov);
+	if (p->pcv) seq_reverse(p->l, (uint8_t*)p->pcv);
 	__swap(p->k[0], p->k[1]);
 	t = p->nei[0]; p->nei[0] = p->nei[1]; p->nei[1] = t;
 	k = kh_get(64, h, p->k[0]);
@@ -782,7 +793,7 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	fmnode_t *p = &g->nodes.a[w], *q;
 	khint_t kp, kq;
 	uint32_t tmp;
-	int i, j, new_l;
+	int i, j, ori_l, new_l;
 	if (p->nei[1].n != 1) return -1; // cannot be merged
 	kq = kh_get(64, g->h, p->nei[1].a[0].x);
 	if (kq == kh_end((hash64_t*)g->h)) return -2; // not found
@@ -811,6 +822,7 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 		kroundup32(tmp);
 		p->seq = realloc(p->seq, tmp);
 		p->cov = realloc(p->cov, tmp);
+		if (p->pcv) p->pcv = realloc(p->pcv, tmp);
 	}
 	// merge seq and cov
 	for (i = p->l - p->nei[1].a[0].y, j = 0; j < q->l; ++i, ++j) { // write seq and cov
@@ -819,6 +831,12 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 			if ((int)p->cov[i] + (q->cov[j] - 33) > 126) p->cov[i] = 126;
 			else p->cov[i] += q->cov[j] - 33;
 		} else p->cov[i] = q->cov[j];
+		if (p->pcv) {
+			if (i < p->l) {
+				if ((int)p->pcv[i] + (q->pcv[j] - 33) > 126) p->pcv[i] = 126;
+				else p->pcv[i] += q->pcv[j] - 33;
+			} else p->pcv[i] = q->pcv[j];
+		}
 	}
 	p->seq[new_l] = p->cov[new_l] = 0;
 	p->avg_cov = (p->l * p->avg_cov + q->l * q->avg_cov) / new_l; // recalculate coverage
@@ -827,14 +845,27 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	free(p->nei[1].a);
 	p->nei[1] = q->nei[1]; p->k[1] = q->k[1];
 	if (p->mapping.n || q->mapping.n) {
-		for (i = 0; i < q->mapping.n; ++i)
+		for (i = 0; i < q->mapping.n; ++i) {
+			q->mapping.a[i].y += (uint64_t)(new_l - q->l)<<32 | (uint64_t)(new_l - q->l)<<1;
 			kv_push(fm128_t, p->mapping, q->mapping.a[i]);
+		}
 		ks_introsort_128x(p->mapping.n, p->mapping.a);
-		for (i = 1; i < p->mapping.n; ++i)
-			if ((p->mapping.a[i].x ^ p->mapping.a[i-1].x) == 1)
-				p->mapping.a[i].x = p->mapping.a[i-1].x = 0xffffffffU;
+		for (i = 1; i < p->mapping.n; ++i) {
+			fm128_t *r = &p->mapping.a[i-1];
+			if ((r[1].x ^ r[0].x) == 1) {
+				int beg, end;
+				if (((r[0].y^r[1].y)&1) != 1) continue; // not on the opposite strand
+				if (r[0].y&1) beg = r[1].y>>32, end = r[0].y<<32>>33; // r[1] on the forward
+				else beg = r[0].y>>32, end = r[1].y<<32>>33; // r[0] on the forward
+				if (end <= beg || end - beg > FM_MAX_ISIZE) continue;
+				if (p->pcv)
+					for (j = beg; j < end; ++j)
+						if (p->pcv[j] < 126) ++p->pcv[j];
+				r[0].y = r[1].y = 0;
+			}
+		}
 		for (i = j = 0; i < p->mapping.n; ++i)
-			if (p->mapping.a[i].x != 0xffffffffU)
+			if (p->mapping.a[i].y != 0)
 				p->mapping.a[j++] = p->mapping.a[i];
 		p->mapping.n = j;
 	}
@@ -843,8 +874,8 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	assert(kp != kh_end((hash64_t*)g->h));
 	kh_val((hash64_t*)g->h, kp) = w<<1|1;
 	// clean up q
-	free(q->cov); free(q->seq);
-	q->cov = q->seq = 0; q->l = -1; q->n = 0;
+	free(q->pcv); free(q->cov); free(q->seq);
+	q->pcv = q->cov = q->seq = 0; q->l = -1; q->n = 0;
 	free(q->nei[0].a); free(q->mapping.a);
 	q->nei[0].n = q->nei[0].m = q->nei[1].n = q->nei[1].m = q->mapping.n = q->mapping.m = 0;
 	q->nei[0].a = q->nei[1].a = q->mapping.a = 0; // q->nei[1] has been copied over to p->nei[1], so we can delete it

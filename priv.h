@@ -5,6 +5,8 @@
 #include "fermi.h"
 #include "utils.h"
 
+#define FM_MAX_ISIZE 1000
+
 int ksa_sa(const unsigned char *T, int *SA, int n, int k);
 int ksa_bwt(unsigned char *T, int n, int k);
 int ksa_bwt64(unsigned char *T, int64_t n, int k);

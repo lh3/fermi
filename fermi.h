@@ -44,7 +44,7 @@ typedef struct {
 	int l, n;
 	float avg_cov;
 	int aux[2];
-	char *seq, *cov;
+	char *seq, *cov, *pcv;
 } fmnode_t;
 
 typedef struct { size_t n, m; fmnode_t *a; } fmnode_v;

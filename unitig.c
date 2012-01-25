@@ -17,8 +17,6 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
-#define MAX_ISIZE 1000
-
 static volatile uint64_t g_n, g_sum, g_sum2, g_unpaired; // for estimating the insert size distribution
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
@@ -101,9 +99,9 @@ int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t
 	return ret;
 }
 
-static void pair_add(aux_t *a, const fmintv_t *intv, int beg, int end)
+static void pair_add(aux_t *a, const fmintv_t *intv, int beg, int end, kstring_t *pcv)
 {
-	int i;
+	int i, j;
 	hash64_t *h = a->h;
 	if (a->sorted == 0 || a->h == 0) return;
 	for (i = 0; i < intv->x[2]; ++i) {
@@ -114,8 +112,11 @@ static void pair_add(aux_t *a, const fmintv_t *intv, int beg, int end)
 		if (iter != kh_end(h)) { // mate found
 			if ((k&1) && !(kh_val(h, iter)&1)) { // inward orientation
 				int l = end - (kh_val(h, iter)>>32);
-				if (l < MAX_ISIZE) { // properly paired; remove the mate
+				if (l < FM_MAX_ISIZE) { // properly paired; remove the mate
 					++a->n, a->sum += l, a->sum2 += l * l;
+					if (pcv)
+						for (j = kh_val(h, iter)>>32; j < end; ++j)
+							if (pcv->s[j] < 126) ++pcv->s[j];
 					kh_del(64, h, iter);
 				} else to_add = 1, ++a->unpaired;
 			} else to_add = 1, ++a->unpaired;
@@ -269,7 +270,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	return ret;
 }
 
-static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
+static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end, kstring_t *pcv)
 {
 	int i, beg = beg0, rbeg, ori_l = s->l, n_reads = 0;
 	while ((rbeg = try_right(a, beg, s, 1)) >= 0) { // loop if there is at least one overlap
@@ -289,9 +290,14 @@ static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint6
 		set_bits(a->used, &a->nei.a[0], a->sorted); // successful extension
 		++n_reads;
 		if (a->sorted) {
-			pair_add(a, &a->nei.a[0], rbeg, s->l);
+			if (pcv) {
+				if (pcv->m < s->m) ks_resize(pcv, s->m);
+				pcv->l = s->l; pcv->s[pcv->l] = 0;
+				for (i = ori_l; i < s->l; ++i) pcv->s[i] = 33;
+			}
+			pair_add(a, &a->nei.a[0], rbeg, s->l, pcv);
 			for (i = 0; i < a->contained.n; ++i)
-				pair_add(a, &a->contained.a[i], (uint32_t)a->contained.a[i].info, a->contained.a[i].info>>32);
+				pair_add(a, &a->contained.a[i], (uint32_t)a->contained.a[i].info, a->contained.a[i].info>>32, pcv);
 		}
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
@@ -329,7 +335,7 @@ static void copy_nei(fm128_v *dst, const fmintv_v *src)
 	}
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], fm128_v *mapping, int *n_reads)
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], fm128_v *mapping, int *n_reads, kstring_t *pcv)
 {
 	fmintv_t intv0;
 	int seed_len, ret;
@@ -354,17 +360,24 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
 	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
-	if (a->sorted) pair_add(a, &intv0, 0, s->l);
+	if (a->sorted) {
+		if (pcv) {
+			if (pcv->m < s->m) ks_resize(pcv, s->m);
+			pcv->l = s->l; pcv->s[pcv->l] = 0;
+			for (i = 0; i < pcv->l; ++i) pcv->s[i] = 33;
+		}
+		pair_add(a, &intv0, 0, s->l, pcv);
+	}
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	if (a->a[0].n) { // no need to extend to the right if there is no overlap
-		*n_reads += unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
+		*n_reads += unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0], pcv);
 		copy_nei(&nei[0], &a->nei);
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
 	flip_seq(s, a->h);
-	*n_reads += unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
+	*n_reads += unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1], pcv);
 	copy_nei(&nei[1], &a->nei);
 	if (a->h && mapping) {
 		khint_t iter;
@@ -384,19 +397,20 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	uint64_t i;
 	int max_l = 0;
 	aux_t a;
-	kstring_t str, cov, out;
+	kstring_t str, cov, out, pcv, *ppcv;
 	fmnode_t z;
 
 	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
 	memset(&a, 0, sizeof(aux_t));
 	memset(&z, 0, sizeof(fmnode_t));
-	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
+	str.l = str.m = cov.l = cov.m = pcv.l = pcv.m = out.l = out.m = 0; str.s = cov.s = pcv.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	if (sorted) a.h = kh_init(64);
+	ppcv = sorted? &pcv : 0;
 	// the core loop
 	for (i = start|1; i < end; i += 2) {
-		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping, &z.n) >= 0) { // then we keep the unitig
+		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping, &z.n, ppcv) >= 0) { // then we keep the unitig
 			uint64_t *p[2], x[2];
 			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
@@ -406,9 +420,11 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 				max_l = str.m;
 				z.seq = realloc(z.seq, max_l);
 				z.cov = realloc(z.cov, max_l);
+				if (ppcv) z.pcv = realloc(z.pcv, max_l);
 			}
 			memcpy(z.seq, str.s, z.l);
 			memcpy(z.cov, cov.s, z.l + 1);
+			if (z.pcv) memcpy(z.pcv, pcv.s, z.l + 1);
 			if (nodes) { // keep in the nodes array
 				fmnode_t *q;
 				int j, sum = 0;
@@ -429,8 +445,8 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	__sync_fetch_and_add(&g_unpaired, a.unpaired);
 	if (a.h) kh_destroy(64, a.h);
 	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a); free(a.contained.a);
-	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov); free(z.mapping.a);
-	free(a.str.s); free(str.s); free(cov.s); free(out.s);
+	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov); free(z.pcv); free(z.mapping.a);
+	free(a.str.s); free(str.s); free(cov.s); free(out.s); free(pcv.s);
 }
 
 typedef struct {
