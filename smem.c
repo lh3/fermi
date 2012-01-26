@@ -114,12 +114,14 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
-static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h)
+static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h, int *n_supp)
 {
 	fmsmem_i *iter;
-	uint8_t *cov;
-	cov = calloc(len + 1, 1);
+	uint8_t *cov, *pcv;
+	cov = calloc((len + 1) * 2, 1);
+	pcv = cov + len + 1;
 	iter = fm6_miter_init(e, len, q);
+	*n_supp = 0;
 	while (fm6_miter_next(iter) >= 0) {
 		int i, ret, tmp, j;
 		uint64_t k, l;
@@ -127,6 +129,10 @@ static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, con
 		for (i = 0; i < iter->match.n; ++i) {
 			fmintv_t *p = &iter->match.a[i];
 			if (p->info>>63 && p->x[1] < e->mcnt[1]) { // full-length match
+				tmp = p->info&FM_MASK30;
+				for (j = p->info>>32&FM_MASK30; j < tmp; ++j) // update coverage
+					if (cov[j] < 255) ++cov[j];
+				++(*n_supp);
 				for (l = 0; l < p->x[2]; ++l) {
 					k = sorted[p->x[1] + l] >> 2;
 					if ((k&1) == 0) { // reverse stand; check
@@ -140,7 +146,7 @@ static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, con
 						if (beg > end) tmp = beg, beg = end, end = tmp;
 						if (end - beg >= FM6_MAX_ISIZE) continue;
 						for (j = beg; j < end; ++j)
-							if (cov[j] < 255) ++cov[j];
+							if (pcv[j] < 255) ++pcv[j]; // update paired coverage
 						kh_del(64, h, kk);
 					} else { // forward strand; add
 						kk = kh_put(64, h, k^3, &ret);
@@ -158,26 +164,33 @@ static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, con
 	return cov;
 }
 
-static void paircut_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *l, char **s, int start, int step)
+static void paircut_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, char *const* name)
 {
 	int i, j;
 	hash64_t *h;
 	h = kh_init(64);
 	for (i = start; i < n; i += step) {
-		uint8_t *cov, *si = (uint8_t*)s[i];
-		for (j = 0; j < l[i]; ++j)
+		uint8_t *pcv, *cov, *si = (uint8_t*)s[i];
+		int l = len[i], n_supp;
+		for (j = 0; j < l; ++j)
 			si[j] = seq_nt6_table[si[j]];
-		cov = paircov(e, l[i], si, skip, sorted, h);
-		for (j = 0; j < l[i]; ++j) {
-			si[j] = cov[j]? "$ACGTN"[si[j]] : "$acgtn"[si[j]];
+		cov = paircov(e, l, si, skip, sorted, h, &n_supp);
+		pcv = cov + l + 1;
+		for (j = 0; j < l; ++j) {
+			si[j] = pcv[j]? "$ACGTN"[si[j]] : "$acgtn"[si[j]];
+			cov[j] = cov[j] + 33 < 126? cov[j] + 33 : 126;
 		}
+		fprintf(stdout, "@%s %d %d\n", name[i], n_supp, l);
+		fwrite(si, 1, l, stdout); fwrite("\n+\n", 1, 3, stdout);
+		fwrite(cov, 1, l, stdout); fputc('\n', stdout);
+		free(cov);
 	}
 	kh_destroy(64, h);
 }
 
 typedef struct {
 	int n, m, *l;
-	char **s, **q;
+	char **s, **name;
 } seqbuf_t;
 
 static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
@@ -186,22 +199,19 @@ static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
 	int i;
 	for (i = 0; i < buf->n; ++i) {
 		free(buf->s[i]);
-		free(buf->q[i]);
+		free(buf->name[i]);
 	}
 	buf->n = 0;
 	while (kseq_read(kseq) >= 0) {
 		if (buf->n == buf->m) {
 			buf->m = buf->m? buf->m<<1 : 256;
-			buf->s = realloc(buf->s, buf->m * sizeof(void*));
-			buf->q = realloc(buf->q, buf->m * sizeof(void*));
 			buf->l = realloc(buf->l, buf->m * sizeof(int));
+			buf->s = realloc(buf->s, buf->m * sizeof(void*));
+			buf->name = realloc(buf->name, buf->m * sizeof(void*));
 		}
 		buf->l[buf->n] = kseq->seq.l;
-		buf->s[buf->n] = malloc(kseq->seq.l + 1);
-		buf->q[buf->n] = malloc(kseq->seq.l + 1);
-		memcpy(buf->q[buf->n], kseq->qual.s, kseq->seq.l + 1);
-		memcpy(buf->s[buf->n], kseq->seq.s,  kseq->seq.l + 1);
-		++buf->n;
+		buf->s[buf->n] = strdup(kseq->seq.s);
+		buf->name[buf->n++] = strdup(kseq->name.s);
 		l += kseq->seq.l;
 		if (l >= max_len) break;
 	}
@@ -218,7 +228,7 @@ typedef struct {
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	paircut_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step);
+	paircut_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->buf->name);
 	return 0;
 }
 
@@ -248,7 +258,7 @@ int fm6_paircut(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int 
 		for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 	}
 
-	free(buf->l); free(buf->s); free(buf->q);
+	free(buf->l); free(buf->s); free(buf->name);
 	kseq_destroy(seq);
 	gzclose(fp);
 	free(tid); free(w);
