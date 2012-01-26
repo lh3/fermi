@@ -31,7 +31,16 @@ int fm6_smem1_core(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *m
 		if ((!self_match && ok[c].x[2] == 0) || (self_match && ok[c].x[2] < 2)) break; // cannot be extended
 		ik = ok[c]; ik.info = i + 1;
 	}
-	if (i == len) kv_push(fmintv_t, *curr, ik); // push the last interval if we reach the end
+	if (i == len) { // push the last interval if we reach the end
+		kv_push(fmintv_t, *curr, ik); // always push this interval
+		if (!self_match) { // then test if this last interval is terminated
+			fm6_extend(e, &ik, ok, 0);
+			if (ok[0].x[2]) { // terminated; then push
+				ok[0].info = len;
+				kv_push(fmintv_t, *curr, ok[0]);
+			}
+		}
+	}
 	fm_reverse_fmivec(curr); // s.t. smaller intervals visited first
 	ret = curr->a[0].info; // this will be the returned value
 	swap = curr; curr = prev; prev = swap;
