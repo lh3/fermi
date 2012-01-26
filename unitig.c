@@ -17,8 +17,6 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
-#define MAX_ISIZE 1000
-
 static volatile uint64_t g_n, g_sum, g_sum2, g_unpaired; // for estimating the insert size distribution
 
 static inline void set_bit(uint64_t *bits, uint64_t x)
@@ -114,7 +112,7 @@ static void pair_add(aux_t *a, const fmintv_t *intv, int beg, int end)
 		if (iter != kh_end(h)) { // mate found
 			if ((k&1) && !(kh_val(h, iter)&1)) { // inward orientation
 				int l = end - (kh_val(h, iter)>>32);
-				if (l < MAX_ISIZE) { // properly paired; remove the mate
+				if (l < FM6_MAX_ISIZE) { // properly paired; remove the mate
 					++a->n, a->sum += l, a->sum2 += l * l;
 					kh_del(64, h, iter);
 				} else to_add = 1, ++a->unpaired;

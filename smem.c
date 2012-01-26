@@ -101,6 +101,159 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, i
 	return ret;
 }
 
+/****************
+ ****************/
+
+#include <zlib.h>
+#include <pthread.h>
+#include "kseq.h"
+KSEQ_DECLARE(gzFile)
+
+#include "khash.h"
+KHASH_DECLARE(64, uint64_t, uint64_t)
+
+typedef khash_t(64) hash64_t;
+
+static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h)
+{
+	fmsmem_i *iter;
+	uint8_t *cov;
+	cov = calloc(len + 1, 1);
+	iter = fm6_miter_init(e, len, q);
+	while (fm6_miter_next(iter) >= 0) {
+		int i, ret, tmp, j;
+		uint64_t k, l;
+		khint_t kk;
+		for (i = 0; i < iter->match.n; ++i) {
+			fmintv_t *p = &iter->match.a[i];
+			if (p->info>>63 && p->x[1] < e->mcnt[1]) { // full-length match
+				for (l = 0; l < p->x[2]; ++l) {
+					k = sorted[p->x[1] + l] >> 2;
+					if (k&1) { // reverse stand; check
+						int beg, end;
+						kk = kh_get(64, h, k);
+						if (kk == kh_end(h)) continue; // mate not found on the forward strand
+						beg = kh_val(h, kk);
+						end = (int)(p->info&FM_MASK30) - skip;
+						if (beg > end) tmp = beg, beg = end, end = tmp;
+						if (end - beg >= FM6_MAX_ISIZE) continue;
+						for (j = beg; j < end; ++j)
+							if (cov[j] < 255) ++cov[j];
+						kh_del(64, h, kk);
+					} else { // forward strand; add
+						kk = kh_put(64, h, k^3, &ret);
+						tmp = (p->info>>32&FM_MASK30) + skip;
+						if (tmp < len) kh_val(h, kk) = tmp;
+						else kh_del(64, h, kk);
+					}
+				}
+			}
+		}
+	}
+	fm6_miter_destroy(iter);
+	kh_clear(64, h);
+	return cov;
+}
+
+static void paircut_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *l, char **s, int start, int step)
+{
+	int i, j;
+	hash64_t *h;
+	h = kh_init(64);
+	for (i = start; i < n; i += step) {
+		uint8_t *cov, *si = (uint8_t*)s[i];
+		for (j = 0; j < l[i]; ++j)
+			si[j] = seq_nt6_table[si[j]];
+		cov = paircov(e, l[i], si, skip, sorted, h);
+		for (j = 0; j < l[i]; ++j) {
+			si[j] = cov[j]? "$ACGTN"[si[j]] : "$acgtn"[si[j]];
+		}
+	}
+	kh_destroy(64, h);
+}
+
+typedef struct {
+	int n, m, *l;
+	char **s, **q;
+} seqbuf_t;
+
+static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
+{
+	int64_t l = 0;
+	int i;
+	for (i = 0; i < buf->n; ++i) {
+		free(buf->s[i]);
+		free(buf->q[i]);
+	}
+	buf->n = 0;
+	while (kseq_read(kseq) >= 0) {
+		if (buf->n == buf->m) {
+			buf->m = buf->m? buf->m<<1 : 256;
+			buf->s = realloc(buf->s, buf->m * sizeof(void*));
+			buf->q = realloc(buf->q, buf->m * sizeof(void*));
+			buf->l = realloc(buf->l, buf->m * sizeof(int));
+		}
+		buf->l[buf->n] = kseq->seq.l;
+		buf->s[buf->n] = malloc(kseq->seq.l + 1);
+		buf->q[buf->n] = malloc(kseq->seq.l + 1);
+		memcpy(buf->q[buf->n], kseq->qual.s, kseq->seq.l + 1);
+		for (i = 0; i < kseq->seq.l; ++i)
+			buf->s[buf->n][i] = seq_nt6_table[(int)kseq->seq.s[i]];
+		buf->s[buf->n][i] = 0;
+		++buf->n;
+		l += kseq->seq.l;
+		if (l >= max_len) break;
+	}
+	return buf->n;
+}
+
+typedef struct {
+	const rld_t *e;
+	const uint64_t *sorted;
+	int start, step, skip;
+	seqbuf_t *buf;
+} worker_t;
+
+static void *worker(void *data)
+{
+	worker_t *w = (worker_t*)data;
+	paircut_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step);
+	return 0;
+}
+
+int fm6_paircut(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int n_threads)
+{
+	int i;
+	kseq_t *seq;
+	gzFile fp;
+	worker_t *w;
+	seqbuf_t *buf;
+	pthread_t *tid;
+	pthread_attr_t attr;
+
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
+	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
+	buf = calloc(1, sizeof(seqbuf_t));
+	for (i = 0; i < n_threads; ++i)
+		w[i].e = e, w[i].sorted = sorted, w[i].skip = skip, w[i].step = n_threads, w[i].start = i, w[i].buf = buf;
+	
+	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
+	seq = kseq_init(fp);
+
+	while (fill_seqbuf(seq, buf, 1<<28) > 0) {
+		for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], &attr, worker, w + i);
+		for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
+	}
+
+	free(buf->l); free(buf->s); free(buf->q);
+	kseq_destroy(seq);
+	gzclose(fp);
+	free(tid); free(w);
+	return 0;
+}
+
 // legacy interface
 int fm6_smem(const rld_t *e, int len, const uint8_t *q, fmintv_v *mem, int self_match)
 {
