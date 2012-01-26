@@ -170,6 +170,17 @@ int main_unpack(int argc, char *argv[])
 	return 0;
 }
 
+static uint64_t *load_sorted(uint64_t n, const char *fn)
+{
+	FILE *fp;
+	uint64_t *sorted;
+	fp = fopen(fn, "rb");
+	sorted = malloc(n * 8);
+	fread(sorted, n, 8, fp);
+	fclose(fp);
+	return sorted;
+}
+
 int main_unitig(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1, min_match = 30;
@@ -186,7 +197,7 @@ int main_unitig(int argc, char *argv[])
 	}
 	if (optind + 1 > argc) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi unitig [options] <reads.bwt>\n\n");
+		fprintf(stderr, "Usage:   fermi unitig [options] <reads.fmd>\n\n");
 		fprintf(stderr, "Options: -l INT      min match [%d]\n", min_match);
 		fprintf(stderr, "         -t INT      number of threads [1]\n");
 		fprintf(stderr, "         -r FILE     rank file [null]\n");
@@ -195,14 +206,38 @@ int main_unitig(int argc, char *argv[])
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	if (fn_sorted) {
-		FILE *fp;
-		fp = fopen(fn_sorted, "rb");
-		sorted = malloc(e->mcnt[1] * 8);
-		fread(sorted, e->mcnt[1], 8, fp);
-		fclose(fp);
+		sorted = load_sorted(e->mcnt[1], fn_sorted);
 		free(fn_sorted);
 	}
 	fm6_unitig(e, min_match, n_threads, sorted);
+	free(sorted);
+	rld_destroy(e);
+	return 0;
+}
+
+int main_paircut(int argc, char *argv[])
+{
+	int c, use_mmap = 0, n_threads = 1, skip = 50;
+	rld_t *e;
+	uint64_t *sorted;
+	while ((c = getopt(argc, argv, "Ml:t:")) >= 0) {
+		switch (c) {
+			case 'l': skip = atoi(optarg); break;
+			case 'M': use_mmap = 1; break;
+			case 't': n_threads = atoi(optarg); break;
+		}
+	}
+	if (optind + 3 > argc) {
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi paircut [options] <reads.fmd> <reads.rank> <contigs.fq>\n\n");
+		fprintf(stderr, "Options: -l INT      min match [%d]\n", skip);
+		fprintf(stderr, "         -t INT      number of threads [1]\n");
+		fprintf(stderr, "\n");
+		return 1;
+	}
+	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
+	sorted = load_sorted(e->mcnt[1], argv[optind+1]);
+	fm6_paircut(argv[optind+2], e, sorted, skip, n_threads);
 	free(sorted);
 	rld_destroy(e);
 	return 0;

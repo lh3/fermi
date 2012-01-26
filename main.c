@@ -20,6 +20,7 @@ int main_clean(int argc, char *argv[]);
 int main_cnt2qual(int argc, char *argv[]);
 int main_seqsort(int argc, char *argv[]);
 int main_pairext(int argc, char *argv[]);
+int main_paircut(int argc, char *argv[]);
 
 int main_example(int argc, char *argv[]);
 
@@ -70,6 +71,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "seqrank") == 0) ret = main_seqsort(argc-1, argv+1); // an alias of seqsort
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
 	else if (strcmp(argv[1], "pairext") == 0) ret = main_pairext(argc-1, argv+1);
+	else if (strcmp(argv[1], "paircut") == 0) ret = main_paircut(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);
 	else if (strcmp(argv[1], "splitfa") == 0) ret = main_splitfa(argc-1, argv+1);

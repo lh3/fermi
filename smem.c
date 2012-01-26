@@ -129,12 +129,14 @@ static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, con
 			if (p->info>>63 && p->x[1] < e->mcnt[1]) { // full-length match
 				for (l = 0; l < p->x[2]; ++l) {
 					k = sorted[p->x[1] + l] >> 2;
-					if (k&1) { // reverse stand; check
+					if ((k&1) == 0) { // reverse stand; check
 						int beg, end;
 						kk = kh_get(64, h, k);
+						//printf("X %lld get %d\n", k, (int)(p->info&FM_MASK30) - skip);
 						if (kk == kh_end(h)) continue; // mate not found on the forward strand
 						beg = kh_val(h, kk);
 						end = (int)(p->info&FM_MASK30) - skip;
+						//printf("%d\t%d\n", beg, end);
 						if (beg > end) tmp = beg, beg = end, end = tmp;
 						if (end - beg >= FM6_MAX_ISIZE) continue;
 						for (j = beg; j < end; ++j)
@@ -145,6 +147,7 @@ static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, con
 						tmp = (p->info>>32&FM_MASK30) + skip;
 						if (tmp < len) kh_val(h, kk) = tmp;
 						else kh_del(64, h, kk);
+						//printf("X %lld put %lld, %d<%d\n", k, k^3, tmp, len);
 					}
 				}
 			}
@@ -197,9 +200,7 @@ static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
 		buf->s[buf->n] = malloc(kseq->seq.l + 1);
 		buf->q[buf->n] = malloc(kseq->seq.l + 1);
 		memcpy(buf->q[buf->n], kseq->qual.s, kseq->seq.l + 1);
-		for (i = 0; i < kseq->seq.l; ++i)
-			buf->s[buf->n][i] = seq_nt6_table[(int)kseq->seq.s[i]];
-		buf->s[buf->n][i] = 0;
+		memcpy(buf->s[buf->n], kseq->seq.s,  kseq->seq.l + 1);
 		++buf->n;
 		l += kseq->seq.l;
 		if (l >= max_len) break;
