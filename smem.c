@@ -2,14 +2,19 @@
 #include "kvec.h"
 #include "kstring.h"
 
-int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, int self_match)
+typedef struct {
+	int start, len;
+	const uint8_t *q;
+	const rld_t *e;
+	fmintv_v tmpvec[2], match;
+} fmsmem_i;
+
+int fm6_smem1_core(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, int self_match, fmintv_v *prev, fmintv_v *curr)
 {
 	int i, j, c, ret;
 	fmintv_t ik, ok[6];
-	fmintv_v a[2], *prev, *curr, *swap;
+	fmintv_v *swap;
 
-	kv_init(a[0]); kv_init(a[1]);
-	prev = &a[0]; curr = &a[1];
 	fm6_set_intv(e, q[x], ik);
 
 	ik.info = x + 1;
@@ -61,10 +66,42 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, i
 	fm_reverse_fmivec(mem); // s.t. sorted by the start coordinate
 
 //	for (i = 0; i < mem->n; ++i) printf("[%lld,%lld,%lld] %lld, %lld\n", mem->a[i].x[0], mem->a[i].x[1], mem->a[i].x[2], mem->a[i].info>>32&FM_MASK30, mem->a[i].info&FM_MASK30);
+	return ret;
+}
+
+fmsmem_i *fm6_miter_init(const rld_t *e, int l, const uint8_t *q)
+{
+	fmsmem_i *m;
+	m = calloc(1, sizeof(fmsmem_i));
+	m->len = l, m->e = e, m->q = q;
+	return m;
+}
+
+void fm6_miter_destroy(fmsmem_i *m)
+{
+	free(m->tmpvec[0].a); free(m->tmpvec[1].a); free(m->match.a);
+	free(m);
+}
+
+int fm6_miter_next(fmsmem_i *m)
+{
+	m->tmpvec[0].n = m->tmpvec[1].n = m->match.n = 0;
+	if (m->start >= m->len || m->start < 0) return -1;
+	m->start = fm6_smem1_core(m->e, m->len, m->q, m->start, &m->match, 0, &m->tmpvec[0], &m->tmpvec[1]);
+	return m->start;
+}
+
+int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, int self_match)
+{
+	int ret;
+	fmintv_v a[2];
+	kv_init(a[0]); kv_init(a[1]);
+	ret = fm6_smem1_core(e, len, q, x, mem, self_match, &a[0], &a[1]);
 	free(a[0].a); free(a[1].a);
 	return ret;
 }
 
+// legacy interface
 int fm6_smem(const rld_t *e, int len, const uint8_t *q, fmintv_v *mem, int self_match)
 {
 	int x = 0, i;
