@@ -302,9 +302,10 @@ static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint6
 	return n_reads;
 }
 
-static void flip_seq(kstring_t *s, hash64_t *h)
+static void flip_seq(kstring_t *s, kstring_t *q, hash64_t *h)
 {
 	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
+	seq_reverse(q->l, (uint8_t*)q->s); // reverse the coverage
 	if (h) {
 		khint_t iter;
 		int beg, end;
@@ -361,7 +362,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
-	flip_seq(s, a->h);
+	flip_seq(s, cov, a->h);
 	*n_reads += unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	copy_nei(&nei[1], &a->nei);
 	if (a->h && mapping) {
