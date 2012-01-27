@@ -114,6 +114,7 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, i
  ****************/
 
 #include <zlib.h>
+#include <ctype.h>
 #include <pthread.h>
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
@@ -173,25 +174,54 @@ static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, con
 	return cov;
 }
 
-static void paircut_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, char *const* name)
+static void mask_pcv(int l, char *seq, const uint8_t *pcv, int skip, int min_pcv)
+{
+	int i, beg, end;
+	for (i = 0; i < l; ++i)
+		if (pcv[i] >= min_pcv) break;
+	beg = i;
+	if (beg == l) {
+		for (i = 0; i < l; ++i)
+			seq[i] = "$ACGTN"[(int)seq[i]];
+		return;
+	}
+	for (i = 0; i < beg; ++i)
+		seq[i] = beg < skip<<1? "$ACGTN"[(int)seq[i]] : "$acgtn"[(int)seq[i]];
+	for (i = l - 1; i >= 0; --i)
+		if (pcv[i] >= min_pcv) break;
+	end = i + 1;
+	for (i = end; i < l; ++i)
+		seq[i] = l - end < skip<<1? "$ACGTN"[(int)seq[i]] : "$acgtn"[(int)seq[i]];
+	for (i = beg; i < end; ++i)
+		seq[i] = pcv[i] >= min_pcv? "$ACGTN"[(int)seq[i]] : "$acgtn"[(int)seq[i]];
+}
+
+static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, int min_pcv, char *const* name)
 {
 	int i, j;
 	hash64_t *h;
 	h = kh_init(64);
 	for (i = start; i < n; i += step) {
-		uint8_t *pcv, *cov, *si = (uint8_t*)s[i];
-		int l = len[i], n_supp;
+		uint8_t *cov, *si = (uint8_t*)s[i];
+		int l = len[i], n_supp, beg, k;
 		for (j = 0; j < l; ++j)
 			si[j] = seq_nt6_table[si[j]];
 		cov = paircov(e, l, si, skip, sorted, h, &n_supp);
-		pcv = cov + l + 1;
-		for (j = 0; j < l; ++j) {
-			si[j] = pcv[j]? "$ACGTN"[si[j]] : "$acgtn"[si[j]];
+		for (j = 0; j < l; ++j)
 			cov[j] = cov[j] + 33 < 126? cov[j] + 33 : 126;
+		mask_pcv(l, (char*)si, cov + l + 1, skip, min_pcv);
+		for (j = 0; j < l; ++j) // skip the leading lowercase letters
+			if (isupper(si[j])) break;
+		beg = j;
+		for (j = beg + 1, k = 0; j <= l; ++j) {
+			if ((islower(si[j]) || j == l) && isupper(si[j-1])) {
+				fprintf(stdout, "@%s_%d %d %d\n", name[i], k, j - beg, n_supp);
+				fwrite(si + beg, 1, j - beg, stdout); fwrite("\n+\n", 1, 3, stdout);
+				fwrite(cov+ beg, 1, j - beg, stdout); fputc('\n', stdout);
+				++k;
+			}
+			if (isupper(si[j]) && islower(si[j-1])) beg = j;
 		}
-		fprintf(stdout, "@%s %d %d\n", name[i], n_supp, l);
-		fwrite(si, 1, l, stdout); fwrite("\n+\n", 1, 3, stdout);
-		fwrite(cov, 1, l, stdout); fputc('\n', stdout);
 		free(cov);
 	}
 	kh_destroy(64, h);
@@ -230,18 +260,18 @@ static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
 typedef struct {
 	const rld_t *e;
 	const uint64_t *sorted;
-	int start, step, skip;
+	int start, step, skip, min_pcv;
 	seqbuf_t *buf;
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	paircut_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->buf->name);
+	paircov_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->min_pcv, w->buf->name);
 	return 0;
 }
 
-int fm6_paircut(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int n_threads)
+int fm6_paircov(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int n_threads)
 {
 	int i;
 	kseq_t *seq;
@@ -256,8 +286,10 @@ int fm6_paircut(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int 
 	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
 	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
 	buf = calloc(1, sizeof(seqbuf_t));
-	for (i = 0; i < n_threads; ++i)
-		w[i].e = e, w[i].sorted = sorted, w[i].skip = skip, w[i].step = n_threads, w[i].start = i, w[i].buf = buf;
+	for (i = 0; i < n_threads; ++i) {
+		w[i].e = e, w[i].sorted = sorted, w[i].step = n_threads, w[i].start = i, w[i].buf = buf;
+		w[i].skip = skip, w[i].min_pcv = min_pcv;
+	}
 	
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	seq = kseq_init(fp);
