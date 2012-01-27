@@ -200,7 +200,9 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 {
 	int i, j;
 	hash64_t *h;
+	kstring_t out;
 	h = kh_init(64);
+	out.l = out.m = 0; out.s = 0;
 	for (i = start; i < n; i += step) {
 		uint8_t *cov, *si = (uint8_t*)s[i];
 		int l = len[i], n_supp, beg, k;
@@ -215,9 +217,12 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 		beg = j;
 		for (j = beg + 1, k = 0; j <= l; ++j) {
 			if ((islower(si[j]) || j == l) && isupper(si[j-1])) {
-				fprintf(stdout, "@%s_%d %d %d\n", name[i], k, j - beg, n_supp);
-				fwrite(si + beg, 1, j - beg, stdout); fwrite("\n+\n", 1, 3, stdout);
-				fwrite(cov+ beg, 1, j - beg, stdout); fputc('\n', stdout);
+				out.l = 0;
+				kputc('@', &out); kputs(name[i], &out); kputc('_', &out); kputw(k, &out);
+				kputc(' ', &out); kputw(j - beg, &out); kputc(' ', &out); kputw(n_supp, &out); kputc('\n', &out);
+				kputsn((char*)si + beg, j - beg, &out); kputsn("\n+\n", 3, &out);
+				kputsn((char*)cov+ beg, j - beg, &out); kputc('\n', &out);
+				fwrite(out.s, 1, out.l, stdout);
 				++k;
 			}
 			if (isupper(si[j]) && islower(si[j-1])) beg = j;
@@ -225,6 +230,7 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 		free(cov);
 	}
 	kh_destroy(64, h);
+	free(out.s);
 }
 
 typedef struct {
@@ -299,7 +305,7 @@ int fm6_paircov(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int 
 		for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 	}
 
-	free(buf->l); free(buf->s); free(buf->name);
+	free(buf->l); free(buf->s); free(buf->name); free(buf);
 	kseq_destroy(seq);
 	gzclose(fp);
 	free(tid); free(w);
