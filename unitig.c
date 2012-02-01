@@ -378,15 +378,14 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t end, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, fmnode_v *nodes)
+static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, fmnode_v *nodes)
 {
-	uint64_t i;
+	uint64_t i, j;
 	int max_l = 0;
 	aux_t a;
 	kstring_t str, cov, out;
 	fmnode_t z;
 
-	assert((start&1) == 0 && (end&1) == 0);
 	// initialize aux_t and all the vectors
 	memset(&a, 0, sizeof(aux_t));
 	memset(&z, 0, sizeof(fmnode_t));
@@ -394,31 +393,33 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	if (sorted) a.h = kh_init(64);
 	// the core loop
-	for (i = start|1; i < end; i += 2) {
-		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping, &z.n) >= 0) { // then we keep the unitig
-			uint64_t *p[2], x[2];
-			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
-			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
-			if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
-			z.l = str.l;
-			if (max_l < str.m) {
-				max_l = str.m;
-				z.seq = realloc(z.seq, max_l);
-				z.cov = realloc(z.cov, max_l);
-			}
-			memcpy(z.seq, str.s, z.l);
-			memcpy(z.cov, cov.s, z.l + 1);
-			if (nodes) { // keep in the nodes array
-				fmnode_t *q;
-				int j, sum = 0;
-				for (j = 0; j < z.l; ++j) sum += z.cov[j] - 33;
-				z.avg_cov = (double)sum / z.l; // compute the average coverage as this has not been done
-				kv_pushp(fmnode_t, *nodes, &q);
-				msg_nodecpy(q, &z);
-			} else { // print out
-				msg_write_node(&z, i, &out);
-				fputs(out.s, stdout);
-				out.s[0] = 0; out.l = 0;
+	for (j = start; j < e->mcnt[1]>>2; j += step) {
+		for (i = j<<2|1; i < (j<<2) + 4; i += 2) {
+			if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping, &z.n) >= 0) { // then we keep the unitig
+				uint64_t *p[2], x[2];
+				p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
+				p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
+				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
+				z.l = str.l;
+				if (max_l < str.m) {
+					max_l = str.m;
+					z.seq = realloc(z.seq, max_l);
+					z.cov = realloc(z.cov, max_l);
+				}
+				memcpy(z.seq, str.s, z.l);
+				memcpy(z.cov, cov.s, z.l + 1);
+				if (nodes) { // keep in the nodes array
+					fmnode_t *q;
+					int j, sum = 0;
+					for (j = 0; j < z.l; ++j) sum += z.cov[j] - 33;
+					z.avg_cov = (double)sum / z.l; // compute the average coverage as this has not been done
+					kv_pushp(fmnode_t, *nodes, &q);
+					msg_nodecpy(q, &z);
+				} else { // print out
+					msg_write_node(&z, i, &out);
+					fputs(out.s, stdout);
+					out.s[0] = 0; out.l = 0;
+				}
 			}
 		}
 	}
@@ -433,22 +434,22 @@ static void unitig_core(const rld_t *e, int min_match, int64_t start, int64_t en
 }
 
 typedef struct {
-	uint64_t start, end, *used, *bend, *visited;
+	uint64_t *used, *bend, *visited;
 	const rld_t *e;
 	const uint64_t *sorted;
-	int min_match;
+	int min_match, start, step;
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	unitig_core(w->e, w->min_match, w->start, w->end, w->used, w->bend, w->visited, w->sorted, 0);
+	unitig_core(w->e, w->min_match, w->start, w->step, w->used, w->bend, w->visited, w->sorted, 0);
 	return 0;
 }
 
 int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sorted)
 {
-	uint64_t *used, *bend, *visited, rest = e->mcnt[1];
+	uint64_t *used, *bend, *visited;
 	pthread_t *tid;
 	pthread_attr_t attr;
 	worker_t *w;
@@ -467,10 +468,9 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 		worker_t *ww = w + j;
 		ww->e = e;
 		ww->min_match = min_match;
-		ww->start = (e->mcnt[1] - rest) / 2 * 2;
-		ww->end = ww->start + rest / (n_threads - j) / 2 * 2;
+		ww->start = j;
+		ww->step = n_threads;
 		ww->sorted = sorted;
-		rest -= ww->end - ww->start;
 		ww->used = used; ww->bend = bend; ww->visited = visited;
 	}
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
