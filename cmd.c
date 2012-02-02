@@ -220,10 +220,11 @@ int main_paircov(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1, skip = 50, min_pcv = 1;
 	rld_t *e;
 	uint64_t *sorted;
-	while ((c = getopt(argc, argv, "Ml:t:")) >= 0) {
+	while ((c = getopt(argc, argv, "Ml:t:c:")) >= 0) {
 		switch (c) {
 			case 'l': skip = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
+			case 'c': min_pcv = atoi(optarg); break;
 			case 't': n_threads = atoi(optarg); break;
 		}
 	}

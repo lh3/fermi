@@ -196,7 +196,7 @@ static void mask_pcv(int l, char *seq, const uint8_t *pcv, int skip, int min_pcv
 		seq[i] = pcv[i] >= min_pcv? "$ACGTN"[(int)seq[i]] : "$acgtn"[(int)seq[i]];
 }
 
-static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, int min_pcv, char *const* name)
+static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, int min_pcv, char *const* name, char *const* comment)
 {
 	int i, j;
 	hash64_t *h;
@@ -218,8 +218,18 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 		for (j = beg + 1, k = 0; j <= l; ++j) {
 			if ((islower(si[j]) || j == l) && isupper(si[j-1])) {
 				out.l = 0;
-				kputc('@', &out); kputs(name[i], &out); kputc('_', &out); kputw(k, &out);
-				kputc(' ', &out); kputw(j - beg, &out); kputc(' ', &out); kputw(n_supp, &out); kputc('\n', &out);
+				if (min_pcv > 0 || comment[i] == 0) { // do print the comment
+					kputc('@', &out); kputs(name[i], &out); kputc('_', &out); kputw(k, &out);
+					kputc(' ', &out); kputw(j - beg, &out); kputc(' ', &out); kputw(n_supp, &out);
+				} else { // the input is a fmg file
+					char *q;
+					long x = strtol(name[i], &q, 10);
+					kputc('@', &out); kputl(x, &out);
+					kputc('_', &out); kputw(n_supp, &out);
+					kputc('_', &out); kputw(j - beg, &out);
+					kputc(' ', &out); kputs(comment[i], &out);
+				}
+				kputc('\n', &out);
 				kputsn((char*)si + beg, j - beg, &out); kputsn("\n+\n", 3, &out);
 				kputsn((char*)cov+ beg, j - beg, &out); kputc('\n', &out);
 				fwrite(out.s, 1, out.l, stdout);
@@ -235,7 +245,7 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 
 typedef struct {
 	int n, m, *l;
-	char **s, **name;
+	char **s, **name, **comment;
 } seqbuf_t;
 
 static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
@@ -245,6 +255,7 @@ static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
 	for (i = 0; i < buf->n; ++i) {
 		free(buf->s[i]);
 		free(buf->name[i]);
+		free(buf->comment[i]);
 	}
 	buf->n = 0;
 	while (kseq_read(kseq) >= 0) {
@@ -253,9 +264,11 @@ static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
 			buf->l = realloc(buf->l, buf->m * sizeof(int));
 			buf->s = realloc(buf->s, buf->m * sizeof(void*));
 			buf->name = realloc(buf->name, buf->m * sizeof(void*));
+			buf->comment = realloc(buf->comment, buf->m * sizeof(void*));
 		}
 		buf->l[buf->n] = kseq->seq.l;
 		buf->s[buf->n] = strdup(kseq->seq.s);
+		buf->comment[buf->n] = kseq->comment.l? strdup(kseq->comment.s) : 0;
 		buf->name[buf->n++] = strdup(kseq->name.s);
 		l += kseq->seq.l;
 		if (l >= max_len) break;
@@ -273,7 +286,7 @@ typedef struct {
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	paircov_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->min_pcv, w->buf->name);
+	paircov_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->min_pcv, w->buf->name, w->buf->comment);
 	return 0;
 }
 
@@ -305,7 +318,7 @@ int fm6_paircov(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int 
 		for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 	}
 
-	free(buf->l); free(buf->s); free(buf->name); free(buf);
+	free(buf->l); free(buf->s); free(buf->name); free(buf->comment); free(buf);
 	kseq_destroy(seq);
 	gzclose(fp);
 	free(tid); free(w);
