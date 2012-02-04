@@ -12,9 +12,6 @@
 #include "ksort.h"
 KSORT_INIT(infocmp, fmintv_t, info_lt)
 
-#include "khash.h"
-KHASH_DECLARE(64, uint64_t, uint64_t)
-
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
 	uint64_t *p = bits + (x>>6);
