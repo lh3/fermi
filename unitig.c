@@ -15,10 +15,6 @@ KSORT_INIT(infocmp, fmintv_t, info_lt)
 #include "khash.h"
 KHASH_DECLARE(64, uint64_t, uint64_t)
 
-typedef khash_t(64) hash64_t;
-
-static volatile uint64_t g_n, g_sum, g_sum2, g_unpaired; // for estimating the insert size distribution
-
 static inline void set_bit(uint64_t *bits, uint64_t x)
 {
 	uint64_t *p = bits + (x>>6);
@@ -33,7 +29,6 @@ static inline void set_bits(uint64_t *bits, const fmintv_t *p, const uint64_t *s
 		for (k = 0; k < p->x[2]; ++k) {
 			set_bit(bits, sorted[p->x[0] + k]>>2);
 			set_bit(bits, sorted[p->x[1] + k]>>2);
-			//assert(abs((sorted[p->x[0] + k]>>2) - (sorted[p->x[1] + k]>>2)) == 1);
 		}
 	} else {
 		for (k = 0; k < p->x[2]; ++k) {
@@ -75,11 +70,10 @@ typedef struct {
 	const rld_t *e;
 	const uint64_t *sorted;
 	int min_match;
-	fmintv_v a[2], nei, contained;
+	fmintv_v a[2], nei;
 	fm32s_v cat;
 	uint64_t *used, *bend;
 	kstring_t str;
-	hash64_t *h;
 	uint64_t n, sum, sum2, unpaired;
 } aux_t;
 
@@ -99,42 +93,15 @@ int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t
 	return ret;
 }
 
-static void pair_add(aux_t *a, const fmintv_t *intv, int beg, int end)
-{
-	int i;
-	hash64_t *h = a->h;
-	if (a->sorted == 0 || a->h == 0) return;
-	for (i = 0; i < intv->x[2]; ++i) {
-		uint64_t k = a->sorted[intv->x[0] + i]>>2;
-		int ret, to_add = 0;
-		khint_t iter;
-		iter = kh_get(64, h, k>>1^1); // to get the mate
-		if (iter != kh_end(h)) { // mate found
-			if ((k&1) && !(kh_val(h, iter)&1)) { // inward orientation
-				int l = end - (kh_val(h, iter)>>32);
-				if (l < FM6_MAX_ISIZE) { // properly paired; remove the mate
-					++a->n, a->sum += l, a->sum2 += l * l;
-					kh_del(64, h, iter);
-				} else to_add = 1, ++a->unpaired;
-			} else to_add = 1, ++a->unpaired;
-		} else to_add = 1;
-		if (to_add) {
-			iter = kh_put(64, h, k>>1, &ret);
-			kh_val(h, iter) = end<<1 | (k&1) | (uint64_t)beg<<32;
-		}
-	}
-}
-
 int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *nei, // input and output variables
 				fmintv_v *prev, fmintv_v *curr, fm32s_v *cat,                        // temporary arrays
-				uint64_t *used, const uint64_t *sorted, fmintv_v *contained)         // optional info
+				uint64_t *used, const uint64_t *sorted)                              // optional info
 {
 	int ori_l = s->l, j, i, c, rbeg, is_forked = 0;
 	fmintv_v *swap;
 	fmintv_t ok[6], ok0;
 
 	curr->n = nei->n = cat->n = 0;
-	if (contained) contained->n = 0;
 	if (prev->n == 0) { // when this routine is called for the seed, prev may filled by fm6_is_contained()
 		overlap_intv(e, s->l - beg, (uint8_t*)s->s + beg, min_match, s->l - beg - 1, 0, prev, 0);
 		if (prev->n == 0) return -1; // no overlap
@@ -157,14 +124,7 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 						for (i = j; i < prev->n && cat->a[i] == cat0; ++i) cat->a[i] = -1; // mask out other intervals of the same cat
 						kv_push(fmintv_t, *nei, ok0); // keep in the neighbor vector
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
-					} else { // the read is contained in another read; mark it as used
-						if (used) set_bits(used, &ok0, sorted);
-						if (contained) { // keep the contained reads
-							fmintv_t tmp = ok0;
-							tmp.info = (ori_l - (p->info&0xffffffffU)) | ((uint64_t)s->l<<32);
-							kv_push(fmintv_t, *contained, tmp);
-						}
-					}
+					} else if (used) set_bits(used, &ok0, sorted); // the read is contained in another read; mark it as used
 				}
 			} // ~if(ok[0].x[2])
 			if (cat->a[j] < 0) continue; // no need to proceed if we have finished this path
@@ -221,9 +181,9 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 	return rbeg;
 }
 
-static int try_right(aux_t *a, int beg, kstring_t *s, int keep_contained)
+static int try_right(aux_t *a, int beg, kstring_t *s)
 {
-	return fm6_get_nei(a->e, a->min_match, beg, s, &a->nei, &a->a[0], &a->a[1], &a->cat, a->used, a->sorted, keep_contained? &a->contained:0);
+	return fm6_get_nei(a->e, a->min_match, beg, s, &a->nei, &a->a[0], &a->a[1], &a->cat, a->used, a->sorted);
 }
 
 static int check_left_simple(aux_t *a, int beg, int rbeg, const kstring_t *s)
@@ -260,7 +220,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	for (i = s->l - 1, a->str.l = 0; i >= rbeg; --i)
 		a->str.s[a->str.l++] = fm6_comp(s->s[i]);
 	a->str.s[a->str.l] = 0;
-	try_right(a, 0, &a->str, 0);
+	try_right(a, 0, &a->str);
 	assert(a->nei.n >= 1);
 	ret = a->nei.n > 1? -1 : 0;
 	a->nei.n = 1; a->nei.a[0] = tmp; // recover the original neighbour
@@ -270,7 +230,7 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
 {
 	int i, beg = beg0, rbeg, ori_l = s->l, n_reads = 0;
-	while ((rbeg = try_right(a, beg, s, 1)) >= 0) { // loop if there is at least one overlap
+	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
@@ -286,11 +246,6 @@ static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint6
 		*end = a->nei.a[0].x[1];
 		set_bits(a->used, &a->nei.a[0], a->sorted); // successful extension
 		++n_reads;
-		if (a->sorted) {
-			pair_add(a, &a->nei.a[0], rbeg, s->l);
-			for (i = 0; i < a->contained.n; ++i)
-				pair_add(a, &a->contained.a[i], (uint32_t)a->contained.a[i].info, a->contained.a[i].info>>32);
-		}
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
 		for (i = rbeg; i < ori_l; ++i) // update the coverage string
@@ -300,22 +255,6 @@ static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint6
 	}
 	cov->l = s->l = ori_l; s->s[ori_l] = cov->s[ori_l] = 0;
 	return n_reads;
-}
-
-static void flip_seq(kstring_t *s, kstring_t *q, hash64_t *h)
-{
-	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
-	seq_reverse(q->l, (uint8_t*)q->s); // reverse the coverage
-	if (h) {
-		khint_t iter;
-		int beg, end;
-		for (iter = 0; iter != kh_end(h); ++iter) { // flip the strand for mapping intervals
-			if (!kh_exist(h, iter)) continue;
-			beg = kh_val(h, iter)>>32;
-			end = kh_val(h, iter)<<32>>33;
-			kh_val(h, iter) = (uint64_t)(s->l - end)<<32 | (s->l - beg)<<1 | ((kh_val(h, iter)&1)^1);
-		}
-	}
 }
 
 static void copy_nei(fm128_v *dst, const fmintv_v *src)
@@ -328,7 +267,7 @@ static void copy_nei(fm128_v *dst, const fmintv_v *src)
 	}
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], fm128_v *mapping, int *n_reads)
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], int *n_reads)
 {
 	fmintv_t intv0;
 	int seed_len, ret;
@@ -336,7 +275,6 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	size_t i;
 
 	*n_reads = nei[0].n = nei[1].n = 0;
-	if (a->h) kh_clear(64, a->h);
 	if (a->sorted && (a->used[seed>>6]>>(seed&0x3f)&1)) return -2; // used
 	// retrieve the sequence pointed by seed
 	k = fm_retrieve(a->e, seed, s);
@@ -353,7 +291,6 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	if (cov->m < s->m) ks_resize(cov, s->m);
 	cov->l = s->l; cov->s[cov->l] = 0;
 	for (i = 0; i < cov->l; ++i) cov->s[i] = '"';
-	if (a->sorted) pair_add(a, &intv0, 0, s->l);
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	if (a->a[0].n) { // no need to extend to the right if there is no overlap
@@ -362,19 +299,10 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
-	flip_seq(s, cov, a->h);
+	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
+	seq_reverse(cov->l, (uint8_t*)cov->s); // reverse the coverage
 	*n_reads += unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
 	copy_nei(&nei[1], &a->nei);
-	if (a->h && mapping) {
-		khint_t iter;
-		mapping->n = 0;
-		for (iter = 0; iter != kh_end(a->h); ++iter) {
-			fm128_t tmp;
-			if (!kh_exist(a->h, iter)) continue;
-			tmp.x = kh_key(a->h, iter); tmp.y = kh_val(a->h, iter);
-			kv_push(fm128_t, *mapping, tmp);
-		}
-	}
 	return 0;
 }
 
@@ -391,11 +319,10 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 	memset(&z, 0, sizeof(fmnode_t));
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
-	if (sorted) a.h = kh_init(64);
 	// the core loop
 	for (j = start; j < e->mcnt[1]>>2; j += step) {
 		for (i = j<<2|1; i < (j<<2) + 4; i += 2) {
-			if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.mapping, &z.n) >= 0) { // then we keep the unitig
+			if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.n) >= 0) { // then we keep the unitig
 				uint64_t *p[2], x[2];
 				p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 				p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
@@ -423,13 +350,8 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 			}
 		}
 	}
-	__sync_fetch_and_add(&g_n, a.n);
-	__sync_fetch_and_add(&g_sum, a.sum);
-	__sync_fetch_and_add(&g_sum2, a.sum2);
-	__sync_fetch_and_add(&g_unpaired, a.unpaired);
-	if (a.h) kh_destroy(64, a.h);
-	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a); free(a.contained.a);
-	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov); free(z.mapping.a);
+	free(a.a[0].a); free(a.a[1].a); free(a.nei.a); free(a.cat.a);
+	free(z.nei[0].a); free(z.nei[1].a); free(z.seq); free(z.cov);
 	free(a.str.s); free(str.s); free(cov.s); free(out.s);
 }
 
@@ -454,7 +376,6 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 	pthread_attr_t attr;
 	worker_t *w;
 	int j;
-	double avg;
 
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -476,8 +397,6 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(tid); free(used); free(bend); free(visited); free(w);
-	avg = (double)g_sum / g_n;
-	fprintf(stderr, "[M::%s] avg=%.2f std.dev=%.2f #unpaired=%ld\n", __func__, avg, sqrt((double)g_sum2/g_n - avg * avg), (long)g_unpaired);
 	return 0;
 }
 
