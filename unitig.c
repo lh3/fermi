@@ -254,17 +254,17 @@ static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint6
 	return n_reads;
 }
 
-static void copy_nei(fm128_v *dst, const fmintv_v *src)
+static void copy_nei(mog128_v *dst, const fmintv_v *src)
 {
 	int i;
 	for (i = 0; i < src->n; ++i) {
-		fm128_t z;
+		mog128_t z;
 		z.x = src->a[i].x[0]; z.y = src->a[i].info;
-		kv_push(fm128_t, *dst, z);
+		kv_push(mog128_t, *dst, z);
 	}
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], fm128_v nei[2], int *n_reads)
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], mog128_v nei[2], int *n_reads)
 {
 	fmintv_t intv0;
 	int seed_len, ret;
@@ -303,46 +303,42 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, fmnode_v *nodes)
+static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, mognode_v *nodes)
 {
 	uint64_t i, j;
 	int max_l = 0;
 	aux_t a;
 	kstring_t str, cov, out;
-	fmnode_t z;
+	mognode_t z;
 
 	// initialize aux_t and all the vectors
 	memset(&a, 0, sizeof(aux_t));
-	memset(&z, 0, sizeof(fmnode_t));
+	memset(&z, 0, sizeof(mognode_t));
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	// the core loop
 	for (j = start; j < e->mcnt[1]>>2; j += step) {
 		for (i = j<<2|1; i < (j<<2) + 4; i += 2) {
-			if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.n) >= 0) { // then we keep the unitig
+			if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.nsr) >= 0) { // then we keep the unitig
 				uint64_t *p[2], x[2];
 				p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
 				p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
 				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
-				z.l = str.l;
+				z.len = str.l;
 				if (max_l < str.m) {
 					max_l = str.m;
 					z.seq = realloc(z.seq, max_l);
 					z.cov = realloc(z.cov, max_l);
 				}
-				memcpy(z.seq, str.s, z.l);
-				memcpy(z.cov, cov.s, z.l + 1);
-				if (nodes) { // keep in the nodes array
-					fmnode_t *q;
-					int j, sum = 0;
-					for (j = 0; j < z.l; ++j) sum += z.cov[j] - 33;
-					z.avg_cov = (double)sum / z.l; // compute the average coverage as this has not been done
-					kv_pushp(fmnode_t, *nodes, &q);
-					msg_nodecpy(q, &z);
+				memcpy(z.seq, str.s, z.len);
+				memcpy(z.cov, cov.s, z.len + 1);
+				if (nodes && 0) { // keep in the nodes array
+					//fmnode_t *q;
+					//kv_pushp(fmnode_t, *nodes, &q);
+					//msg_nodecpy(q, &z);
 				} else { // print out
-					msg_write_node(&z, i, &out);
+					mog_write_node(&z, &out);
 					fputs(out.s, stdout);
-					out.s[0] = 0; out.l = 0;
 				}
 			}
 		}

@@ -252,7 +252,7 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 			for (j = beg + 1, k = 0; j <= l; ++j) {
 				if ((islower(si[j]) || j == l) && isupper(si[j-1])) {
 					kputc('@', &out); kputs(name[i], &out); kputc('_', &out); kputw(k, &out);
-					kputc(' ', &out); kputw(j - beg, &out); kputc(' ', &out); kputw(r.n_supp, &out);
+					kputc('\t', &out); kputw(j - beg, &out); kputc('\t', &out); kputw(r.n_supp, &out);
 					kputc('\n', &out);
 					kputsn((char*)si + beg, j - beg, &out); kputsn("\n+\n", 3, &out);
 					kputsn((char*)r.cov+ beg, j - beg, &out); kputc('\n', &out);
@@ -265,16 +265,20 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 			out.l = 0;
 			kputc('@', &out); kputs(name[i], &out);
 			if (comment[i]) {
-				kputc(' ', &out); kputs(comment[i], &out);
+				char *q;
+				strtol(comment[i], &q, 10);
+				if (isspace(*q)) {
+					kputc('\t', &out); kputw(r.n_supp, &out);
+					kputc('\t', &out); kputs(q + 1, &out);
+				}
 			}
-			kputsn(" NR:i:", 6, &out); kputw(r.n_supp, &out);
 			if (r.unpaired.n) {
-				kputsn(" UR:Z:", 6, &out);
+				kputsn("\tUR:Z:", 6, &out);
 				for (j = 0; j < r.unpaired.n; ++j) {
-					if (j) kputc(',', &out);
-					kputl(r.unpaired.a[j].x, &out); kputc(':', &out);
-					kputl(r.unpaired.a[j].y>>32, &out); kputc(':', &out);
+					kputl(r.unpaired.a[j].x, &out); kputc(',', &out);
+					kputl(r.unpaired.a[j].y>>32, &out); kputc(',', &out);
 					kputl(r.unpaired.a[j].y<<32>>32, &out);
+					kputc(';', &out);
 				}
 			}
 			kputc('\n', &out);
