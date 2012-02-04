@@ -217,29 +217,32 @@ int main_unitig(int argc, char *argv[])
 
 int main_paircov(int argc, char *argv[])
 {
-	int c, use_mmap = 0, n_threads = 1, skip = 50, min_pcv = 1;
+	int c, use_mmap = 0, n_threads = 1, skip = 50, min_pcv = 0;
 	rld_t *e;
-	uint64_t *sorted;
-	while ((c = getopt(argc, argv, "Ml:t:c:")) >= 0) {
+	uint64_t *sorted = 0;
+	char *fn_sorted = 0;
+	while ((c = getopt(argc, argv, "Ml:t:c:r:")) >= 0) {
 		switch (c) {
 			case 'l': skip = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
 			case 'c': min_pcv = atoi(optarg); break;
 			case 't': n_threads = atoi(optarg); break;
+			case 'r': fn_sorted = optarg; break;
 		}
 	}
-	if (optind + 3 > argc) {
+	if (optind + 2 > argc) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi paircov [options] <reads.fmd> <reads.rank> <contigs.fq>\n\n");
+		fprintf(stderr, "Usage:   fermi paircov [options] <reads.fmd> <contigs.fq>\n\n");
 		fprintf(stderr, "Options: -l INT      skip ending INT bases of a read pair [%d]\n", skip);
 		fprintf(stderr, "         -c INT      minimum paired-end coverage [%d]\n", min_pcv);
+		fprintf(stderr, "         -r FILE     rank [null]\n");
 		fprintf(stderr, "         -t INT      number of threads [1]\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	sorted = load_sorted(e->mcnt[1], argv[optind+1]);
-	fm6_paircov(argv[optind+2], e, sorted, skip, min_pcv, n_threads);
+	if (fn_sorted) sorted = load_sorted(e->mcnt[1], fn_sorted);
+	fm6_paircov(argv[optind+1], e, sorted, skip, min_pcv, n_threads);
 	free(sorted);
 	rld_destroy(e);
 	return 0;

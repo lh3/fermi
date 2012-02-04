@@ -124,54 +124,79 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
-static uint8_t *paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h, int *n_supp)
+typedef struct {
+	int n_supp, len;
+	uint8_t *cov, *pcv; // cov and pcv are allocated in one memory block
+	fm128_v unpaired;
+} pcov_t;
+
+static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h)
 {
+	const uint64_t mask = (uint64_t)FM_MASK30<<32 | FM_MASK30;
 	fmsmem_i *iter;
-	uint8_t *cov, *pcv;
-	cov = calloc((len + 1) * 2, 1);
-	pcv = cov + len + 1;
+	pcov_t r;
+	khint_t kk;
+
+	memset(&r, 0, sizeof(pcov_t));
+	r.cov = calloc((len + 1) * 2, 1);
+	r.pcv = r.cov + len + 1;
+	r.len = len;
 	iter = fm6_miter_init(e, len, q);
-	*n_supp = 0;
 	while (fm6_miter_next(iter) >= 0) {
 		int i, ret, tmp, j;
 		uint64_t k, l;
-		khint_t kk;
 		for (i = 0; i < iter->match.n; ++i) {
 			fmintv_t *p = &iter->match.a[i];
 			if (p->info>>63 && p->x[1] < e->mcnt[1]) { // full-length match
 				tmp = p->info&FM_MASK30;
 				for (j = p->info>>32&FM_MASK30; j < tmp; ++j) // update coverage
-					if (cov[j] < 255) ++cov[j];
-				++(*n_supp);
+					if (r.cov[j] < 255) ++r.cov[j];
+				++r.n_supp;
+				if (skip <= 0 || sorted == 0) continue; // the reads are unpaired
 				for (l = 0; l < p->x[2]; ++l) {
-					k = sorted[p->x[1] + l] >> 2;
+					k = sorted[p->x[1] + l] >> 2; // NB: ->x[1] corresponds to the interval of the reverse
 					if ((k&1) == 0) { // reverse stand; check
-						int beg, end;
+						int beg, end, to_add = 0;
 						kk = kh_get(64, h, k);
 						//printf("X %lld get %d\n", k, (int)(p->info&FM_MASK30) - skip);
-						if (kk == kh_end(h)) continue; // mate not found on the forward strand
-						beg = kh_val(h, kk);
-						end = (int)(p->info&FM_MASK30) - skip;
+						if (kk != kh_end(h)) { // mate found on the forward strand
+							beg = kh_val(h, kk)>>32;
+							end = p->info&FM_MASK30;
+							if (end - beg >= FM6_MAX_ISIZE) to_add = 1; // excessive insert size
+						} else to_add = 1;
+						if (to_add == 1) {
+							fm128_t *q;
+							kv_pushp(fm128_t, r.unpaired, &q);
+							q->x = k^1, q->y = p->info&mask;
+							continue;
+						}
 						//printf("%d\t%d\n", beg, end);
+						beg += skip; end -= skip;
 						if (beg > end) tmp = beg, beg = end, end = tmp;
-						if (end - beg >= FM6_MAX_ISIZE) continue;
+						if (beg < 0) beg = 0;
+						if (end > len) end = len;
 						for (j = beg; j < end; ++j)
-							if (pcv[j] < 255) ++pcv[j]; // update paired coverage
+							if (r.pcv[j] < 255) ++r.pcv[j]; // update paired coverage
 						kh_del(64, h, kk);
 					} else { // forward strand; add
 						kk = kh_put(64, h, k^3, &ret);
-						tmp = (p->info>>32&FM_MASK30) + skip;
-						if (tmp < len) kh_val(h, kk) = tmp;
-						else kh_del(64, h, kk);
+						kh_val(h, kk) = p->info & mask;
 						//printf("X %lld put %lld, %d<%d\n", k, k^3, tmp, len);
 					}
 				}
 			}
 		}
 	}
+
+	for (kk = 0; kk != kh_end(h); ++kk)
+		if (kh_exist(h, kk)) {
+			fm128_t *q;
+			kv_pushp(fm128_t, r.unpaired, &q);
+			q->x = kh_key(h, kk)^2, q->y = kh_val(h, kk);
+		}
 	fm6_miter_destroy(iter);
 	kh_clear(64, h);
-	return cov;
+	return r;
 }
 
 static void mask_pcv(int l, char *seq, const uint8_t *pcv, int skip, int min_pcv)
@@ -196,48 +221,69 @@ static void mask_pcv(int l, char *seq, const uint8_t *pcv, int skip, int min_pcv
 		seq[i] = pcv[i] >= min_pcv? "$ACGTN"[(int)seq[i]] : "$acgtn"[(int)seq[i]];
 }
 
+// if unpaired, skip<=0 or sorted==0
 static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, int min_pcv, char *const* name, char *const* comment)
 {
 	int i, j;
 	hash64_t *h;
 	kstring_t out;
+
 	h = kh_init(64);
 	out.l = out.m = 0; out.s = 0;
+	if (sorted == 0) skip = -1, min_pcv = 0; // if no rank->index map, we do not break
 	for (i = start; i < n; i += step) {
-		uint8_t *cov, *si = (uint8_t*)s[i];
-		int l = len[i], n_supp, beg, k;
+		uint8_t *si = (uint8_t*)s[i];
+		int l = len[i], beg, k;
+		pcov_t r;
 		for (j = 0; j < l; ++j)
 			si[j] = seq_nt6_table[si[j]];
-		cov = paircov(e, l, si, skip, sorted, h, &n_supp);
-		for (j = 0; j < l; ++j)
-			cov[j] = cov[j] + 33 < 126? cov[j] + 33 : 126;
-		mask_pcv(l, (char*)si, cov + l + 1, skip, min_pcv);
-		for (j = 0; j < l; ++j) // skip the leading lowercase letters
-			if (isupper(si[j])) break;
-		beg = j;
-		for (j = beg + 1, k = 0; j <= l; ++j) {
-			if ((islower(si[j]) || j == l) && isupper(si[j-1])) {
-				out.l = 0;
-				if (min_pcv > 0 || comment[i] == 0) { // do print the comment
-					kputc('@', &out); kputs(name[i], &out); kputc('_', &out); kputw(k, &out);
-					kputc(' ', &out); kputw(j - beg, &out); kputc(' ', &out); kputw(n_supp, &out);
-				} else { // the input is a fmg file
-					char *q;
-					long x = strtol(name[i], &q, 10);
-					kputc('@', &out); kputl(x, &out);
-					kputc('_', &out); kputw(n_supp, &out);
-					kputc('_', &out); kputw(j - beg, &out);
-					kputc(' ', &out); kputs(comment[i], &out);
-				}
-				kputc('\n', &out);
-				kputsn((char*)si + beg, j - beg, &out); kputsn("\n+\n", 3, &out);
-				kputsn((char*)cov+ beg, j - beg, &out); kputc('\n', &out);
-				fwrite(out.s, 1, out.l, stdout);
-				++k;
-			}
-			if (isupper(si[j]) && islower(si[j-1])) beg = j;
+		if (kh_n_buckets(h) >= 256) {
+			kh_destroy(64, h);
+			h = kh_init(64);
 		}
-		free(cov);
+		r = paircov(e, l, si, skip, sorted, h);
+		for (j = 0; j < l; ++j)
+			r.cov[j] = r.cov[j] + 33 < 126? r.cov[j] + 33 : 126;
+		if (min_pcv > 0) { // we want to break the sequence
+			mask_pcv(l, (char*)si, r.pcv, skip, min_pcv);
+			for (j = 0; j < l; ++j) // skip the leading lowercase letters
+				if (isupper(si[j])) break;
+			beg = j;
+			for (j = beg + 1, k = 0; j <= l; ++j) {
+				if ((islower(si[j]) || j == l) && isupper(si[j-1])) {
+					kputc('@', &out); kputs(name[i], &out); kputc('_', &out); kputw(k, &out);
+					kputc(' ', &out); kputw(j - beg, &out); kputc(' ', &out); kputw(r.n_supp, &out);
+					kputc('\n', &out);
+					kputsn((char*)si + beg, j - beg, &out); kputsn("\n+\n", 3, &out);
+					kputsn((char*)r.cov+ beg, j - beg, &out); kputc('\n', &out);
+					fwrite(out.s, 1, out.l, stdout);
+					++k;
+				}
+				if (isupper(si[j]) && islower(si[j-1])) beg = j;
+			}
+		} else {
+			out.l = 0;
+			kputc('@', &out); kputs(name[i], &out);
+			if (comment[i]) {
+				kputc(' ', &out); kputs(comment[i], &out);
+			}
+			kputsn(" NR:i:", 6, &out); kputw(r.n_supp, &out);
+			if (r.unpaired.n) {
+				kputsn(" UR:Z:", 6, &out);
+				for (j = 0; j < r.unpaired.n; ++j) {
+					if (j) kputc(',', &out);
+					kputl(r.unpaired.a[j].x, &out); kputc(':', &out);
+					kputl(r.unpaired.a[j].y>>32, &out); kputc(':', &out);
+					kputl(r.unpaired.a[j].y<<32>>32, &out);
+				}
+			}
+			kputc('\n', &out);
+			for (j = 0; j < r.len; ++j) si[j] = "$ACGTN"[si[j]];
+			kputsn((char*)si, r.len, &out); kputsn("\n+\n", 3, &out);
+			kputsn((char*)r.cov, r.len, &out); kputc('\n', &out);
+			fwrite(out.s, 1, out.l, stdout);
+		}
+		free(r.cov); free(r.unpaired.a);
 	}
 	kh_destroy(64, h);
 	free(out.s);
