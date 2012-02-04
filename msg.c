@@ -11,13 +11,7 @@
 KSEQ_DECLARE(gzFile)
 
 #include "khash.h"
-KHASH_INIT2(64,, khint64_t, uint64_t, 1, kh_int64_hash_func, kh_int64_hash_equal)
-
-#define fm128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
-#define fm128_ylt(a, b) ((int64_t)(a).y > (int64_t)(b).y)
-#include "ksort.h"
-KSORT_INIT(128x, fm128_t, fm128_xlt)
-KSORT_INIT(128y, fm128_t, fm128_ylt)
+KHASH_DECLARE(64, uint64_t, uint64_t)
 
 #define MAX_DEBUBBLE_DIFF 3
 

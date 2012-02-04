@@ -337,7 +337,7 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 					//kv_pushp(fmnode_t, *nodes, &q);
 					//msg_nodecpy(q, &z);
 				} else { // print out
-					mog_write_node(&z, &out);
+					mog_write1(&z, &out);
 					fputs(out.s, stdout);
 				}
 			}
