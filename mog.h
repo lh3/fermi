@@ -35,8 +35,9 @@ typedef struct { size_t n, m; mogv_t *a; } mogv_v;
 
 typedef struct {
 	mogv_v v;
+	float rdist;  // read distance
+	int min_ovlp; // minimum overlap seen from the graph
 	void *h;
-	int min_ovlp;
 } mog_t;
 
 mogopt_t *mog_init_opt(void);
@@ -46,6 +47,6 @@ void mog_v_write(const mogv_t *p, kstring_t *out);
 void mog_g_print(const mog_t *g);
 void mog_g_merge(mog_t *g);
 
-void mog_v_copyover(mogv_t *dst, const mogv_t *src); // NB: memory leak if dst is allocated
+void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src); // NB: memory leak if dst is allocated
 
 #endif

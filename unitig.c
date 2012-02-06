@@ -335,7 +335,7 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 				if (nodes) { // keep in the nodes array
 					mogv_t *q;
 					kv_pushp(mogv_t, *nodes, &q);
-					mog_v_copyover(q, &z);
+					mog_v_copy_to_empty(q, &z);
 				} else { // print out
 					mog_v_write(&z, &out);
 					fputs(out.s, stdout);
