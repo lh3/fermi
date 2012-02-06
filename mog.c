@@ -1,3 +1,8 @@
+/* remaining problems:
+
+  1. multiedges due to tandem repeats
+*/
+
 #include <zlib.h>
 #include "priv.h"
 #include "kvec.h"
@@ -81,7 +86,7 @@ static hash64_t *build_hash(const mogv_v *nodes)
 			khint_t k = kh_put(64, h, p->k[j], &ret);
 			if (ret == 0) {
 				if (fm_verbose >= 2)
-					fprintf(stderr, "[W::%s] end %ld is duplicated.\n", __func__, (long)p->k[j]);
+					fprintf(stderr, "[W::%s] terminal %ld is duplicated.\n", __func__, (long)p->k[j]);
 				kh_val(h, k) = (uint64_t)-1;
 			} else kh_val(h, k) = i<<1|j;
 		}
@@ -122,9 +127,9 @@ void mog_amend(mog_t *g)
 	}
 }
 
-/*************
- * Graph I/O *
- *************/
+/*********************************
+ * Graph I/O initialization etc. *
+ *********************************/
 
 mogopt_t *mog_init_opt()
 {
@@ -137,7 +142,7 @@ mogopt_t *mog_init_opt()
 	return o;
 }
 
-void mog_write1(const mogv_t *p, kstring_t *out)
+void mog_v_write(const mogv_t *p, kstring_t *out)
 {
 	int j, k;
 	if (p->len <= 0) return;
@@ -162,18 +167,19 @@ void mog_write1(const mogv_t *p, kstring_t *out)
 	kputc('\n', out);
 }
 
-void mog_print(const mogv_v *v)
+void mog_g_print(const mog_t *g)
 {
 	int i;
 	kstring_t out;
 	out.l = out.m = 0; out.s = 0;
-	for (i = 0; i < v->n; ++i) {
-		mog_write1(&v->a[i], &out);
+	for (i = 0; i < g->v.n; ++i) {
+		if (g->v.a[i].len < 0) continue;
+		mog_v_write(&g->v.a[i], &out);
 		fwrite(out.s, 1, out.l, stdout);
 	}
 }
 
-mog_t *mog_read(const char *fn, const mogopt_t *opt)
+mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 {
 	gzFile fp;
 	kseq_t *seq;
@@ -191,6 +197,7 @@ mog_t *mog_read(const char *fn, const mogopt_t *opt)
 		mogv_t *p;
 		kv_pushp(mogv_t, g->v, &p);
 		memset(p, 0, sizeof(mogv_t));
+		p->len = -1;
 		// parse ->k[2]
 		p->k[0] = strtol(seq->name.s, &q, 10); ++q;
 		p->k[1] = strtol(q, &q, 10);
@@ -249,4 +256,124 @@ mog_t *mog_read(const char *fn, const mogopt_t *opt)
 	mog_amend(g);
 	//g->rdist = fmg_compute_rdist(&g->v);
 	return g;
+}
+
+/**************************
+ * Basic graph operations *
+ **************************/
+
+void mog_v_destroy(mogv_t *v)
+{
+	free(v->nei[0].a); free(v->nei[1].a);
+	free(v->seq); free(v->cov);
+	memset(v, 0, sizeof(mogv_t));
+	v->len = -1;
+}
+
+void mog_v_copyover(mogv_t *dst, const mogv_t *src) // NB: memory leak if dst is allocated
+{
+	memcpy(dst, src, sizeof(mogv_t));
+	dst->max_len = dst->len + 1;
+	kroundup32(dst->max_len);
+	dst->seq = calloc(dst->max_len, 1); memcpy(dst->seq, src->seq, src->len);
+	dst->cov = calloc(dst->max_len, 1); memcpy(dst->cov, src->cov, src->len);
+	kv_init(dst->nei[0]); kv_copy(ku128_t, dst->nei[0], src->nei[0]);
+	kv_init(dst->nei[1]); kv_copy(ku128_t, dst->nei[1], src->nei[1]);
+}
+
+#define __swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))
+
+void mog_v_flip(mog_t *g, mogv_t *p)
+{
+	ku128_v t;
+	khint_t k;
+	hash64_t *h = (hash64_t*)g->h;
+
+	seq_revcomp6(p->len, (uint8_t*)p->seq);
+	seq_reverse(p->len, (uint8_t*)p->cov);
+	__swap(p->k[0], p->k[1]);
+	t = p->nei[0]; p->nei[0] = p->nei[1]; p->nei[1] = t;
+	k = kh_get(64, g->h, p->k[0]);
+	assert(k != kh_end(h));
+	kh_val(h, k) ^= 1;
+	k = kh_get(64, h, p->k[1]);
+	assert(k != kh_end(h));
+	kh_val(h, k) ^= 1;
+}
+
+/*********************
+ * Unambiguous merge *
+ *********************/
+
+int mog_v_merge_try(mog_t *g, mogv_t *p) // merge p's neighbor to the right-end of p
+{
+	mogv_t *q;
+	khint_t kp, kq;
+	int i, j, new_l;
+	hash64_t *h = (hash64_t*)g->h;
+
+	// check if an unambiguous merge can be performed
+	if (p->nei[1].n != 1) return -1; // multiple or no neighbor; do not merge
+	kq = kh_get(64, g->h, p->nei[1].a[0].x); assert(kq != kh_end(h)); // otherwise the neighbor is non-existant
+	q = &g->v.a[kh_val((hash64_t*)g->h, kq)>>1];
+	if (p == q) return -2; // we have a loop p->p. We cannot merge in this case
+	if (q->nei[kh_val(h, kq)&1].n != 1) return -3; // the neighbor q has multiple neighbors. cannot be an unambiguous merge
+
+	// we can perform a merge; do further consistency check (mostly check bugs)
+	if (kh_val(h, kq)&1) mog_v_flip(g, q); // a "><" bidirectional arc; flip q
+	kp = kh_get(64, g->h, p->k[1]); assert(kp != kh_end(h)); // get the iterator to p
+	kh_del(64, g->h, kp); kh_del(64, g->h, kq); // remove the two ends of the arc in the hash table
+	assert(p->k[1] == q->nei[0].a[0].x && q->k[0] == p->nei[1].a[0].x); // otherwise inconsistent topology
+	assert(p->nei[1].a[0].y == q->nei[0].a[0].y); // the overlap length must be the same
+	assert(p->len >= p->nei[1].a[0].y && q->len >= p->nei[1].a[0].y); // and the overlap is shorter than both vertices
+
+	// update the read count and sequence length
+	p->nsr += q->nsr;
+	new_l = p->len + q->len - p->nei[1].a[0].y;
+	if (new_l + 1 > p->max_len) { // then double p->seq and p->cov
+		p->max_len = new_l + 1;
+		kroundup32(p->max_len);
+		p->seq = realloc(p->seq, p->max_len);
+		p->cov = realloc(p->cov, p->max_len);
+	}
+	// merge seq and cov
+	for (i = p->len - p->nei[1].a[0].y, j = 0; j < q->len; ++i, ++j) { // write seq and cov
+		p->seq[i] = q->seq[j];
+		if (i < p->len) {
+			if ((int)p->cov[i] + (q->cov[j] - 33) > 126) p->cov[i] = 126;
+			else p->cov[i] += q->cov[j] - 33;
+		} else p->cov[i] = q->cov[j];
+	}
+	p->seq[new_l] = p->cov[new_l] = 0;
+	p->len = new_l;
+	// merge neighbors
+	free(p->nei[1].a);
+	p->nei[1] = q->nei[1]; p->k[1] = q->k[1];
+	q->nei[1].a = 0; // to avoid freeing p->nei[1] by mog_v_destroy() below
+	// update the hash table for the right end of p
+	kp = kh_get(64, g->h, p->k[1]);
+	assert(kp != kh_end((hash64_t*)g->h));
+	kh_val(h, kp) = (p - g->v.a)<<1 | 1;
+	// clean up q
+	mog_v_destroy(q);
+	return 0;
+}
+
+void mog_g_merge(mog_t *g)
+{
+	int i;
+	double tcpu = cputime();
+	for (i = 0; i < g->v.n; ++i) { // remove multiedges; FIXME: should we do that?
+		v128_rmdup(&g->v.a[i].nei[0]);
+		v128_rmdup(&g->v.a[i].nei[1]);
+	}
+	for (i = 0; i < g->v.n; ++i) {
+		mogv_t *p = &g->v.a[i];
+		if (p->len < 0) continue;
+		while (mog_v_merge_try(g, p) == 0);
+		mog_v_flip(g, p);
+		while (mog_v_merge_try(g, p) == 0);
+	}
+	if (fm_verbose >= 2)
+		fprintf(stderr, "[M::%s] merged unambiguous arcs in %.2f sec\n", __func__, cputime() - tcpu);
 }

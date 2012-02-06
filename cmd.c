@@ -581,8 +581,9 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "Usage:   fermi clean [options] <in.mog>\n");
 		return 1;
 	}
-	g = mog_read(argv[optind], opt);
-	mog_print(&g->v);
+	g = mog_g_read(argv[optind], opt);
+	mog_g_merge(g);
+	mog_g_print(g);
 	free(opt);
 	return 0;
 }

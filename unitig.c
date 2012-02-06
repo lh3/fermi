@@ -303,17 +303,17 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, mognode_v *nodes)
+static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, mogv_v *nodes)
 {
 	uint64_t i, j;
 	int max_l = 0;
 	aux_t a;
 	kstring_t str, cov, out;
-	mognode_t z;
+	mogv_t z;
 
 	// initialize aux_t and all the vectors
 	memset(&a, 0, sizeof(aux_t));
-	memset(&z, 0, sizeof(mognode_t));
+	memset(&z, 0, sizeof(mogv_t));
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	// the core loop
@@ -332,12 +332,12 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 				}
 				memcpy(z.seq, str.s, z.len);
 				memcpy(z.cov, cov.s, z.len + 1);
-				if (nodes && 0) { // keep in the nodes array
-					//fmnode_t *q;
-					//kv_pushp(fmnode_t, *nodes, &q);
-					//msg_nodecpy(q, &z);
+				if (nodes) { // keep in the nodes array
+					mogv_t *q;
+					kv_pushp(mogv_t, *nodes, &q);
+					mog_v_copyover(q, &z);
 				} else { // print out
-					mog_write1(&z, &out);
+					mog_v_write(&z, &out);
 					fputs(out.s, stdout);
 				}
 			}
@@ -416,5 +416,5 @@ msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 	unitig_core(e, min_match, 0, e->mcnt[1], used, bend, visited, 0, &g->v);
 	free(used); free(bend); free(visited);
 	rld_destroy(e);
-	return g;
+	return (msg_t*)g;
 }
