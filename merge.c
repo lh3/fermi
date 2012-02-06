@@ -184,9 +184,6 @@ rld_t *fm_merge(rld_t *e0, rld_t *e1, int n_threads)
  * Append a string to an FM-index *
  **********************************/
 
-#include "ksort.h"
-KSORT_INIT_GENERIC(uint64_t)
-
 rld_t *fm_merge_from_SA(rld_t *e0, int len, const uint8_t *T, const int *SA, const int64_t *rank_l)
 {
 	int64_t l0, last = -1;

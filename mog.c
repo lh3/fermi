@@ -5,6 +5,9 @@
 
 #include <math.h>
 #include <zlib.h>
+#include <stdio.h>
+#include <assert.h>
+#include "mog.h"
 #include "priv.h"
 #include "kvec.h"
 #include "kseq.h"
@@ -20,6 +23,7 @@ typedef khash_t(64) hash64_t;
 #include "ksort.h"
 KSORT_INIT(128x, ku128_t, ku128_xlt)
 KSORT_INIT(128y, ku128_t, ku128_ylt)
+KSORT_INIT_GENERIC(uint64_t)
 
 #define edge_mark_del(_x) ((_x).x = (uint64_t)-2, (_x).y = 0)
 #define edge_is_del(_x)   ((_x).x == (uint64_t)-2 || (_x).y == 0)
