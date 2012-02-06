@@ -508,7 +508,7 @@ int main_seqsort(int argc, char *argv[])
 	return 0;
 }
 
-int main_clean(int argc, char *argv[])
+int main_clean2(int argc, char *argv[])
 {
 	msg_t *g;
 	int c, do_clean = 0, max_arc = 512;
@@ -564,5 +564,25 @@ int main_clean(int argc, char *argv[])
 	if (do_clean) msg_clean(g, &opt);
 	msg_print(&g->nodes);
 	msg_destroy(g);
+	return 0;
+}
+
+int main_clean(int argc, char *argv[])
+{
+	mog_t *g;
+	int c;
+	mogopt_t *opt;
+	opt = mog_init_opt();
+	while ((c = getopt(argc, argv, "")) >= 0) {
+		switch (c) {
+		}
+	}
+	if (argc == optind) {
+		fprintf(stderr, "Usage:   fermi clean [options] <in.mog>\n");
+		return 1;
+	}
+	g = mog_read(argv[optind], opt);
+	mog_print(&g->v);
+	free(opt);
 	return 0;
 }

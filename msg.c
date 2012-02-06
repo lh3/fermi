@@ -41,7 +41,7 @@ void msg_write_node(const fmnode_t *p, long id, kstring_t *out)
 	if (p->mapping.n) {
 		kputc('\t', out);
 		for (j = 0; j < p->mapping.n; ++j) {
-			fm128_t *q = &p->mapping.a[j];
+			ku128_t *q = &p->mapping.a[j];
 			if (j) kputc(',', out);
 			kputl(q->x, out); kputc(':', out);
 			kputc((q->y&1)? '-' : '+', out); kputc(':', out);
@@ -85,17 +85,17 @@ void msg_nodecpy(fmnode_t *dst, const fmnode_t *src)
 	memcpy(dst->seq, src->seq, src->l);
 	memcpy(dst->cov, src->cov, src->l);
 	kv_init(dst->nei[0]); kv_init(dst->nei[1]); kv_init(dst->mapping);
-	for (i = 0; i < src->nei[0].n; ++i) kv_push(fm128_t, dst->nei[0], src->nei[0].a[i]);
-	for (i = 0; i < src->nei[1].n; ++i) kv_push(fm128_t, dst->nei[1], src->nei[1].a[i]);
-	for (i = 0; i < src->mapping.n; ++i) kv_push(fm128_t, dst->mapping, src->mapping.a[i]);
+	for (i = 0; i < src->nei[0].n; ++i) kv_push(ku128_t, dst->nei[0], src->nei[0].a[i]);
+	for (i = 0; i < src->nei[1].n; ++i) kv_push(ku128_t, dst->nei[1], src->nei[1].a[i]);
+	for (i = 0; i < src->mapping.n; ++i) kv_push(ku128_t, dst->mapping, src->mapping.a[i]);
 }
 
-static inline void rmdup_128v(fm128_v *r)
+static inline void rmdup_128v(ku128_v *r)
 {
 	int l, cnt;
 	uint64_t x;
 	if (r->n < 2) return;
-	ks_introsort(128x, r->n, r->a);
+	ks_introsort_128x(r->n, r->a);
 	for (l = cnt = 0; l < r->n; ++l) // jump to the first node to be retained
 		if (arc_is_del(r->a[l])) ++cnt;
 		else break;
@@ -152,7 +152,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 	kseq_t *seq;
 	int64_t tot_len = 0, n_arcs = 0, n_tips = 0, n_arc_drop = 0;
 	double tcpu = cputime();
-	fm128_v nei;
+	ku128_v nei;
 	msg_t *g;
 
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
@@ -185,7 +185,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 			p->k[j] = strtol(q, &q, 10);
 			nei.n = 0;
 			if (*q == '>' && q[1] != '.') {
-				fm128_t x;
+				ku128_t x;
 				do {
 					++q;
 					x.x = strtol(q, &q, 10); ++q;
@@ -193,7 +193,7 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 					g->min_ovlp = g->min_ovlp < x.y? g->min_ovlp : x.y;
 					if (max_ovlp < x.y) max_ovlp2 = max_ovlp, max_ovlp = x.y;
 					else if (max_ovlp2 < x.y) max_ovlp2 = x.y;
-					kv_push(fm128_t, nei, x);
+					kv_push(ku128_t, nei, x);
 				} while (*q == ',');
 				++q;
 			} else q += 2; // no arcs
@@ -204,25 +204,25 @@ msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio)
 			rmdup_128v(&nei);
 			if (nei.n > max_arc) { // excessive connections; keep the top ones
 				int thres;
-				ks_introsort(128y, nei.n, nei.a);
+				ks_introsort_128y(nei.n, nei.a);
 				thres = nei.a[max_arc].y;
 				for (i = 0; i < nei.n; ++i)
 					if (nei.a[i].y == thres) break;
 				nei.n = i;
 			}
 			n_arc_drop += ori_n - nei.n;
-			kv_copy(fm128_t, p->nei[j], nei);
+			kv_copy(ku128_t, p->nei[j], nei);
 		}
 		if (seq->comment.l - (q - seq->comment.s) >= 5) { // read mapping
 			for (; *q && !isdigit(*q); ++q); // skip non-digits
 			p->mapping.n = 0;
 			while (isdigit(*q)) {
-				fm128_t x;
+				ku128_t x;
 				x.x = strtol(q, &q, 10); ++q;
 				x.y = *q == '-'? 1 : 0; q += 2;
 				x.y |= (uint64_t)strtol(q, &q, 10)<<32; ++q;
 				x.y |= strtol(q, &q, 10)<<1;
-				kv_push(fm128_t, p->mapping, x);
+				kv_push(ku128_t, p->mapping, x);
 				if (*q++ == 0) break;
 			}
 		}
@@ -281,7 +281,7 @@ void msg_amend(msg_t *g)
 	tcpu = cputime(); // excluding time spent on building the hash table
 	for (i = 0; i < g->nodes.n; ++i) {
 		fmnode_t *p = &g->nodes.a[i];
-		fm128_v *r;
+		ku128_v *r;
 		if (p->l <= 0) continue;
 		for (j = 0; j < 2; ++j) {
 			int cnt0 = 0, cnt1 = 0;
@@ -321,7 +321,7 @@ static void cut_arc(msg_t *g, uint64_t u, uint64_t v, int remove) // delete v fr
 {
 	int i, j;
 	uint64_t x;
-	fm128_v *r;
+	ku128_v *r;
 	fmnode_t *p;
 	x = get_node_id(g->h, u);
 	if (x == (uint64_t)-1) return;
@@ -343,7 +343,7 @@ static void drop_arc(msg_t *g, size_t id, int min_ovlp, float min_ovlp_ratio)
 	int j, l, cnt;
 	if (p->l < 0 || (min_ovlp == 0 && (min_ovlp_ratio <= 0.01 || min_ovlp_ratio >= 0.99))) return;
 	for (j = 0; j < 2; ++j) {
-		fm128_v *r = &p->nei[j];
+		ku128_v *r = &p->nei[j];
 		int max = 0;
 		if (r->n == 0) continue;
 		for (l = 0; l < r->n; ++l)
@@ -391,13 +391,13 @@ static inline void rmnode_force(msg_t *g, fmnode_t *p)
 
 static inline void add_arc(msg_t *g, uint64_t u, uint64_t v, int ovlp)
 {
-	fm128_v *r;
-	fm128_t z;
+	ku128_v *r;
+	ku128_t z;
 	uint64_t x = get_node_id(g->h, u);
 	if (x == (uint64_t)-1) return;
 	r = &g->nodes.a[x>>1].nei[x&1];
 	z.x = v; z.y = ovlp;
-	kv_push(fm128_t, *r, z);
+	kv_push(ku128_t, *r, z);
 }
 
 static void rmnode_int(msg_t *g, size_t id)
@@ -441,15 +441,15 @@ void msg_rm_tips(msg_t *g, int min_len, int min_cnt)
  ******************/
 
 typedef struct {
-	fm64_v visited, order;
-	fm128_v heap;
+	ku64_v visited, order;
+	ku128_v heap;
 	hash64_t *h, *kept;
 } popaux_t;
 /*
 static void stretch_simple_circle(fmnode_v *nodes, hash64_t *h, int max_ll, size_t id)
 {
 	fmnode_t *q, *p = &nodes->a[id];
-	fm128_v *r;
+	ku128_v *r;
 	int j, cnt;
 	if (p->l < 0) return;
 	r = &p->nei[0];
@@ -514,8 +514,8 @@ static void stretch_simple_circle(fmnode_v *nodes, hash64_t *h, int max_ll, size
 static void pop_complex_bubble(msg_t *g, size_t idd, int max_len, int max_nodes, popaux_t *aux)
 {
 	fmnode_t *q, *p = &g->nodes.a[idd>>1];
-	fm128_t u, v;
-	fm128_v *r;
+	ku128_t u, v;
+	ku128_v *r;
 	khint_t k;
 	uint64_t tmp, term = (uint64_t)-1;
 	int i, j, ret, has_loop;
@@ -526,7 +526,7 @@ static void pop_complex_bubble(msg_t *g, size_t idd, int max_len, int max_nodes,
 	kh_clear(64, aux->h);
 	p->aux[idd&1] = 0;
 	v.x = idd; v.y = 0;
-	kv_push(fm128_t, aux->heap, v);
+	kv_push(ku128_t, aux->heap, v);
 	kh_put(64, aux->h, p->k[idd&1], &ret);
 	// Dijkstra-like graph traversal
 	while (aux->heap.n) {
@@ -558,7 +558,7 @@ static void pop_complex_bubble(msg_t *g, size_t idd, int max_len, int max_nodes,
 				//	nodes->a[u.x>>1].k[0], nodes->a[u.x>>1].k[1], v.x^1, nodes->a[v.x>>1].k[0], nodes->a[v.x>>1].k[1]);
 				if (q->aux[v.x&1] < 0) { // has not been visited
 					v.y = q->aux[v.x&1] = p->aux[u.x&1] - r->a[i].y + q->l;
-					kv_push(fm128_t, aux->heap, v);
+					kv_push(ku128_t, aux->heap, v);
 					ks_heapup_128y(aux->heap.n, aux->heap.a);
 					kv_push(uint64_t, aux->visited, v.x);
 					kh_put(64, aux->h, q->k[0], &ret);
@@ -634,7 +634,7 @@ end_popcomp:
 
 void msg_popbub(msg_t *g, int max_len, int max_nodes)
 {
-	fm128_v tmp;
+	ku128_v tmp;
 	size_t i;
 	double t = cputime();
 	popaux_t *aux;
@@ -644,16 +644,16 @@ void msg_popbub(msg_t *g, int max_len, int max_nodes)
 	aux->h = kh_init(64);
 	aux->kept = kh_init(64);
 	for (i = 0; i < g->nodes.n; ++i) {
-		fm128_t x;
+		ku128_t x;
 		fmnode_t *p;
 		//stretch_simple_circle(nodes, h, max_len, i);
 		p = &g->nodes.a[i];
 		if (p->l > 0 && (p->nei[0].n > 1 || p->nei[1].n > 1)) {
 			x.x = i; x.y = g->nodes.a[i].l;
-			kv_push(fm128_t, tmp, x);
+			kv_push(ku128_t, tmp, x);
 		}
 	}
-	ks_introsort(128y, tmp.n, tmp.a);
+	ks_introsort_128y(tmp.n, tmp.a);
 	for (i = 0; i < tmp.n; ++i) {
 		pop_complex_bubble(g, tmp.a[i].x<<1|0, max_len, max_nodes, aux);
 		pop_complex_bubble(g, tmp.a[i].x<<1|1, max_len, max_nodes, aux);
@@ -670,7 +670,7 @@ void msg_popbub(msg_t *g, int max_len, int max_nodes)
 static void pop_simple_bubble(msg_t *g, size_t id, double min_bub_ratio, double min_bub_cov)
 {
 	fmnode_t *p = &g->nodes.a[id], *q[2], *top_p, *tmp_p;
-	fm128_v *r[2];
+	ku128_v *r[2];
 	uint64_t nei[2];
 	int j, cnt;
 	double max_cov;
@@ -748,7 +748,7 @@ static void pop_simple_bubble(msg_t *g, size_t id, double min_bub_ratio, double 
 
 static void flip(fmnode_t *p, hash64_t *h)
 {
-	fm128_v t;
+	ku128_v t;
 	khint_t k;
 	seq_revcomp6(p->l, (uint8_t*)p->seq);
 	seq_reverse(p->l, (uint8_t*)p->cov);
@@ -822,7 +822,7 @@ static int merge(msg_t *g, size_t w) // merge i's neighbor to the right-end of i
 	p->nei[1] = q->nei[1]; p->k[1] = q->k[1];
 	if (p->mapping.n || q->mapping.n) {
 		for (i = 0; i < q->mapping.n; ++i)
-			kv_push(fm128_t, p->mapping, q->mapping.a[i]);
+			kv_push(ku128_t, p->mapping, q->mapping.a[i]);
 		ks_introsort_128x(p->mapping.n, p->mapping.a);
 		for (i = 1; i < p->mapping.n; ++i)
 			if ((p->mapping.a[i].x ^ p->mapping.a[i-1].x) == 1)
@@ -871,7 +871,7 @@ static void tip_sw(msg_t *g, size_t id, int tip_len, int min_cnt)
 {
 	int i, j, k, dir, max_l, l_qry;
 	fmnode_t *p, *q, *t;
-	fm128_v *r;
+	ku128_v *r;
 	uint64_t w;
 	uint8_t *seq;
 	int8_t mat[16];
@@ -999,7 +999,7 @@ static void flow_flt1(fmgraph_t *g, size_t idd, double thres)
 	fmnode_t *p, *q, *t;
 	double A;
 	uint64_t u, v;
-	fm128_v *r;
+	ku128_v *r;
 	int i, n;
 
 	p = &g->nodes.a[idd>>1];
@@ -1056,7 +1056,7 @@ static void flow_flt(fmgraph_t *g, double thres)
 
 void msg_clean(msg_t *g, const fmclnopt_t *opt)
 {
-	fm64_v stack;
+	ku64_v stack;
 	size_t i;
 	int j;
 

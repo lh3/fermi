@@ -254,17 +254,17 @@ static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint6
 	return n_reads;
 }
 
-static void copy_nei(mog128_v *dst, const fmintv_v *src)
+static void copy_nei(ku128_v *dst, const fmintv_v *src)
 {
 	int i;
 	for (i = 0; i < src->n; ++i) {
-		mog128_t z;
+		ku128_t z;
 		z.x = src->a[i].x[0]; z.y = src->a[i].info;
-		kv_push(mog128_t, *dst, z);
+		kv_push(ku128_t, *dst, z);
 	}
 }
 
-static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], mog128_v nei[2], int *n_reads)
+static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], ku128_v nei[2], int *n_reads)
 {
 	fmintv_t intv0;
 	int seed_len, ret;
@@ -400,7 +400,7 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 {
 	rld_t *e;
-	msg_t *g;
+	mog_t *g;
 	uint64_t i, *used, *bend, *visited;
 	if (min_match < 0) {
 		min_match = (int)(fm6_api_seqlen(l, seq, .25) * .33 + .499);
@@ -413,7 +413,7 @@ msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 	bend    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	visited = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	g = calloc(1, sizeof(msg_t));
-	unitig_core(e, min_match, 0, e->mcnt[1], used, bend, visited, 0, &g->nodes);
+	unitig_core(e, min_match, 0, e->mcnt[1], used, bend, visited, 0, &g->v);
 	free(used); free(bend); free(visited);
 	rld_destroy(e);
 	return g;

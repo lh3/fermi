@@ -25,10 +25,6 @@ typedef khash_t(solid) shash_t;
 static volatile int g_stdout_lock;
 static double g_tc, g_tr;
 
-void ks_introsort_128y(size_t n, fm128_t *a); // in msg.c
-void ks_heapup_128y(size_t n, fm128_t *a);
-void ks_heapdown_128y(size_t i, size_t n, fm128_t *a);
-
 static void compute_SUF(int suf_len)
 {
 	SUF_LEN   = suf_len;
@@ -103,13 +99,13 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
  ******************/
 
 typedef struct {
-	fm128_v heap;
+	ku128_v heap;
 	fm32_v stack;
 } fixaux_t;
 
-static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, int shift, int has_match)
+static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, int shift, int has_match)
 {
-	fm128_t w;
+	ku128_t w;
 	if (score < 0) score = 0;
 	if (c >= 4) c = 0;
 	w.x = (uint64_t)c<<shift | p->x>>2;
@@ -117,7 +113,7 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 	w.y = (uint64_t)((p->y>>48) + score)<<48 | fa->stack.n<<16 | ((p->y&0xffff) - 1);
 	// structure of a stack element - base:3, has_match:1, parent_pos_in_stack:28
 	kv_push(uint32_t, fa->stack, c<<29 | has_match<<28 | (uint32_t)(p->y>>16));
-	kv_push(fm128_t, fa->heap, w);
+	kv_push(ku128_t, fa->heap, w);
 	ks_heapup_128y(fa->heap.n, fa->heap.a);
 }
 
@@ -130,7 +126,7 @@ static inline void save_state(fixaux_t *fa, const fm128_t *p, int c, int score, 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
 	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
-	fm128_t z, rst[2];
+	ku128_t z, rst[2];
 
 	if (s->l <= opt->w) return 0xffff;
 	// get the initial k-mer
@@ -143,7 +139,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	// the first element in the heap
 	kv_push(uint32_t, fa->stack, 0);
 	z.y = i + 1;
-	kv_push(fm128_t, fa->heap, z);
+	kv_push(ku128_t, fa->heap, z);
 	// traverse
 	while (fa->heap.n) {
 		const shash_t *h;

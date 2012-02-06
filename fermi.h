@@ -15,14 +15,8 @@ typedef struct {
 	uint64_t info;
 } fmintv_t;
 
-typedef struct {
-	uint64_t x, y;
-} fm128_t;
-
 typedef struct { size_t n, m; int32_t *a; } fm32s_v;
 typedef struct { size_t n, m; uint32_t *a; } fm32_v;
-typedef struct { size_t n, m; uint64_t *a; } fm64_v;
-typedef struct { size_t n, m; fm128_t  *a; } fm128_v;
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
 
 struct __rld_t; // defined in rld.h
@@ -38,9 +32,16 @@ typedef struct {
 	int n_iter, aggressive_pop;
 } fmclnopt_t;
 
+#ifndef KINT_DEF
+#define KINT_DEF
+typedef struct { uint64_t x, y; } ku128_t;
+typedef struct { size_t n, m; uint64_t *a; } ku64_v;
+typedef struct { size_t n, m; ku128_t *a; } ku128_v;
+#endif
+
 typedef struct {
 	uint64_t k[2];
-	fm128_v nei[2], mapping;
+	ku128_v nei[2], mapping;
 	int l, n;
 	float avg_cov;
 	int aux[2];

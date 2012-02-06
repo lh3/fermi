@@ -127,7 +127,7 @@ typedef khash_t(64) hash64_t;
 typedef struct {
 	int n_supp, len;
 	uint8_t *cov, *pcv; // cov and pcv are allocated in one memory block
-	fm128_v unpaired;
+	ku128_v unpaired;
 } pcov_t;
 
 static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h)
@@ -165,8 +165,8 @@ static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const
 							if (end - beg >= FM6_MAX_ISIZE) to_add = 1; // excessive insert size
 						} else to_add = 1;
 						if (to_add == 1) {
-							fm128_t *q;
-							kv_pushp(fm128_t, r.unpaired, &q);
+							ku128_t *q;
+							kv_pushp(ku128_t, r.unpaired, &q);
 							q->x = k^1, q->y = p->info&mask;
 							continue;
 						}
@@ -190,8 +190,8 @@ static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const
 
 	for (kk = 0; kk != kh_end(h); ++kk)
 		if (kh_exist(h, kk)) {
-			fm128_t *q;
-			kv_pushp(fm128_t, r.unpaired, &q);
+			ku128_t *q;
+			kv_pushp(ku128_t, r.unpaired, &q);
 			q->x = kh_key(h, kk)^2, q->y = kh_val(h, kk);
 		}
 	fm6_miter_destroy(iter);
@@ -267,7 +267,7 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 			if (comment[i]) {
 				char *q;
 				strtol(comment[i], &q, 10);
-				if (isspace(*q)) {
+				if (q != comment[i] && isspace(*q)) {
 					kputc('\t', &out); kputw(r.n_supp, &out);
 					kputc('\t', &out); kputs(q + 1, &out);
 				}

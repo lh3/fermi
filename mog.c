@@ -1,16 +1,19 @@
 #include <zlib.h>
 #include "priv.h"
+#include "kvec.h"
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
 
 #include "khash.h"
 KHASH_INIT2(64,, khint64_t, uint64_t, 1, kh_int64_hash_func, kh_int64_hash_equal)
 
-#define fm128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
-#define fm128_ylt(a, b) ((int64_t)(a).y > (int64_t)(b).y)
+typedef khash_t(64) hash64_t;
+
+#define ku128_xlt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y > (b).y))
+#define ku128_ylt(a, b) ((int64_t)(a).y > (int64_t)(b).y)
 #include "ksort.h"
-KSORT_INIT(128x, fm128_t, fm128_xlt)
-KSORT_INIT(128y, fm128_t, fm128_ylt)
+KSORT_INIT(128x, ku128_t, ku128_xlt)
+KSORT_INIT(128y, ku128_t, ku128_ylt)
 
 #define arc_mark_del(_x) ((_x).x = (uint64_t)-2, (_x).y = 0)
 #define arc_is_del(_x)   ((_x).x == (uint64_t)-2 || (_x).y == 0)
@@ -19,7 +22,7 @@ KSORT_INIT(128y, fm128_t, fm128_ylt)
  * Vector operations *
  *********************/
 
-static inline void v128_clean(mog128_v *r)
+static inline void v128_clean(ku128_v *r)
 {
 	int i, j;
 	for (i = j = 0; i < r->n; ++i)
@@ -30,7 +33,7 @@ static inline void v128_clean(mog128_v *r)
 	r->n = j;
 }
 
-static inline void v128_rmdup(mog128_v *r)
+static inline void v128_rmdup(ku128_v *r)
 {
 	int l, cnt;
 	uint64_t x;
@@ -51,7 +54,7 @@ static inline void v128_rmdup(mog128_v *r)
 	if (cnt) v128_clean(r);
 }
 
-static inline void v128_cap(mog128_v *r, int max)
+static inline void v128_cap(ku128_v *r, int max)
 {
 	int i, thres;
 	if (r->n < max) return;
@@ -62,18 +65,18 @@ static inline void v128_cap(mog128_v *r, int max)
 	r->n = i;
 }
 
-/**************************************
- * Mapping between node id and end id *
- **************************************/
+/*************************************************
+ * Mapping between vertex id and interval end id *
+ *************************************************/
 
-static hash64_t *build_hash(const mognode_v *nodes)
+static hash64_t *build_hash(const mogv_v *nodes)
 {
 	long i;
 	int j, ret;
 	hash64_t *h;
 	h = kh_init(64);
 	for (i = 0; i < nodes->n; ++i) {
-		const fmnode_t *p = &nodes->a[i];
+		const mogv_t *p = &nodes->a[i];
 		for (j = 0; j < 2; ++j) {
 			khint_t k = kh_put(64, h, p->k[j], &ret);
 			if (ret == 0) {
@@ -89,16 +92,15 @@ static hash64_t *build_hash(const mognode_v *nodes)
 static inline uint64_t tid2idd(hash64_t *h, uint64_t tid)
 {
 	khint_t k = kh_get(64, h, tid);
-	return k == kh_end(h)? (uint64_t)(-1) : kh_val(h, k);
+	return k == kh_end(h)? (uint64_t)-1 : kh_val(h, k);
 }
 
 void mog_amend(mog_t *g)
 {
-	size_t i;
-	int j, l, ll;
-	for (i = 0; i < g->nodes.n; ++i) {
-		mognode_t *p = &g->nodes.a[i];
-		mog128_v *r;
+	int i, j, l, ll;
+	for (i = 0; i < g->v.n; ++i) {
+		mogv_t *p = &g->v.a[i];
+		ku128_v *r;
 		for (j = 0; j < 2; ++j) {
 			for (l = 0; l < p->nei[j].n; ++l) {
 				uint64_t x = p->nei[j].a[l].x;
@@ -107,7 +109,7 @@ void mog_amend(mog_t *g)
 					arc_mark_del(p->nei[j].a[l]);
 					continue;
 				}
-				r = &g->nodes.a[z>>1].nei[z&1];
+				r = &g->v.a[z>>1].nei[z&1];
 				for (ll = 0; ll < r->n; ++ll)
 					if (r->a[ll].x == p->k[j]) break;
 				if (ll == r->n) { // not in neighbor's neighor
@@ -115,7 +117,7 @@ void mog_amend(mog_t *g)
 					continue;
 				}
 			}
-			v128_clean(&p->nei[j]);
+			v128_rmdup(&p->nei[j]);
 		}
 	}
 }
@@ -124,7 +126,18 @@ void mog_amend(mog_t *g)
  * Graph I/O *
  *************/
 
-void mog_write1(const mognode_t *p, kstring_t *out)
+mogopt_t *mog_init_opt()
+{
+	mogopt_t *o;
+	o = calloc(1, sizeof(mogopt_t));
+	o->flag |= MOG_F_DROP_TIP0;
+	o->max_arc = 512;
+	o->min_el = 300;
+	o->min_dratio0 = 0.7;
+	return o;
+}
+
+void mog_write1(const mogv_t *p, kstring_t *out)
 {
 	int j, k;
 	if (p->len <= 0) return;
@@ -149,12 +162,22 @@ void mog_write1(const mognode_t *p, kstring_t *out)
 	kputc('\n', out);
 }
 
+void mog_print(const mogv_v *v)
+{
+	int i;
+	kstring_t out;
+	out.l = out.m = 0; out.s = 0;
+	for (i = 0; i < v->n; ++i) {
+		mog_write1(&v->a[i], &out);
+		fwrite(out.s, 1, out.l, stdout);
+	}
+}
+
 mog_t *mog_read(const char *fn, const mogopt_t *opt)
 {
 	gzFile fp;
 	kseq_t *seq;
-	int64_t tot_len = 0, n_arcs = 0, n_tips = 0, n_arc_drop = 0;
-	mog128_v nei;
+	ku128_v nei;
 	mog_t *g;
 
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
@@ -165,9 +188,9 @@ mog_t *mog_read(const char *fn, const mogopt_t *opt)
 	while (kseq_read(seq) >= 0) {
 		int i, j;
 		char *q;
-		mognode_t *p;
-		kv_pushp(mognode_t, g->nodes, &p);
-		kv_init(p->nei[0]); kv_init(p->nei[1]); kv_init(p->mapping);
+		mogv_t *p;
+		kv_pushp(mogv_t, g->v, &p);
+		memset(p, 0, sizeof(mogv_t));
 		// parse ->k[2]
 		p->k[0] = strtol(seq->name.s, &q, 10); ++q;
 		p->k[1] = strtol(q, &q, 10);
@@ -179,9 +202,13 @@ mog_t *mog_read(const char *fn, const mogopt_t *opt)
 			double thres; // threshold for dropping an overlap
 			max = max2 = 0; // largest and 2nd largest overlaps
 			nei.n = 0;
+			if (*q == '.') {
+				q += 2; // skip "." and "\t" (and perhaps "\0", but does not matter)
+				continue;
+			}
 			while (isdigit(*q)) { // parse the neighbors
-				mog128_t *r;
-				kv_push(mog128_t, nei, &r);
+				ku128_t *r;
+				kv_pushp(ku128_t, nei, &r);
 				r->x = strtol(q, &q, 10); ++q;
 				r->y = strtol(q, &q, 10); ++q;
 				g->min_ovlp = g->min_ovlp < r->y? g->min_ovlp : r->y;
@@ -189,19 +216,19 @@ mog_t *mog_read(const char *fn, const mogopt_t *opt)
 				else if (max2 < r->y) max2 = r->y;
 			}
 			++q; // skip the tailing blank
-			thres = (int)(max2 * opt->diff_ratio + .499);
+			thres = (int)(max2 * opt->min_dratio0 + .499);
 			for (i = 0; i < nei.n; ++i)
 				if (nei.a[i].y < thres) nei.a[i].y = 0; // to be deleted in rmdup_128v()
 			v128_rmdup(&nei);
 			v128_cap(&nei, opt->max_arc);
-			kv_copy(mog128_t, p->nei[j], nei);
+			kv_copy(ku128_t, p->nei[j], nei);
 		}
 		// test if to cut a tip
 		p->len = seq->seq.l;
-		if (opt->flag & MOG_F_DROP_TIP) {
-			if ((p->nei[0].n & p->nei[1].n) && p->len < opt->min_el && p->nsr == 1) {
+		if (opt->flag & MOG_F_DROP_TIP0) {
+			if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->len < opt->min_el && p->nsr == 1) {
 				free(p->nei[0].a); free(p->nei[1].a); // only ->nei[2] have been allocated so far
-				--g->nodes.n;
+				--g->v.n;
 				continue;
 			}
 		}
@@ -209,8 +236,8 @@ mog_t *mog_read(const char *fn, const mogopt_t *opt)
 		p->max_len = p->len + 1;
 		kroundup32(p->max_len);
 		p->seq = malloc(p->max_len);
+		for (i = 0; i < p->len; ++i) p->seq[i] = seq_nt6_table[(int)seq->seq.s[i]];
 		p->cov = malloc(p->max_len);
-		strcpy(p->seq, seq->seq.s);
 		strcpy(p->cov, seq->qual.s);
 		p->aux[0] = p->aux[1] = -1;
 	}
@@ -218,8 +245,8 @@ mog_t *mog_read(const char *fn, const mogopt_t *opt)
 	kseq_destroy(seq);
 	gzclose(fp);
 	free(nei.a);
-	g->h = build_hash(&g->nodes);
-	msg_amend(g);
-	//g->rdist = fmg_compute_rdist(&g->nodes);
+	g->h = build_hash(&g->v);
+	mog_amend(g);
+	//g->rdist = fmg_compute_rdist(&g->v);
 	return g;
 }

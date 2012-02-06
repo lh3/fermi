@@ -1,7 +1,16 @@
 #ifndef FERMI_UTILS_H
 
+#include <stdint.h>
+
 #define xmalloc(s) xmalloc_core((s), __func__)
 #define xcalloc(n, s) xcalloc_core((n), (s), __func__)
+
+#ifndef KINT_DEF
+#define KINT_DEF
+typedef struct { uint64_t x, y; } ku128_t;
+typedef struct { size_t n, m; uint64_t *a; } ku64_v;
+typedef struct { size_t n, m; ku128_t *a; } ku128_v;
+#endif
 
 #ifdef __cplusplus
 #endif

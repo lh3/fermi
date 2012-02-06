@@ -13,6 +13,10 @@ int ksa_bwt(unsigned char *T, int n, int k);
 int ksa_bwt64(unsigned char *T, int64_t n, int k);
 
 void ks_introsort_uint64_t(size_t n, uint64_t *a);
+void ks_introsort_128x(size_t n, ku128_t *a);
+void ks_introsort_128y(size_t n, ku128_t *a);
+void ks_heapup_128y(size_t n, ku128_t *a);
+void ks_heapdown_128y(size_t i, size_t n, ku128_t *a);
 
 void seq_char2nt6(int l, unsigned char *s);
 void seq_reverse(int l, unsigned char *s);

@@ -17,13 +17,13 @@ extern unsigned char seq_nt6_table[128];
 typedef struct {
 	int len;
 	uint8_t *semitig;
-	fm64_v reads;
+	ku64_v reads;
 } ext1_t;
 
 static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_dist)
 {
 	int k, j = 0;
-	fm128_v reads;
+	ku128_v reads;
 	assert(n >= 3);
 	kv_init(reads);
 	while (kseq_read(kseq) >= 0) {
@@ -36,12 +36,12 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 		for (k = 0, q = kseq->comment.s; *q && k < 2; ++q) // skip the first two fields
 			if (isspace(*q)) ++k;
 		while (isdigit(*q)) { // read mapping
-			fm128_t x;
+			ku128_t x;
 			x.x = strtol(q, &q, 10); ++q;
 			x.y = *q == '-'? 1 : 0; q += 2;
 			x.y |= (uint64_t)strtol(q, &q, 10)<<32; ++q;
 			x.y |= strtol(q, &q, 10)<<1;
-			kv_push(fm128_t, reads, x);
+			kv_push(ku128_t, reads, x);
 			if (*q++ == 0) break;
 		}
 		// left-end
@@ -49,7 +49,7 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 		p->reads.n = 0;
 		end = kseq->seq.l < max_dist? kseq->seq.l : max_dist;
 		for (k = 0; k < reads.n; ++k) {
-			fm128_t *r = &reads.a[k];
+			ku128_t *r = &reads.a[k];
 			if ((r->y&1) && r->y<<32>>33 <= end)
 				kv_push(uint64_t, p->reads, (r->x^1)<<1);
 		}
@@ -64,7 +64,7 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 		p->reads.n = 0;
 		beg = kseq->seq.l < max_dist? 0 : kseq->seq.l - max_dist;
 		for (k = 0; k < reads.n; ++k) {
-			fm128_t *r = &reads.a[k];
+			ku128_t *r = &reads.a[k];
 			if ((r->y&1) == 0 && r->y>>32 >= beg)
 				kv_push(uint64_t, p->reads, (r->x^1)<<1|1);
 		}
