@@ -710,7 +710,6 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 	if (opt->min_insr >= 2) {
 		t = cputime();
 		mog_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
-		mog_g_merge(g);
 		mog_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
 		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
 		mog_g_merge(g);
