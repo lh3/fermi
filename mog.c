@@ -439,8 +439,6 @@ void mog_g_merge(mog_t *g)
 		mog_v_flip(g, p);
 		while (mog_vh_merge_try(g, p) == 0);
 	}
-	if (fm_verbose >= 2)
-		fprintf(stderr, "[M::%s] merged unambiguous arcs in %.2f sec\n", __func__, cputime() - tcpu);
 }
 
 /*****************************
@@ -462,7 +460,7 @@ void mog_g_rm_vint(mog_t *g, int min_len, int min_nsr, int min_ovlp)
 	int i;
 	for (i = 0; i < g->v.n; ++i) {
 		mogv_t *p = &g->v.a[i];
-		if (p->len < min_len && p->nsr < min_nsr)
+		if (p->len >= 0 && p->len < min_len && p->nsr < min_nsr)
 			mog_v_transdel(g, p, min_ovlp);
 	}
 }
@@ -564,8 +562,8 @@ void mog_vh_flowflt(mog_t *g, size_t idd, double thres)
 	r = &q->nei[u&1];
 	for (i = 0; i < r->n; ++i) {
 		int to_cut = 0;
+		if (edge_is_del(r->a[i])) continue;
 		v = tid2idd(g->h, r->a[i].x);
-		if (v == (uint64_t)-1) continue;
 		t = &g->v.a[v>>1];
 		if (t->nei[v&1].n == 1) {
 			// Should we also consider to cut in this case? Perhaps does not matter.
