@@ -316,6 +316,7 @@ void mog_v_del(mog_t *g, mogv_t *p)
 {
 	int i, j;
 	khint_t k;
+	if (p->len < 0) return;
 	for (i = 0; i < 2; ++i) {
 		ku128_v *r = &p->nei[i];
 		for (j = 0; j < r->n; ++j)
@@ -346,8 +347,6 @@ void mog_v_transdel(mog_t *g, mogv_t *p, int min_ovlp)
 	mog_v_del(g, p);
 }
 
-#define __swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))
-
 void mog_v_flip(mog_t *g, mogv_t *p)
 {
 	ku128_v t;
@@ -356,9 +355,9 @@ void mog_v_flip(mog_t *g, mogv_t *p)
 
 	seq_revcomp6(p->len, (uint8_t*)p->seq);
 	seq_reverse(p->len, (uint8_t*)p->cov);
-	__swap(p->k[0], p->k[1]);
+	p->k[0] ^= p->k[1]; p->k[1] ^= p->k[0]; p->k[0] ^= p->k[1];
 	t = p->nei[0]; p->nei[0] = p->nei[1]; p->nei[1] = t;
-	k = kh_get(64, g->h, p->k[0]);
+	k = kh_get(64, h, p->k[0]);
 	assert(k != kh_end(h));
 	kh_val(h, k) ^= 1;
 	k = kh_get(64, h, p->k[1]);
