@@ -573,17 +573,42 @@ int main_clean(int argc, char *argv[])
 	int c;
 	mogopt_t *opt;
 	opt = mog_init_opt();
-	while ((c = getopt(argc, argv, "")) >= 0) {
+	while ((c = getopt(argc, argv, "N:d:CAl:e:i:o:R:n:a:")) >= 0) {
 		switch (c) {
+		case 'C': opt->flag |= MOG_F_CLEAN; break;
+		case 'A': opt->flag |= MOG_F_AGGRESSIVE; break;
+		case 'd': opt->min_dratio0 = atof(optarg); break;
+		case 'N': opt->max_arc  = atoi(optarg); break;
+		case 'l': opt->min_elen = atoi(optarg); break;
+		case 'e': opt->min_ensr = atoi(optarg); break;
+		case 'i': opt->min_insr = atoi(optarg); break;
+		case 'o': opt->min_ovlp = atoi(optarg); break;
+		case 'a': opt->a_thres  = atof(optarg); break;
+		case 'n': opt->n_iter   = atoi(optarg); break;
+		case 'R': opt->min_dratio1 = atof(optarg); break;
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage:   fermi clean [options] <in.mog>\n");
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   fermi clean [options] <in.mog>\n\n");
+		fprintf(stderr, "Options: -N INT      read maximum INT neighbors per node [%d]\n", opt->max_arc);
+		fprintf(stderr, "         -d FLOAT    drop a neighbor if relative overlap ratio below FLOAT [%.2f]\n\n", opt->min_dratio0); 
+		fprintf(stderr, "         -C          clean the graph\n");
+		fprintf(stderr, "         -l INT      minimum tip length [%d]\n", opt->min_elen);
+		fprintf(stderr, "         -e INT      minimum tip read count [%d]\n", opt->min_ensr);
+		fprintf(stderr, "         -i INT      minimum internal unitig read count [%d]\n", opt->min_insr);
+		fprintf(stderr, "         -o INT      minimum overlap [%d]\n", opt->min_ovlp);
+		fprintf(stderr, "         -R FLOAT    minimum relative overlap ratio [%.2f]\n", opt->min_dratio1);
+		fprintf(stderr, "         -n INT      number of iterations [%d]\n", opt->n_iter);
+		fprintf(stderr, "         -A          aggressive bubble popping\n");
+		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n", opt->a_thres);
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	g = mog_g_read(argv[optind], opt);
-	mog_g_merge(g);
+	mog_g_clean(g, opt);
 	mog_g_print(g);
+	mog_g_destroy(g);
 	free(opt);
 	return 0;
 }
