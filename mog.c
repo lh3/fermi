@@ -67,7 +67,7 @@ static inline void v128_rmdup(ku128_v *r)
 static inline void v128_cap(ku128_v *r, int max)
 {
 	int i, thres;
-	if (r->n < max) return;
+	if (r->n <= max) return;
 	ks_introsort(128y, r->n, r->a);
 	thres = r->a[max].y;
 	for (i = 0; i < r->n; ++i)
@@ -102,8 +102,9 @@ static hash64_t *build_hash(const mogv_v *nodes)
 static inline uint64_t tid2idd(hash64_t *h, uint64_t tid)
 {
 	khint_t k = kh_get(64, h, tid);
+	if (k == kh_end(h)) fprintf(stderr, "%lx\n", tid);
 	assert(k != kh_end(h));
-	return k == kh_end(h)? (uint64_t)-1 : kh_val(h, k);
+	return kh_val(h, k);
 }
 
 void mog_amend(mog_t *g)
@@ -122,12 +123,10 @@ void mog_amend(mog_t *g)
 					continue;
 				} else z = kh_val((hash64_t*)g->h, k);
 				r = &g->v.a[z>>1].nei[z&1];
-				for (ll = 0; ll < r->n; ++ll)
-					if (r->a[ll].x == p->k[j]) break;
-				if (ll == r->n) { // not in neighbor's neighor
-					p->nei[j].a[l].x = (uint64_t)-1;
-					continue;
-				}
+				for (ll = 0, z = p->k[j]; ll < r->n; ++ll)
+					if (r->a[ll].x == z) break;
+				if (ll == r->n) // not in neighbor's neighor
+					edge_mark_del(p->nei[j].a[l]);
 			}
 			v128_rmdup(&p->nei[j]);
 		}
@@ -184,7 +183,10 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 	kseq_t *seq;
 	ku128_v nei;
 	mog_t *g;
+	int is_mod = 0;
+	double t;
 
+	t = cputime();
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	if (fp == 0) return 0;
 	kv_init(nei);
@@ -205,14 +207,13 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 		// parse ->nei[2]
 		for (j = 0; j < 2; ++j) {
 			int max, max2;
-			double thres; // threshold for dropping an overlap
 			max = max2 = 0; // largest and 2nd largest overlaps
 			nei.n = 0;
 			if (*q == '.') {
 				q += 2; // skip "." and "\t" (and perhaps "\0", but does not matter)
 				continue;
 			}
-			while (isdigit(*q)) { // parse the neighbors
+			while (isdigit(*q) || *q == '-') { // parse the neighbors
 				ku128_t *r;
 				kv_pushp(ku128_t, nei, &r);
 				r->x = strtol(q, &q, 10); ++q;
@@ -222,21 +223,25 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 				else if (max2 < r->y) max2 = r->y;
 			}
 			++q; // skip the tailing blank
-			thres = (int)(max2 * opt->min_dratio0 + .499);
-			for (i = 0; i < nei.n; ++i)
-				if (nei.a[i].y < thres) nei.a[i].y = 0; // to be deleted in rmdup_128v()
-			v128_rmdup(&nei);
-			v128_cap(&nei, opt->max_arc);
+			if (!(opt->flag & MOG_F_READ_ORI)) {
+				double thres = (int)(max2 * opt->min_dratio0 + .499);
+				for (i = 0; i < nei.n; ++i)
+					if (nei.a[i].y < thres) is_mod = 1, nei.a[i].y = 0; // to be deleted in rmdup_128v()
+				v128_rmdup(&nei);
+				if (nei.n > opt->max_arc) {
+					is_mod = 1;
+					v128_cap(&nei, opt->max_arc);
+				}
+			}
 			kv_copy(ku128_t, p->nei[j], nei);
 		}
 		// test if to cut a tip
 		p->len = seq->seq.l;
-		if (opt->flag & MOG_F_DROP_TIP0) {
-			if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->len < opt->min_elen && p->nsr == 1) {
-				free(p->nei[0].a); free(p->nei[1].a); // only ->nei[2] have been allocated so far
-				--g->v.n;
-				continue;
-			}
+		if (!(opt->flag & MOG_F_READ_ORI) && (p->nei[0].n == 0 || p->nei[1].n == 0) && p->len < opt->min_elen && p->nsr == 1) {
+			free(p->nei[0].a); free(p->nei[1].a); // only ->nei[2] have been allocated so far
+			--g->v.n;
+			is_mod = 1;
+			continue;
 		}
 		// set ->{seq,cov,max_len}
 		p->max_len = p->len + 1;
@@ -251,8 +256,17 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 	kseq_destroy(seq);
 	gzclose(fp);
 	free(nei.a);
+	// finalize
 	g->h = build_hash(&g->v);
-	mog_amend(g);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] read the graph and constructed the dictionary in %.3f sec\n", __func__, cputime() - t);
+	if (is_mod && fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] the graph is modified during reading.\n", __func__);
+	if (is_mod || !(opt->flag & MOG_F_NO_AMEND)) {
+		t = cputime();
+		mog_amend(g);
+		fprintf(stderr, "[M::%s] amended the graph in %.3f sec.\n", __func__, cputime() - t);
+	}
 	g->rdist = mog_cal_rdist(g);
 	if (opt->flag & MOG_F_READnMERGE) mog_g_merge(g);
 	return g;
@@ -295,7 +309,9 @@ void mog_eh_add(mog_t *g, uint64_t u, uint64_t v, int ovlp) // add v to u
 {
 	ku128_v *r;
 	ku128_t *q;
-	uint64_t idd = tid2idd(g->h, u);
+	uint64_t idd;
+	if ((int64_t)u < 0) return;
+	idd = tid2idd(g->h, u);
 	r = &g->v.a[idd>>1].nei[idd&1];
 	kv_pushp(ku128_t, *r, &q);
 	q->x = v; q->y = ovlp;
@@ -305,7 +321,7 @@ void mog_eh_markdel(mog_t *g, uint64_t u, uint64_t v) // mark deletion of v from
 {
 	int i;	
 	uint64_t idd;
-	if (u == (uint64_t)-1) return;
+	if ((int64_t)u < 0) return;
 	idd = tid2idd(g->h, u);
 	ku128_v *r = &g->v.a[idd>>1].nei[idd&1];
 	for (i = 0; i < r->n; ++i)
@@ -320,8 +336,10 @@ void mog_v_del(mog_t *g, mogv_t *p)
 	for (i = 0; i < 2; ++i) {
 		ku128_v *r = &p->nei[i];
 		for (j = 0; j < r->n; ++j)
-			if (!edge_is_del(r->a[j]))
+			if (!edge_is_del(r->a[j]) && r->a[j].x != p->k[0] && r->a[j].x != p->k[1])
 				mog_eh_markdel(g, r->a[j].x, p->k[i]);
+	}
+	for (i = 0; i < 2; ++i) {
 		k = kh_get(64, g->h, p->k[i]);
 		kh_del(64, g->h, k);
 	}
@@ -378,8 +396,10 @@ int mog_vh_merge_try(mog_t *g, mogv_t *p) // merge p's neighbor to the right-end
 
 	// check if an unambiguous merge can be performed
 	if (p->nei[1].n != 1) return -1; // multiple or no neighbor; do not merge
-	if (p->nei[1].a[0].x == (uint64_t)-1) return -2;
-	kq = kh_get(64, g->h, p->nei[1].a[0].x); assert(kq != kh_end(h)); // otherwise the neighbor is non-existant
+	if ((int64_t)p->nei[1].a[0].x < 0) return -2;
+	kq = kh_get(64, g->h, p->nei[1].a[0].x);
+	if (kq == kh_end(h)) fprintf(stderr, "%ld,%ld\n", p->k[1], p->nei[1].a[0].x);
+	assert(kq != kh_end(h)); // otherwise the neighbor is non-existant
 	q = &g->v.a[kh_val((hash64_t*)g->h, kq)>>1];
 	if (p == q) return -3; // we have a loop p->p. We cannot merge in this case
 	if (q->nei[kh_val(h, kq)&1].n != 1) return -4; // the neighbor q has multiple neighbors. cannot be an unambiguous merge
@@ -427,7 +447,6 @@ int mog_vh_merge_try(mog_t *g, mogv_t *p) // merge p's neighbor to the right-end
 void mog_g_merge(mog_t *g)
 {
 	int i;
-	double tcpu = cputime();
 	for (i = 0; i < g->v.n; ++i) { // remove multiedges; FIXME: should we do that?
 		v128_rmdup(&g->v.a[i].nei[0]);
 		v128_rmdup(&g->v.a[i].nei[1]);
@@ -450,7 +469,7 @@ void mog_g_rm_vext(mog_t *g, int min_len, int min_nsr)
 	int i;
 	for (i = 0; i < g->v.n; ++i) {
 		mogv_t *p = &g->v.a[i];
-		if ((p->nei[0].n == 0 || p->nei[1].n == 0) && p->len < min_len && p->nsr < min_nsr)
+		if (p->len >= 0 && (p->nei[0].n == 0 || p->nei[1].n == 0) && p->len < min_len && p->nsr < min_nsr)
 			mog_v_del(g, p);
 	}
 }
@@ -550,6 +569,7 @@ void mog_vh_flowflt(mog_t *g, size_t idd, double thres)
 	if (p->len < 0 || p->nei[idd&1].n != 1) return;
 	A = (p->len - p->nei[idd&1].a[0].y) / g->rdist - p->nsr * M_LN2;
 	if (A < thres && p->nsr < A_MIN_SUPP) return; // p not significantly unique
+	if ((int64_t)p->nei[idd&1].a[0].x < 0) return;
 	u = tid2idd(g->h, p->nei[idd&1].a[0].x);
 	q = &g->v.a[u>>1];
 	if (p == q) return;
@@ -562,7 +582,7 @@ void mog_vh_flowflt(mog_t *g, size_t idd, double thres)
 	r = &q->nei[u&1];
 	for (i = 0; i < r->n; ++i) {
 		int to_cut = 0;
-		if (edge_is_del(r->a[i])) continue;
+		if ((int64_t)r->a[i].x < 0) continue;
 		v = tid2idd(g->h, r->a[i].x);
 		t = &g->v.a[v>>1];
 		if (t->nei[v&1].n == 1) {
@@ -606,6 +626,7 @@ void mog_v_swrm(mog_t *g, mogv_t *p)
 	s = &p->nei[dir];
 	for (l = 0; l < s->n; ++l) { // if we use "if (p->nei[0].n + p->nei[1].n != 1)", s->n == 1
 		uint64_t v;
+		if ((int64_t)s->a[l].x < 0) continue;
 		v = tid2idd(g->h, s->a[l].x);
 		q = &g->v.a[v>>1];
 		if (q == p || q->nei[v&1].n == 1) continue;
@@ -627,7 +648,7 @@ void mog_v_swrm(mog_t *g, mogv_t *p)
 		r = &q->nei[v&1];
 		for (i = 0; i < r->n; ++i) {
 			uint64_t w;
-			if (r->a[i].x == p->k[dir]) continue;
+			if (r->a[i].x == p->k[dir] || (int64_t)r->a[i].x < 0) continue;
 			w = tid2idd(g->h, r->a[i].x);
 			// get the target sequence
 			t = &g->v.a[w>>1];
@@ -663,6 +684,14 @@ void mog_v_swrm(mog_t *g, mogv_t *p)
 	if (i == s->n) mog_v_del(g, p); // p is not connected to any other vertices
 }
 
+/******************
+ * Bubble popping *
+ ******************/
+
+void mog_vh_bbl_detect(mog_t *g, uint64_t idd)
+{
+}
+
 /**************
  * Key portal *
  **************/
@@ -672,7 +701,7 @@ mogopt_t *mog_init_opt()
 	mogopt_t *o;
 
 	o = calloc(1, sizeof(mogopt_t));
-	o->flag = MOG_F_DROP_TIP0 | MOG_F_READnMERGE;
+	o->flag = MOG_F_READnMERGE;
 	o->max_arc = 512;
 	o->min_dratio0 = 0.7;
 
@@ -692,7 +721,6 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 	int i, j;
 
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
-	if (g->h == 0) g->h = build_hash(&g->v);
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
@@ -709,9 +737,15 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 	}
 	if (opt->min_insr >= 2) {
 		t = cputime();
+		mog_g_print(g); fflush(stdout);
 		mog_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
+		fprintf(stderr, "step 1\n");
+		/*
 		mog_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
+		fprintf(stderr, "step 2\n");
 		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
+		fprintf(stderr, "step 3\n");
+		*/
 		mog_g_merge(g);
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);

@@ -5,11 +5,12 @@
 #include <stdlib.h>
 #include "kstring.h"
 
-#define MOG_F_DROP_TIP0  0x1
+#define MOG_F_READ_ORI   0x1
 #define MOG_F_READ_TAG   0x2
 #define MOG_F_READnMERGE 0x4
 #define MOG_F_CLEAN      0x10
 #define MOG_F_AGGRESSIVE 0x20
+#define MOG_F_NO_AMEND   0x40
 
 typedef struct {
 	int flag, max_arc, n_iter, min_ovlp, min_elen, min_ensr, min_insr;

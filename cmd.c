@@ -573,10 +573,12 @@ int main_clean(int argc, char *argv[])
 	int c;
 	mogopt_t *opt;
 	opt = mog_init_opt();
-	while ((c = getopt(argc, argv, "N:d:CAl:e:i:o:R:n:a:")) >= 0) {
+	while ((c = getopt(argc, argv, "ON:d:CFAl:e:i:o:R:n:a:")) >= 0) {
 		switch (c) {
+		case 'F': opt->flag |= MOG_F_NO_AMEND; break;
 		case 'C': opt->flag |= MOG_F_CLEAN; break;
 		case 'A': opt->flag |= MOG_F_AGGRESSIVE; break;
+		case 'O': opt->flag |= MOG_F_READ_ORI; break;
 		case 'd': opt->min_dratio0 = atof(optarg); break;
 		case 'N': opt->max_arc  = atoi(optarg); break;
 		case 'l': opt->min_elen = atoi(optarg); break;
