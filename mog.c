@@ -604,7 +604,7 @@ void mog_vh_flowflt(mog_t *g, size_t idd, double thres)
 
 #include "ksw.h"
 
-void mog_v_swrm(mog_t *g, mogv_t *p)
+void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen)
 {
 	int i, j, k, l, dir, max_l, l_qry;
 	mogv_t *q, *t;
@@ -614,7 +614,7 @@ void mog_v_swrm(mog_t *g, mogv_t *p)
 	ksw_query_t *qry;
 	ksw_aux_t aux;
 
-	if (p->len < 0) return;
+	if (p->len < 0 || p->len >= min_elen) return;
 	//if (p->nei[0].n && p->nei[1].n) return; // FIXME: between this and the next line, which is better?
 	if (p->nei[0].n + p->nei[1].n != 1) return;
 	dir = p->nei[0].n? 0 : 1;
@@ -641,9 +641,9 @@ void mog_v_swrm(mog_t *g, mogv_t *p)
 			for (j = p->len - s->a[l].y - 1, k = 0; j >= 0; --j)
 				seq[k++] = 4 - p->seq[j];
 		}
-		l_qry = k; aux.T = l_qry / 2;
+		l_qry = k; aux.T = l_qry * 5 / 2;
 		qry = ksw_qinit(2, l_qry, seq, 4, mat);
-		//fprintf(stderr, "===> %lld:%lld:%d[%d], %d, %ld <===\n", p->k[0], p->k[1], s->n, l, p->n, q->nei[v&1].n);
+		//fprintf(stderr, "===> %lld:%lld:%d[%d], %d, %ld <===\n", p->k[0], p->k[1], s->n, l, p->nsr, q->nei[v&1].n);
 		//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fputc('\n', stderr);
 
 		r = &q->nei[v&1];
@@ -661,12 +661,12 @@ void mog_v_swrm(mog_t *g, mogv_t *p)
 					seq[k++] = t->seq[j] - 1;
 			}
 			ksw_sse2(qry, k, seq, &aux);
-			//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fprintf(stderr, "\t%d\n", aux.score);
+			//for (j = 0; j < k; ++j) fputc("ACGTN"[(int)seq[j]], stderr); fprintf(stderr, "\t%d\t%f\n", aux.score, (l_qry * 5. - aux.score) / (5. + 4.));
 			if (aux.score) {
 				double r_diff, n_diff;
 				n_diff = (l_qry * 5. - aux.score) / (5. + 4.); // 5: matching score; -4: mismatchig score
 				r_diff = n_diff / l_qry;
-				if ((int)(n_diff + .499) <= 1 || r_diff < 0.1) break;
+				if (n_diff < 2.01 || r_diff < 0.1) break;
 			}
 		}
 
@@ -674,7 +674,7 @@ void mog_v_swrm(mog_t *g, mogv_t *p)
 			// mark delete in p and delete in q
 			edge_mark_del(s->a[l]);
 			for (i = 0; i < r->n; ++i)
-				if (r->a[i].x != p->k[dir])
+				if (r->a[i].x == p->k[dir])
 					edge_mark_del(r->a[i]);
 		}
 		free(seq); free(qry);
@@ -733,7 +733,7 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 			fprintf(stderr, "[M::%s] finished simple graph simplification round %d in %.3f sec.\n", __func__, j+1, cputime() - t);
 	}
 	if (opt->flag & MOG_F_AGGRESSIVE) {
-		for (i = 0; i < g->v.n; ++i) mog_v_swrm(g, &g->v.a[i]);
+		for (i = 0; i < g->v.n; ++i) mog_v_swrm(g, &g->v.a[i], opt->min_elen);
 		mog_g_merge(g);
 	}
 	if (opt->min_insr >= 2) {
