@@ -102,7 +102,6 @@ static hash64_t *build_hash(const mogv_v *nodes)
 static inline uint64_t tid2idd(hash64_t *h, uint64_t tid)
 {
 	khint_t k = kh_get(64, h, tid);
-	if (k == kh_end(h)) fprintf(stderr, "%lx\n", tid);
 	assert(k != kh_end(h));
 	return kh_val(h, k);
 }
@@ -310,9 +309,12 @@ void mog_eh_add(mog_t *g, uint64_t u, uint64_t v, int ovlp) // add v to u
 	ku128_v *r;
 	ku128_t *q;
 	uint64_t idd;
+	int i;
 	if ((int64_t)u < 0) return;
 	idd = tid2idd(g->h, u);
 	r = &g->v.a[idd>>1].nei[idd&1];
+	for (i = 0; i < r->n; ++i) // no multi-edges
+		if (r->a[i].x == v) return;
 	kv_pushp(ku128_t, *r, &q);
 	q->x = v; q->y = ovlp;
 }
@@ -353,7 +355,7 @@ void mog_v_transdel(mog_t *g, mogv_t *p, int min_ovlp)
 		for (i = 0; i < p->nei[0].n; ++i) {
 			if (edge_is_del(p->nei[0].a[i]) || p->nei[0].a[i].x == p->k[0] || p->nei[0].a[i].x == p->k[1]) continue; // due to p->p loop
 			for (j = 0; j < p->nei[1].n; ++j) {
-				if (edge_is_del(p->nei[1].a[i]) || p->nei[1].a[j].x == p->k[0] || p->nei[1].a[j].x == p->k[1]) continue;
+				if (edge_is_del(p->nei[1].a[j]) || p->nei[1].a[j].x == p->k[0] || p->nei[1].a[j].x == p->k[1]) continue;
 				ovlp = (int)(p->nei[0].a[i].y + p->nei[1].a[j].y) - p->len;
 				if (ovlp >= min_ovlp) {
 					mog_eh_add(g, p->nei[0].a[i].x, p->nei[1].a[j].x, ovlp);
@@ -398,7 +400,6 @@ int mog_vh_merge_try(mog_t *g, mogv_t *p) // merge p's neighbor to the right-end
 	if (p->nei[1].n != 1) return -1; // multiple or no neighbor; do not merge
 	if ((int64_t)p->nei[1].a[0].x < 0) return -2;
 	kq = kh_get(64, g->h, p->nei[1].a[0].x);
-	if (kq == kh_end(h)) fprintf(stderr, "%ld,%ld\n", p->k[1], p->nei[1].a[0].x);
 	assert(kq != kh_end(h)); // otherwise the neighbor is non-existant
 	q = &g->v.a[kh_val((hash64_t*)g->h, kq)>>1];
 	if (p == q) return -3; // we have a loop p->p. We cannot merge in this case
@@ -738,11 +739,8 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 	if (opt->min_insr >= 2) {
 		t = cputime();
 		mog_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
-		fprintf(stderr, "step 1\n");
 		mog_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
-		fprintf(stderr, "step 2\n");
 		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
-		fprintf(stderr, "step 3\n");
 		mog_g_merge(g);
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);
