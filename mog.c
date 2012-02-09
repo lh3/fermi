@@ -737,15 +737,12 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 	}
 	if (opt->min_insr >= 2) {
 		t = cputime();
-		mog_g_print(g); fflush(stdout);
 		mog_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
 		fprintf(stderr, "step 1\n");
-		/*
 		mog_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
 		fprintf(stderr, "step 2\n");
 		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
 		fprintf(stderr, "step 3\n");
-		*/
 		mog_g_merge(g);
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);
