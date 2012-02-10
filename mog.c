@@ -249,7 +249,6 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 		for (i = 0; i < p->len; ++i) p->seq[i] = seq_nt6_table[(int)seq->seq.s[i]];
 		p->cov = malloc(p->max_len);
 		strcpy(p->cov, seq->qual.s);
-		p->aux[0] = p->aux[1] = -1;
 	}
 	// free and finalize the graph
 	kseq_destroy(seq);
@@ -683,14 +682,6 @@ void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen)
 	for (i = 0; i < s->n; ++i)
 		if (!edge_is_del(s->a[i])) break;
 	if (i == s->n) mog_v_del(g, p); // p is not connected to any other vertices
-}
-
-/******************
- * Bubble popping *
- ******************/
-
-void mog_vh_bbl_detect(mog_t *g, uint64_t idd)
-{
 }
 
 /**************

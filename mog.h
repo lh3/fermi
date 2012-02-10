@@ -27,11 +27,10 @@ typedef struct { size_t n, m; ku128_t *a; } ku128_v;
 typedef struct {
 	int len, nsr;    // length; number supporting reads
 	uint32_t max_len;// allocated seq/cov size
-	int aux[3];      // auxiliary information
 	uint64_t k[2];   // bi-interval
 	ku128_v nei[2];  // neighbors
 	char *seq, *cov; // sequence and coverage
-	void **ptr;      // additional information
+	void *ptr;       // additional information
 } mogv_t;
 
 typedef struct { size_t n, m; mogv_t *a; } mogv_v;
