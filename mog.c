@@ -106,6 +106,11 @@ static inline uint64_t tid2idd(hash64_t *h, uint64_t tid)
 	return kh_val(h, k);
 }
 
+uint64_t mog_tid2idd(void *h, uint64_t tid) // exported version
+{
+	return tid2idd(h, tid);
+}
+
 void mog_amend(mog_t *g)
 {
 	int i, j, l, ll;

@@ -45,6 +45,7 @@ typedef struct {
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 	mogopt_t *mog_init_opt(void);
 	void mog_g_clean(mog_t *g, const mogopt_t *opt);
 
@@ -56,6 +57,8 @@ extern "C" {
 	double mog_cal_rdist(mog_t *g);
 
 	void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src); // NB: memory leak if dst is allocated
+
+	uint64_t mog_tid2idd(void *h, uint64_t tid);
 
 #ifdef __cplusplus
 }
