@@ -43,6 +43,11 @@ static inline void v128_clean(ku128_v *r)
 	r->n = j;
 }
 
+void mog_v128_clean(ku128_v *r)
+{
+	v128_clean(r);
+}
+
 static inline void v128_rmdup(ku128_v *r)
 {
 	int l, cnt;

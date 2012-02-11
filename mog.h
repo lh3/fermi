@@ -59,6 +59,7 @@ extern "C" {
 	void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src); // NB: memory leak if dst is allocated
 
 	uint64_t mog_tid2idd(void *h, uint64_t tid);
+	void mog_v128_clean(ku128_v *r);
 
 #ifdef __cplusplus
 }
