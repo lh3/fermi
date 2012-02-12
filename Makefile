@@ -31,6 +31,8 @@ correct.o:fermi.h rld.h kvec.h kseq.h
 smem.o:fermi.h rld.h kvec.h
 merge.o:fermi.h rld.h ksort.h
 cmd.o:fermi.h rld.h kseq.h
+mog.o:mog.h kseq.h
+bubble.o:mog.h ksw.h
 msg.o:fermi.h khash.h kseq.h
 main.o:fermi.h
 
