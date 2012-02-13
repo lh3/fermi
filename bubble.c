@@ -12,11 +12,13 @@
  ******************/
 
 typedef struct {
-	uint32_t id;
+	uint32_t id, dummy;
 	int cnt[2];
 	int n[2][2], d[2][2];
 	uint32_t v[2][2];
 } trinfo_t;
+
+const trinfo_t g_trinull = { -1, 0, 0, 0, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, -1, -1, -1, -1};
 
 typedef struct {
 	int n, m;
@@ -53,7 +55,7 @@ static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
 			pool->buf[i] = malloc(sizeof(trinfo_t));
 	}
 	p = pool->buf[pool->n++];
-	memset(p, 0, sizeof(trinfo_t));
+	*p = g_trinull;
 	p->id = id;
 	return p;
 }
@@ -61,13 +63,14 @@ static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
 void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a)
 {
 	int i, n_pending = 0;
-	mogv_t *p, *q;
+	mogv_t *p0, *p, *q;
 
 	a->stack.n = a->pool.n = 0;
-	p = &g->v.a[idd>>1];
+	p0 = p = &g->v.a[idd>>1];
 	if (p->len < 0 || p->nei[idd&1].n < 2) return; // stop if p is deleted or it has 0 or 1 neighbor
 	p->ptr = tip_alloc(&a->pool, idd>>1);
-	tiptr(p)->d[(idd&1)^1][0] = tiptr(p)->d[(idd&1)^1][1] = -p->len;
+	tiptr(p)->d[(idd&1)^1][0] = -p->len;
+	tiptr(p)->n[(idd&1)^1][0] = -p->nsr;
 	kv_push(uint64_t, a->stack, idd^1);
 	while (a->stack.n) {
 		uint64_t x, y;
@@ -80,7 +83,7 @@ void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_a
 		if (a->stack.n > max_vtx || tiptr(p)->d[x&1][0] > max_dist || tiptr(p)->d[x&1][1] > max_dist || r->n == 0) break; // we failed
 		// set the distance to p's neighbors
 		for (i = 0; i < r->n; ++i) {
-			int nsr;
+			int nsr, dist, which;
 			if (edge_is_del(r->a[i])) continue;
 			y = mog_tid2idd(g->h, r->a[i].x);
 			q = &g->v.a[y>>1];
@@ -88,23 +91,30 @@ void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_a
 				q->ptr = tip_alloc(&a->pool, y>>1), ++n_pending;
 				mog_v128_clean(&q->nei[y&1]); // make sure there are no deleted edges
 			}
-			nsr = tiptr(p)->n[x&1][0] + q->nsr;
+			nsr  = tiptr(p)->n[x&1][0] + p->nsr; which = 0;
+			dist = tiptr(p)->d[x&1][0] + p->len - r->a[i].y;
+			printf("01 [%d]\t[%d,%d]\t[%d,%d]\n", i, tiptr(q)->n[y&1][0], tiptr(q)->n[y&1][1], tiptr(q)->d[y&1][0], tiptr(q)->d[y&1][1]);
 			// test and possibly update the tentative distance
 			if (nsr > tiptr(q)->n[y&1][0]) { // then move the best to the 2nd best and update the best
 				tiptr(q)->n[y&1][1] = tiptr(q)->n[y&1][0]; tiptr(q)->n[y&1][0] = nsr;
-				tiptr(q)->v[y&1][1] = tiptr(q)->v[y&1][0]; tiptr(q)->v[y&1][0] = x;
-				tiptr(q)->d[y&1][1] = tiptr(q)->d[y&1][0]; tiptr(q)->d[y&1][0] = tiptr(p)->d[x&1][0] + p->len - r->a[i].y;
-				nsr = tiptr(p)->n[x&1][1] + q->nsr; // now nsr is the 2nd best
+				tiptr(q)->v[y&1][1] = tiptr(q)->v[y&1][0]; tiptr(q)->v[y&1][0] = x<<1|which;
+				tiptr(q)->d[y&1][1] = tiptr(q)->d[y&1][0]; tiptr(q)->d[y&1][0] = dist;
+				nsr  = tiptr(p)->n[x&1][1] + p->nsr; which = 1; // now nsr is the 2nd best
+				dist = tiptr(p)->d[x&1][1] + p->len - r->a[i].y;
 			}
-			if (nsr > tiptr(q)->n[y&1][1]) { // update the 2nd best
-				tiptr(q)->n[y&1][1] = nsr, tiptr(q)->v[y&1][1] = x;
-				tiptr(q)->d[y&1][1] = tiptr(p)->d[x&1][1] + p->len - r->a[i].y;
-			}
+			if (nsr > tiptr(q)->n[y&1][1]) // update the 2nd best
+				tiptr(q)->n[y&1][1] = nsr, tiptr(q)->v[y&1][1] = x<<1|which, tiptr(q)->d[y&1][1] = dist;
+			printf("02 [%d]\t[%d,%d]\t[%d,%d]\n", i, tiptr(q)->n[y&1][0], tiptr(q)->n[y&1][1], tiptr(q)->d[y&1][0], tiptr(q)->d[y&1][1]);
 			if (++tiptr(q)->cnt[y&1] == q->nei[y&1].n) { // all q's predecessors have been processed; then push
 				kv_push(uint64_t, a->stack, y);
 				--n_pending;
 			}
 		}
+	}
+	if (n_pending == 0 && a->stack.n == 1) { // found a bubble
+		uint64_t x = a->stack.a[0];
+		p = &g->v.a[x>>1];
+		printf("(%d,%d)\t(%d,%d)\n", tiptr(p)->n[x&1][0], tiptr(p)->n[x&1][1], tiptr(p)->d[x&1][0], tiptr(p)->d[x&1][1]);
 	}
 	printf("%d\n", n_pending);
 	for (i = 0; i < a->pool.n; ++i) // reset p->ptr

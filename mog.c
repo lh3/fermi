@@ -639,7 +639,8 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
 	a = mog_b_initaux();
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
-	mog_vh_pop_closed(g, tid2idd(g->h, 38016841), 512, 500, a); exit(0);
+	mog_vh_pop_closed(g, tid2idd(g->h, 34356802), 512, 500, a); exit(0); // a good case
+	mog_vh_pop_closed(g, tid2idd(g->h, 51220518), 512, 500, a); exit(0);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		t = cputime();
