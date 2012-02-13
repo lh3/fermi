@@ -63,7 +63,7 @@ extern "C" {
 
 	mogb_aux_t *mog_b_initaux(void);
 	void mog_b_destroyaux(mogb_aux_t *b);
-	void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a);
+	void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a);
 	void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen);
 
 	void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src); // NB: memory leak if dst is allocated

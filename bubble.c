@@ -3,6 +3,10 @@
 #include "mog.h"
 #include "kvec.h"
 #include "ksw.h"
+#include "khash.h"
+KHASH_DECLARE(64, uint64_t, uint64_t)
+
+typedef khash_t(64) hash64_t;
 
 #define edge_mark_del(_x) ((_x).x = (uint64_t)-2, (_x).y = 0)
 #define edge_is_del(_x)   ((_x).x == (uint64_t)-2 || (_x).y == 0)
@@ -12,13 +16,13 @@
  ******************/
 
 typedef struct {
-	uint32_t id, dummy;
+	uint64_t id;
 	int cnt[2];
 	int n[2][2], d[2][2];
 	uint64_t v[2][2];
 } trinfo_t;
 
-const trinfo_t g_trinull = { -1, 0, 0, 0, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, -1, -1, -1, -1};
+const trinfo_t g_trinull = {-1, {0, 0}, {{INT_MIN, INT_MIN}, {INT_MIN, INT_MIN}}, {{INT_MIN, INT_MIN}, {INT_MIN, INT_MIN}}, {{-1, -1}, {-1, -1}}};
 
 typedef struct {
 	int n, m;
@@ -28,11 +32,14 @@ typedef struct {
 struct mogb_aux {
 	tipool_t pool;
 	ku64_v stack;
+	hash64_t *h;
 };
 
 mogb_aux_t *mog_b_initaux(void)
 {
-	return calloc(1, sizeof(mogb_aux_t));
+	mogb_aux_t *aux = calloc(1, sizeof(mogb_aux_t));
+	aux->h = kh_init(64);
+	return aux;
 }
 
 void mog_b_destroyaux(mogb_aux_t *b)
@@ -41,12 +48,13 @@ void mog_b_destroyaux(mogb_aux_t *b)
 	for (i = 0; i < b->pool.n; ++i)
 		free(b->pool.buf[i]);
 	free(b->pool.buf); free(b->stack.a);
+	kh_destroy(64, b->h);
 }
 
 #define tiptr(p) ((trinfo_t*)(p)->ptr)
 
 static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
-{
+{ // allocate an object from the memory pool
 	trinfo_t *p;
 	if (pool->n == pool->m) {
 		int i, new_m = pool->m? pool->m<<1 : 256;
@@ -60,35 +68,42 @@ static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
 	return p;
 }
 
-static void backtrace(mog_t *g, uint64_t end, uint64_t start)
+static void backtrace(mog_t *g, uint64_t end, uint64_t start, hash64_t *h)
 {
+	mogv_t *p = &g->v.a[end>>33];
 	while (end>>32 != start) {
-		fprintf(stderr, "%lld; ", end>>32);
-		mogv_t *p = &g->v.a[end>>33];
-		end = tiptr(p)->v[(end>>32^1)&1][end&1];
+		int ret;
+		kh_put(64, h, end>>33, &ret);
+		end = tiptr(&g->v.a[end>>33])->v[(end>>32^1)&1][end&1];
 	}
-	fprintf(stderr, "\n");
 }
 
-void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a)
+void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a)
 {
 	int i, n_pending = 0;
-	mogv_t *p0, *p, *q;
+	mogv_t *p, *q;
 
-	a->stack.n = a->pool.n = 0;
-	p0 = p = &g->v.a[idd>>1];
+	p = &g->v.a[idd>>1];
 	if (p->len < 0 || p->nei[idd&1].n < 2) return; // stop if p is deleted or it has 0 or 1 neighbor
+	// reset aux data
+	a->stack.n = a->pool.n = 0;
+	if (kh_n_buckets(a->h) >= 64) {
+		kh_destroy(64, a->h);
+		a->h = kh_init(64);
+	} else kh_clear(64, a->h);
+	// add the initial vertex
 	p->ptr = tip_alloc(&a->pool, idd>>1);
 	tiptr(p)->d[(idd&1)^1][0] = -p->len;
 	tiptr(p)->n[(idd&1)^1][0] = -p->nsr;
 	kv_push(uint64_t, a->stack, idd^1);
+	// essentially a topological sorting
 	while (a->stack.n) {
 		uint64_t x, y;
 		ku128_v *r;
 		if (a->stack.n == 1 && a->stack.a[0] != (idd^1) && n_pending == 0) break; // found the other end of the bubble
 		x = kv_pop(a->stack);
 		p = &g->v.a[x>>1];
-		printf("%lld:%lld\n", p->k[0], p->k[1]);
+		//printf("%lld:%lld\n", p->k[0], p->k[1]);
 		r = &p->nei[(x&1)^1]; // we will look the the neighbors from the other end of the unitig
 		if (a->stack.n > max_vtx || tiptr(p)->d[x&1][0] > max_dist || tiptr(p)->d[x&1][1] > max_dist || r->n == 0) break; // we failed
 		// set the distance to p's neighbors
@@ -114,7 +129,6 @@ void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_a
 			}
 			if (nsr > tiptr(q)->n[y&1][1]) // update the 2nd best
 				tiptr(q)->n[y&1][1] = nsr, tiptr(q)->v[y&1][1] = (x^1)<<32|i<<1|which, tiptr(q)->d[y&1][1] = dist;
-			//printf("02 [%d]\t[%d,%d]\t[%d,%d]\n", i, tiptr(q)->n[y&1][0], tiptr(q)->n[y&1][1], tiptr(q)->d[y&1][0], tiptr(q)->d[y&1][1]);
 			if (++tiptr(q)->cnt[y&1] == q->nei[y&1].n) { // all q's predecessors have been processed; then push
 				kv_push(uint64_t, a->stack, y);
 				--n_pending;
@@ -124,13 +138,19 @@ void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_a
 	if (n_pending == 0 && a->stack.n == 1) { // found a bubble
 		uint64_t x = a->stack.a[0];
 		p = &g->v.a[x>>1];
-		printf("(%d,%d)\t(%d,%d)\n", tiptr(p)->n[x&1][0], tiptr(p)->n[x&1][1], tiptr(p)->d[x&1][0], tiptr(p)->d[x&1][1]);
-		backtrace(g, tiptr(p)->v[x&1][0], idd);
-		backtrace(g, tiptr(p)->v[x&1][1], idd);
+		//printf("(%d,%d)\t(%d,%d)\n", tiptr(p)->n[x&1][0], tiptr(p)->n[x&1][1], tiptr(p)->d[x&1][0], tiptr(p)->d[x&1][1]);
+		backtrace(g, tiptr(p)->v[x&1][0], idd, a->h);
+		backtrace(g, tiptr(p)->v[x&1][1], idd, a->h);
 	}
-	printf("%d\n", n_pending);
 	for (i = 0; i < a->pool.n; ++i) // reset p->ptr
 		g->v.a[a->pool.buf[i]->id].ptr = 0;
+	if (kh_size(a->h)) { // bubble detected; then remove verticies not in the top two paths
+		for (i = 1; i < a->pool.n; ++i) { // i=0 corresponds to the initial vertex which we want to exclude
+			uint64_t id = a->pool.buf[i]->id;
+			if (id != a->stack.a[0]>>1 && kh_get(64, a->h, id) == kh_end(a->h)) // not in the top two paths
+				mog_v_del(g, &g->v.a[id]);
+		}
+	}
 }
 
 /****************
@@ -217,4 +237,3 @@ void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen)
 		if (!edge_is_del(s->a[i])) break;
 	if (i == s->n) mog_v_del(g, p); // p is not connected to any other vertices
 }
-

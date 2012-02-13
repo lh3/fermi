@@ -634,13 +634,15 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 {
 	double t, a_thres = opt->a_thres > 20.? opt->a_thres : 20.;
 	mogb_aux_t *a;
-	int i, j;
+	int j;
+	uint32_t i;
 
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
 	a = mog_b_initaux();
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
-	mog_vh_pop_closed(g, tid2idd(g->h, 34356802), 512, 500, a); exit(0); // a good case
-	mog_vh_pop_closed(g, tid2idd(g->h, 51220518), 512, 500, a); exit(0);
+	//mog_vh_simplify_bubble(g, tid2idd(g->h, 49449609), 512, 500, a); exit(0);
+	//mog_vh_simplify_bubble(g, tid2idd(g->h, 34356802), 512, 500, a); exit(0); // a good case
+	//mog_vh_simplify_bubble(g, tid2idd(g->h, 51220518), 512, 500, a); exit(0);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		t = cputime();
@@ -650,6 +652,11 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] finished simple graph simplification round %d in %.3f sec.\n", __func__, j+1, cputime() - t);
 	}
+	for (i = 0; i < g->v.n; ++i) {
+		mog_vh_simplify_bubble(g, i<<1|0, 512, 500, a);
+		mog_vh_simplify_bubble(g, i<<1|1, 512, 500, a);
+	}
+	mog_g_merge(g);
 	if (opt->flag & MOG_F_AGGRESSIVE) {
 		for (i = 0; i < g->v.n; ++i) mog_v_swrm(g, &g->v.a[i], opt->min_elen);
 		mog_g_merge(g);
