@@ -15,7 +15,7 @@ typedef struct {
 	uint32_t id, dummy;
 	int cnt[2];
 	int n[2][2], d[2][2];
-	uint32_t v[2][2];
+	uint64_t v[2][2];
 } trinfo_t;
 
 const trinfo_t g_trinull = { -1, 0, 0, 0, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN, -1, -1, -1, -1};
@@ -50,7 +50,7 @@ static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
 	trinfo_t *p;
 	if (pool->n == pool->m) {
 		int i, new_m = pool->m? pool->m<<1 : 256;
-		pool->buf = realloc(pool->buf, new_m);
+		pool->buf = realloc(pool->buf, new_m * sizeof(void*));
 		for (i = pool->m; i < new_m; ++i)
 			pool->buf[i] = malloc(sizeof(trinfo_t));
 	}
@@ -58,6 +58,16 @@ static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
 	*p = g_trinull;
 	p->id = id;
 	return p;
+}
+
+static void backtrace(mog_t *g, uint64_t end, uint64_t start)
+{
+	while (end>>32 != start) {
+		fprintf(stderr, "%lld; ", end>>32);
+		mogv_t *p = &g->v.a[end>>33];
+		end = tiptr(p)->v[(end>>32^1)&1][end&1];
+	}
+	fprintf(stderr, "\n");
 }
 
 void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a)
@@ -93,18 +103,18 @@ void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_a
 			}
 			nsr  = tiptr(p)->n[x&1][0] + p->nsr; which = 0;
 			dist = tiptr(p)->d[x&1][0] + p->len - r->a[i].y;
-			printf("01 [%d]\t[%d,%d]\t[%d,%d]\n", i, tiptr(q)->n[y&1][0], tiptr(q)->n[y&1][1], tiptr(q)->d[y&1][0], tiptr(q)->d[y&1][1]);
+			//printf("01 [%d]\t[%d,%d]\t[%d,%d]\n", i, tiptr(q)->n[y&1][0], tiptr(q)->n[y&1][1], tiptr(q)->d[y&1][0], tiptr(q)->d[y&1][1]);
 			// test and possibly update the tentative distance
 			if (nsr > tiptr(q)->n[y&1][0]) { // then move the best to the 2nd best and update the best
 				tiptr(q)->n[y&1][1] = tiptr(q)->n[y&1][0]; tiptr(q)->n[y&1][0] = nsr;
-				tiptr(q)->v[y&1][1] = tiptr(q)->v[y&1][0]; tiptr(q)->v[y&1][0] = x<<1|which;
+				tiptr(q)->v[y&1][1] = tiptr(q)->v[y&1][0]; tiptr(q)->v[y&1][0] = (x^1)<<32|i<<1|which;
 				tiptr(q)->d[y&1][1] = tiptr(q)->d[y&1][0]; tiptr(q)->d[y&1][0] = dist;
 				nsr  = tiptr(p)->n[x&1][1] + p->nsr; which = 1; // now nsr is the 2nd best
 				dist = tiptr(p)->d[x&1][1] + p->len - r->a[i].y;
 			}
 			if (nsr > tiptr(q)->n[y&1][1]) // update the 2nd best
-				tiptr(q)->n[y&1][1] = nsr, tiptr(q)->v[y&1][1] = x<<1|which, tiptr(q)->d[y&1][1] = dist;
-			printf("02 [%d]\t[%d,%d]\t[%d,%d]\n", i, tiptr(q)->n[y&1][0], tiptr(q)->n[y&1][1], tiptr(q)->d[y&1][0], tiptr(q)->d[y&1][1]);
+				tiptr(q)->n[y&1][1] = nsr, tiptr(q)->v[y&1][1] = (x^1)<<32|i<<1|which, tiptr(q)->d[y&1][1] = dist;
+			//printf("02 [%d]\t[%d,%d]\t[%d,%d]\n", i, tiptr(q)->n[y&1][0], tiptr(q)->n[y&1][1], tiptr(q)->d[y&1][0], tiptr(q)->d[y&1][1]);
 			if (++tiptr(q)->cnt[y&1] == q->nei[y&1].n) { // all q's predecessors have been processed; then push
 				kv_push(uint64_t, a->stack, y);
 				--n_pending;
@@ -115,6 +125,8 @@ void mog_vh_pop_closed(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_a
 		uint64_t x = a->stack.a[0];
 		p = &g->v.a[x>>1];
 		printf("(%d,%d)\t(%d,%d)\n", tiptr(p)->n[x&1][0], tiptr(p)->n[x&1][1], tiptr(p)->d[x&1][0], tiptr(p)->d[x&1][1]);
+		backtrace(g, tiptr(p)->v[x&1][0], idd);
+		backtrace(g, tiptr(p)->v[x&1][1], idd);
 	}
 	printf("%d\n", n_pending);
 	for (i = 0; i < a->pool.n; ++i) // reset p->ptr
