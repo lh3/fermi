@@ -657,6 +657,10 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 		mog_vh_simplify_bubble(g, i<<1|1, 512, 500, a);
 	}
 	mog_g_merge(g);
+	for (i = 0; i < g->v.n; ++i) {
+		mog_vh_pop_simple(g, i<<1|0, 100, 100);
+		mog_vh_pop_simple(g, i<<1|1, 100, 100);
+	}
 	if (opt->flag & MOG_F_AGGRESSIVE) {
 		for (i = 0; i < g->v.n; ++i) mog_v_swrm(g, &g->v.a[i], opt->min_elen);
 		mog_g_merge(g);

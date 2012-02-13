@@ -8,6 +8,9 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
+#define MIN_N_DIFF 2.01 // for evaluating alignment after SW
+#define MIN_R_DIFF 0.1
+
 #define edge_mark_del(_x) ((_x).x = (uint64_t)-2, (_x).y = 0)
 #define edge_is_del(_x)   ((_x).x == (uint64_t)-2 || (_x).y == 0)
 
@@ -70,7 +73,6 @@ static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
 
 static void backtrace(mog_t *g, uint64_t end, uint64_t start, hash64_t *h)
 {
-	mogv_t *p = &g->v.a[end>>33];
 	while (end>>32 != start) {
 		int ret;
 		kh_put(64, h, end>>33, &ret);
@@ -153,6 +155,56 @@ void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, m
 	}
 }
 
+void mog_vh_pop_simple(mog_t *g, uint64_t idd, float min_cov, float min_ratio)
+{
+	mogv_t *p = &g->v.a[idd>>1], *q[2];
+	ku128_v *r;
+	int i, j, k, dir[2], l[2];
+	char *mem, *seq[2], *cov[2], *s;
+	int8_t mat[16];
+	ksw_query_t *qry;
+	ksw_aux_t aux;
+
+	if (p->len < 0 || p->nei[idd&1].n != 2) return; // deleted or no bubble
+	r = &p->nei[idd&1];
+	for (j = 0; j < 2; ++j) {
+		uint64_t x = mog_tid2idd(g->h, r->a[j].x);
+		dir[j] = x&1;
+		q[j] = &g->v.a[x>>1];
+		if (q[j]->nei[0].n != 1 || q[j]->nei[1].n != 1) return; // no bubble
+		l[j] = q[j]->len - (int)(q[j]->nei[0].a->y + q[j]->nei[1].a->y);
+	}
+	if (l[0] <= 0 || l[1] <= 0 || q[0]->nei[dir[0]^1].a->x != q[1]->nei[dir[1]^1].a->x) return; // no bubble
+	mem = calloc(1, (l[0] + l[1])*2);
+	for (j = 0, s = mem; j < 2; ++j) {
+		seq[j] = s; s += l[j]; 
+		cov[j] = s; s += l[j];
+		for (i = 0; i < l[j]; ++i) {
+			seq[j][i] = q[j]->seq[i + q[j]->nei[0].a->y];
+			cov[j][i] = q[j]->cov[i + q[j]->nei[0].a->y];
+		}
+		if (dir[j]) {
+			seq_revcomp6(l[j], (uint8_t*)seq[j]);
+			seq_reverse(l[j], (uint8_t*)cov[j]);
+		}
+		for (i = 0; i < l[j]; ++i) --seq[j][i];
+	}
+	// prepare to do smith-waterman
+	for (i = k = 0; i < 4; ++i)
+		for (j = 0; j < 4; ++j)
+			mat[k++] = i == j? 5 : -4;
+	aux.gapo = 6; aux.gape = 3;
+	qry = ksw_qinit(2, l[0], seq[0], 4, mat);
+	ksw_sse2(qry, l[1], seq[1], &aux);
+	fprintf(stderr, "===> %d <===\n", aux.score);
+	for (j = 0; j < 2; ++j) {
+		for (i = 0; i < l[j]; ++i)
+			fputc("ACGTN"[(int)seq[j][i]], stderr);
+		fputc('\n', stderr);
+	}
+	free(mem); free(qry);
+}
+
 /****************
  * Open bubbles *
  ****************/
@@ -219,7 +271,7 @@ void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen)
 				double r_diff, n_diff;
 				n_diff = (l_qry * 5. - aux.score) / (5. + 4.); // 5: matching score; -4: mismatchig score
 				r_diff = n_diff / l_qry;
-				if (n_diff < 2.01 || r_diff < 0.1) break;
+				if (n_diff < MIN_N_DIFF || r_diff < MIN_R_DIFF) break;
 			}
 		}
 
