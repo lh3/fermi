@@ -16,7 +16,7 @@ typedef struct {
 	int flag, max_arc, n_iter, min_ovlp, min_elen, min_ensr, min_insr, max_bdist, max_bvtx;
 	float min_dratio0, min_dratio1, a_thres;
 	float max_bcov, max_bfrac;
-} mogopt_t;
+} magopt_t;
 
 #ifndef KINT_DEF
 #define KINT_DEF
@@ -32,16 +32,16 @@ typedef struct {
 	ku128_v nei[2];  // neighbors
 	char *seq, *cov; // sequence and coverage
 	void *ptr;       // additional information
-} mogv_t;
+} magv_t;
 
-typedef struct { size_t n, m; mogv_t *a; } mogv_v;
+typedef struct { size_t n, m; magv_t *a; } magv_v;
 
 typedef struct __mog_t {
-	mogv_v v;
+	magv_v v;
 	float rdist;  // read distance
 	int min_ovlp; // minimum overlap seen from the graph
 	void *h;
-} mog_t;
+} mag_t;
 
 struct mogb_aux;
 typedef struct mogb_aux mogb_aux_t;
@@ -50,25 +50,25 @@ typedef struct mogb_aux mogb_aux_t;
 extern "C" {
 #endif
 
-	mogopt_t *mog_init_opt(void);
-	void mog_g_clean(mog_t *g, const mogopt_t *opt);
+	magopt_t *mag_init_opt(void);
+	void mag_g_clean(mag_t *g, const magopt_t *opt);
 
-	void mog_g_destroy(mog_t *g);
-	mog_t *mog_g_read(const char *fn, const mogopt_t *opt);
-	void mog_g_print(const mog_t *g);
-	void mog_g_rm_vext(mog_t *g, int min_len, int min_nsr);
-	void mog_g_merge(mog_t *g, int rmdup);
-	void mog_g_simplify_bubble(mog_t *g, int max_vtx, int max_dist);
-	void mog_g_pop_simple(mog_t *g, float max_cov, float max_frac, int aggressive);
+	void mag_g_destroy(mag_t *g);
+	mag_t *mag_g_read(const char *fn, const magopt_t *opt);
+	void mag_g_print(const mag_t *g);
+	void mag_g_rm_vext(mag_t *g, int min_len, int min_nsr);
+	void mag_g_merge(mag_t *g, int rmdup);
+	void mag_g_simplify_bubble(mag_t *g, int max_vtx, int max_dist);
+	void mag_g_pop_simple(mag_t *g, float max_cov, float max_frac, int aggressive);
 
-	void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src); // NB: memory leak if dst is allocated
-	void mog_v_del(mog_t *g, mogv_t *p);
-	void mog_v_write(const mogv_t *p, kstring_t *out);
-	void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen);
+	void mag_v_copy_to_empty(magv_t *dst, const magv_t *src); // NB: memory leak if dst is allocated
+	void mag_v_del(mag_t *g, magv_t *p);
+	void mag_v_write(const magv_t *p, kstring_t *out);
+	void mag_v_pop_open(mag_t *g, magv_t *p, int min_elen);
 
-	uint64_t mog_tid2idd(void *h, uint64_t tid);
-	void mog_v128_clean(ku128_v *r);
-	double mog_cal_rdist(mog_t *g);
+	uint64_t mag_tid2idd(void *h, uint64_t tid);
+	void mag_v128_clean(ku128_v *r);
+	double mag_cal_rdist(mag_t *g);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,6 @@
 #include <limits.h>
 #include "priv.h"
-#include "mog.h"
+#include "mag.h"
 #include "kvec.h"
 #include "ksw.h"
 #include "khash.h"
@@ -38,14 +38,14 @@ struct mogb_aux {
 	hash64_t *h;
 };
 
-mogb_aux_t *mog_b_initaux(void)
+mogb_aux_t *mag_b_initaux(void)
 {
 	mogb_aux_t *aux = calloc(1, sizeof(mogb_aux_t));
 	aux->h = kh_init(64);
 	return aux;
 }
 
-void mog_b_destroyaux(mogb_aux_t *b)
+void mag_b_destroyaux(mogb_aux_t *b)
 {
 	int i;
 	for (i = 0; i < b->pool.n; ++i)
@@ -71,7 +71,7 @@ static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
 	return p;
 }
 
-static void backtrace(mog_t *g, uint64_t end, uint64_t start, hash64_t *h)
+static void backtrace(mag_t *g, uint64_t end, uint64_t start, hash64_t *h)
 {
 	while (end>>32 != start) {
 		int ret;
@@ -80,10 +80,10 @@ static void backtrace(mog_t *g, uint64_t end, uint64_t start, hash64_t *h)
 	}
 }
 
-void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a)
+void mag_vh_simplify_bubble(mag_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a)
 {
 	int i, n_pending = 0;
-	mogv_t *p, *q;
+	magv_t *p, *q;
 
 	p = &g->v.a[idd>>1];
 	if (p->len < 0 || p->nei[idd&1].n < 2) return; // stop if p is deleted or it has 0 or 1 neighbor
@@ -112,11 +112,11 @@ void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, m
 		for (i = 0; i < r->n; ++i) {
 			int nsr, dist, which;
 			if (edge_is_del(r->a[i])) continue;
-			y = mog_tid2idd(g->h, r->a[i].x);
+			y = mag_tid2idd(g->h, r->a[i].x);
 			q = &g->v.a[y>>1];
 			if (q->ptr == 0) { // has not been attempted
 				q->ptr = tip_alloc(&a->pool, y>>1), ++n_pending;
-				mog_v128_clean(&q->nei[y&1]); // make sure there are no deleted edges
+				mag_v128_clean(&q->nei[y&1]); // make sure there are no deleted edges
 			}
 			nsr  = tiptr(p)->n[x&1][0] + p->nsr; which = 0;
 			dist = tiptr(p)->d[x&1][0] + p->len - r->a[i].y;
@@ -150,27 +150,27 @@ void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, m
 		for (i = 1; i < a->pool.n; ++i) { // i=0 corresponds to the initial vertex which we want to exclude
 			uint64_t id = a->pool.buf[i]->id;
 			if (id != a->stack.a[0]>>1 && kh_get(64, a->h, id) == kh_end(a->h)) // not in the top two paths
-				mog_v_del(g, &g->v.a[id]);
+				mag_v_del(g, &g->v.a[id]);
 		}
 	}
 }
 
-void mog_g_simplify_bubble(mog_t *g, int max_vtx, int max_dist)
+void mag_g_simplify_bubble(mag_t *g, int max_vtx, int max_dist)
 {
 	int64_t i;
 	mogb_aux_t *a;
-	a = mog_b_initaux();
+	a = mag_b_initaux();
 	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_simplify_bubble(g, i<<1|0, max_vtx, max_dist, a);
-		mog_vh_simplify_bubble(g, i<<1|1, max_vtx, max_dist, a);
+		mag_vh_simplify_bubble(g, i<<1|0, max_vtx, max_dist, a);
+		mag_vh_simplify_bubble(g, i<<1|1, max_vtx, max_dist, a);
 	}
-	mog_b_destroyaux(a);
-	mog_g_merge(g, 0);
+	mag_b_destroyaux(a);
+	mag_g_merge(g, 0);
 }
 
-void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_frac, int aggressive)
+void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, int aggressive)
 {
-	mogv_t *p = &g->v.a[idd>>1], *q[2];
+	magv_t *p = &g->v.a[idd>>1], *q[2];
 	ku128_v *r;
 	int i, j, k, dir[2], l[2];
 	char *mem, *seq[2], *cov[2], *s;
@@ -181,7 +181,7 @@ void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_frac, in
 	for (j = 0; j < 2; ++j) {
 		uint64_t x;
 		if (edge_is_del(r->a[j])) return;
-		x = mog_tid2idd(g->h, r->a[j].x);
+		x = mag_tid2idd(g->h, r->a[j].x);
 		dir[j] = x&1;
 		q[j] = &g->v.a[x>>1];
 		if (q[j]->nei[0].n != 1 || q[j]->nei[1].n != 1) return; // no bubble
@@ -223,30 +223,30 @@ void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_frac, in
 			avg[0] /= l[0]; avg[1] /= l[1];
 			j = avg[0] < avg[1]? 0 : 1;
 			if (aggressive || (avg[j] < max_cov && avg[j] / (avg[j^1] + avg[j]) < max_frac))
-				mog_v_del(g, q[j]);
+				mag_v_del(g, q[j]);
 		}
 	}
 	free(mem);
 }
 
-void mog_g_pop_simple(mog_t *g, float max_cov, float max_frac, int aggressive)
+void mag_g_pop_simple(mag_t *g, float max_cov, float max_frac, int aggressive)
 {
 	int64_t i;
 	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_pop_simple(g, i<<1|0, max_cov, max_frac, aggressive);
-		mog_vh_pop_simple(g, i<<1|1, max_cov, max_frac, aggressive);
+		mag_vh_pop_simple(g, i<<1|0, max_cov, max_frac, aggressive);
+		mag_vh_pop_simple(g, i<<1|1, max_cov, max_frac, aggressive);
 	}
-	mog_g_merge(g, 0);
+	mag_g_merge(g, 0);
 }
 
 /****************
  * Open bubbles *
  ****************/
 
-void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen)
+void mag_v_pop_open(mag_t *g, magv_t *p, int min_elen)
 {
 	int i, j, k, l, dir, max_l, l_qry;
-	mogv_t *q, *t;
+	magv_t *q, *t;
 	ku128_v *r, *s;
 	uint8_t *seq;
 	int8_t mat[16];
@@ -267,7 +267,7 @@ void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen)
 	for (l = 0; l < s->n; ++l) { // if we use "if (p->nei[0].n + p->nei[1].n != 1)", s->n == 1
 		uint64_t v;
 		if ((int64_t)s->a[l].x < 0) continue;
-		v = mog_tid2idd(g->h, s->a[l].x);
+		v = mag_tid2idd(g->h, s->a[l].x);
 		q = &g->v.a[v>>1];
 		if (q == p || q->nei[v&1].n == 1) continue;
 		// get the query ready
@@ -289,7 +289,7 @@ void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen)
 		for (i = 0; i < r->n; ++i) {
 			uint64_t w;
 			if (r->a[i].x == p->k[dir] || (int64_t)r->a[i].x < 0) continue;
-			w = mog_tid2idd(g->h, r->a[i].x);
+			w = mag_tid2idd(g->h, r->a[i].x);
 			// get the target sequence
 			t = &g->v.a[w>>1];
 			if (w&1) { // reverse strand
@@ -321,5 +321,5 @@ void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen)
 
 	for (i = 0; i < s->n; ++i)
 		if (!edge_is_del(s->a[i])) break;
-	if (i == s->n) mog_v_del(g, p); // p is not connected to any other vertices
+	if (i == s->n) mag_v_del(g, p); // p is not connected to any other vertices
 }

@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "fermi.h"
-#include "mog.h"
+#include "mag.h"
 
 int main_example(int argc, char *argv[])
 {
@@ -24,11 +24,11 @@ int main_example(int argc, char *argv[])
 	l = fm6_api_readseq(argv[optind], &seq, &qual);
 	if (do_ec) fm6_api_correct(ec_k, l, seq, qual);
 	if (!skip_unitig) { // construct the unitigs
-		mog_t *g;
+		mag_t *g;
 		free(qual);
 		g = fm6_api_unitig(unitig_k, l, seq);
-		mog_g_print(g);
-		mog_g_destroy(g);
+		mag_g_print(g);
+		mag_g_destroy(g);
 	} else {
 		fm6_api_writeseq(l, seq, qual); // then write the (possibly corrected) reads
 		free(qual);

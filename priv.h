@@ -3,7 +3,7 @@
 
 #include "rld.h"
 #include "fermi.h"
-#include "mog.h"
+#include "mag.h"
 #include "utils.h"
 
 #define FM6_MAX_ISIZE 1000

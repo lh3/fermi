@@ -7,7 +7,7 @@
 #include <zlib.h>
 #include <stdio.h>
 #include <assert.h>
-#include "mog.h"
+#include "mag.h"
 #include "priv.h"
 #include "kvec.h"
 #include "kseq.h"
@@ -43,7 +43,7 @@ static inline void v128_clean(ku128_v *r)
 	r->n = j;
 }
 
-void mog_v128_clean(ku128_v *r)
+void mag_v128_clean(ku128_v *r)
 {
 	v128_clean(r);
 }
@@ -84,14 +84,14 @@ static inline void v128_cap(ku128_v *r, int max)
  * Mapping between vertex id and interval end id *
  *************************************************/
 
-static hash64_t *build_hash(const mogv_v *nodes)
+static hash64_t *build_hash(const magv_v *nodes)
 {
 	long i;
 	int j, ret;
 	hash64_t *h;
 	h = kh_init(64);
 	for (i = 0; i < nodes->n; ++i) {
-		const mogv_t *p = &nodes->a[i];
+		const magv_t *p = &nodes->a[i];
 		for (j = 0; j < 2; ++j) {
 			khint_t k = kh_put(64, h, p->k[j], &ret);
 			if (ret == 0) {
@@ -111,16 +111,16 @@ static inline uint64_t tid2idd(hash64_t *h, uint64_t tid)
 	return kh_val(h, k);
 }
 
-uint64_t mog_tid2idd(void *h, uint64_t tid) // exported version
+uint64_t mag_tid2idd(void *h, uint64_t tid) // exported version
 {
 	return tid2idd(h, tid);
 }
 
-void mog_amend(mog_t *g)
+void mag_amend(mag_t *g)
 {
 	int i, j, l, ll;
 	for (i = 0; i < g->v.n; ++i) {
-		mogv_t *p = &g->v.a[i];
+		magv_t *p = &g->v.a[i];
 		ku128_v *r;
 		for (j = 0; j < 2; ++j) {
 			for (l = 0; l < p->nei[j].n; ++l) {
@@ -146,7 +146,7 @@ void mog_amend(mog_t *g)
  * Graph I/O initialization etc. *
  *********************************/
 
-void mog_v_write(const mogv_t *p, kstring_t *out)
+void mag_v_write(const magv_t *p, kstring_t *out)
 {
 	int j, k;
 	if (p->len <= 0) return;
@@ -173,25 +173,25 @@ void mog_v_write(const mogv_t *p, kstring_t *out)
 	kputc('\n', out);
 }
 
-void mog_g_print(const mog_t *g)
+void mag_g_print(const mag_t *g)
 {
 	int i;
 	kstring_t out;
 	out.l = out.m = 0; out.s = 0;
 	for (i = 0; i < g->v.n; ++i) {
 		if (g->v.a[i].len < 0) continue;
-		mog_v_write(&g->v.a[i], &out);
+		mag_v_write(&g->v.a[i], &out);
 		fwrite(out.s, 1, out.l, stdout);
 	}
 	free(out.s);
 }
 
-mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
+mag_t *mag_g_read(const char *fn, const magopt_t *opt)
 {
 	gzFile fp;
 	kseq_t *seq;
 	ku128_v nei;
-	mog_t *g;
+	mag_t *g;
 	int is_mod = 0;
 	double t;
 
@@ -199,14 +199,14 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	if (fp == 0) return 0;
 	kv_init(nei);
-	g = calloc(1, sizeof(mog_t));
+	g = calloc(1, sizeof(mag_t));
 	seq = kseq_init(fp);
 	while (kseq_read(seq) >= 0) {
 		int i, j;
 		char *q;
-		mogv_t *p;
-		kv_pushp(mogv_t, g->v, &p);
-		memset(p, 0, sizeof(mogv_t));
+		magv_t *p;
+		kv_pushp(magv_t, g->v, &p);
+		memset(p, 0, sizeof(magv_t));
 		p->len = -1;
 		// parse ->k[2]
 		p->k[0] = strtol(seq->name.s, &q, 10); ++q;
@@ -272,11 +272,11 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 		fprintf(stderr, "[M::%s] the graph is modified during reading.\n", __func__);
 	if (is_mod || !(opt->flag & MOG_F_NO_AMEND)) {
 		t = cputime();
-		mog_amend(g);
+		mag_amend(g);
 		fprintf(stderr, "[M::%s] amended the graph in %.3f sec.\n", __func__, cputime() - t);
 	}
-	g->rdist = mog_cal_rdist(g);
-	if (opt->flag & MOG_F_READnMERGE) mog_g_merge(g, 1);
+	g->rdist = mag_cal_rdist(g);
+	if (opt->flag & MOG_F_READnMERGE) mag_g_merge(g, 1);
 	return g;
 }
 
@@ -284,27 +284,27 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
  * Basic graph operations *
  **************************/
 
-void mog_v_destroy(mogv_t *v)
+void mag_v_destroy(magv_t *v)
 {
 	free(v->nei[0].a); free(v->nei[1].a);
 	free(v->seq); free(v->cov);
-	memset(v, 0, sizeof(mogv_t));
+	memset(v, 0, sizeof(magv_t));
 	v->len = -1;
 }
 
-void mog_g_destroy(mog_t *g)
+void mag_g_destroy(mag_t *g)
 {
 	int i;
 	kh_destroy(64, g->h);
 	for (i = 0; i < g->v.n; ++i)
-		mog_v_destroy(&g->v.a[i]);
+		mag_v_destroy(&g->v.a[i]);
 	free(g->v.a);
 	free(g);
 }
 
-void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src) // NB: memory leak if dst is allocated
+void mag_v_copy_to_empty(magv_t *dst, const magv_t *src) // NB: memory leak if dst is allocated
 {
-	memcpy(dst, src, sizeof(mogv_t));
+	memcpy(dst, src, sizeof(magv_t));
 	dst->max_len = dst->len + 1;
 	kroundup32(dst->max_len);
 	dst->seq = calloc(dst->max_len, 1); memcpy(dst->seq, src->seq, src->len);
@@ -313,7 +313,7 @@ void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src) // NB: memory leak if d
 	kv_init(dst->nei[1]); kv_copy(ku128_t, dst->nei[1], src->nei[1]);
 }
 
-void mog_eh_add(mog_t *g, uint64_t u, uint64_t v, int ovlp) // add v to u
+void mag_eh_add(mag_t *g, uint64_t u, uint64_t v, int ovlp) // add v to u
 {
 	ku128_v *r;
 	ku128_t *q;
@@ -328,7 +328,7 @@ void mog_eh_add(mog_t *g, uint64_t u, uint64_t v, int ovlp) // add v to u
 	q->x = v; q->y = ovlp;
 }
 
-void mog_eh_markdel(mog_t *g, uint64_t u, uint64_t v) // mark deletion of v from u
+void mag_eh_markdel(mag_t *g, uint64_t u, uint64_t v) // mark deletion of v from u
 {
 	int i;	
 	uint64_t idd;
@@ -339,7 +339,7 @@ void mog_eh_markdel(mog_t *g, uint64_t u, uint64_t v) // mark deletion of v from
 		if (r->a[i].x == v) edge_mark_del(r->a[i]);
 }
 
-void mog_v_del(mog_t *g, mogv_t *p)
+void mag_v_del(mag_t *g, magv_t *p)
 {
 	int i, j;
 	khint_t k;
@@ -348,16 +348,16 @@ void mog_v_del(mog_t *g, mogv_t *p)
 		ku128_v *r = &p->nei[i];
 		for (j = 0; j < r->n; ++j)
 			if (!edge_is_del(r->a[j]) && r->a[j].x != p->k[0] && r->a[j].x != p->k[1])
-				mog_eh_markdel(g, r->a[j].x, p->k[i]);
+				mag_eh_markdel(g, r->a[j].x, p->k[i]);
 	}
 	for (i = 0; i < 2; ++i) {
 		k = kh_get(64, g->h, p->k[i]);
 		kh_del(64, g->h, k);
 	}
-	mog_v_destroy(p);
+	mag_v_destroy(p);
 }
 
-void mog_v_transdel(mog_t *g, mogv_t *p, int min_ovlp)
+void mag_v_transdel(mag_t *g, magv_t *p, int min_ovlp)
 {
 	if (p->nei[0].n && p->nei[1].n) {
 		int i, j, ovlp;
@@ -367,16 +367,16 @@ void mog_v_transdel(mog_t *g, mogv_t *p, int min_ovlp)
 				if (edge_is_del(p->nei[1].a[j]) || p->nei[1].a[j].x == p->k[0] || p->nei[1].a[j].x == p->k[1]) continue;
 				ovlp = (int)(p->nei[0].a[i].y + p->nei[1].a[j].y) - p->len;
 				if (ovlp >= min_ovlp) {
-					mog_eh_add(g, p->nei[0].a[i].x, p->nei[1].a[j].x, ovlp);
-					mog_eh_add(g, p->nei[1].a[j].x, p->nei[0].a[i].x, ovlp);
+					mag_eh_add(g, p->nei[0].a[i].x, p->nei[1].a[j].x, ovlp);
+					mag_eh_add(g, p->nei[1].a[j].x, p->nei[0].a[i].x, ovlp);
 				}
 			}
 		}
 	}
-	mog_v_del(g, p);
+	mag_v_del(g, p);
 }
 
-void mog_v_flip(mog_t *g, mogv_t *p)
+void mag_v_flip(mag_t *g, magv_t *p)
 {
 	ku128_v t;
 	khint_t k;
@@ -398,9 +398,9 @@ void mog_v_flip(mog_t *g, mogv_t *p)
  * Unambiguous merge *
  *********************/
 
-int mog_vh_merge_try(mog_t *g, mogv_t *p) // merge p's neighbor to the right-end of p
+int mag_vh_merge_try(mag_t *g, magv_t *p) // merge p's neighbor to the right-end of p
 {
-	mogv_t *q;
+	magv_t *q;
 	khint_t kp, kq;
 	int i, j, new_l;
 	hash64_t *h = (hash64_t*)g->h;
@@ -415,7 +415,7 @@ int mog_vh_merge_try(mog_t *g, mogv_t *p) // merge p's neighbor to the right-end
 	if (q->nei[kh_val(h, kq)&1].n != 1) return -4; // the neighbor q has multiple neighbors. cannot be an unambiguous merge
 
 	// we can perform a merge; do further consistency check (mostly check bugs)
-	if (kh_val(h, kq)&1) mog_v_flip(g, q); // a "><" bidirectional arc; flip q
+	if (kh_val(h, kq)&1) mag_v_flip(g, q); // a "><" bidirectional arc; flip q
 	kp = kh_get(64, g->h, p->k[1]); assert(kp != kh_end(h)); // get the iterator to p
 	kh_del(64, g->h, kp); kh_del(64, g->h, kq); // remove the two ends of the arc in the hash table
 	assert(p->k[1] == q->nei[0].a[0].x && q->k[0] == p->nei[1].a[0].x); // otherwise inconsistent topology
@@ -444,17 +444,17 @@ int mog_vh_merge_try(mog_t *g, mogv_t *p) // merge p's neighbor to the right-end
 	// merge neighbors
 	free(p->nei[1].a);
 	p->nei[1] = q->nei[1]; p->k[1] = q->k[1];
-	q->nei[1].a = 0; // to avoid freeing p->nei[1] by mog_v_destroy() below
+	q->nei[1].a = 0; // to avoid freeing p->nei[1] by mag_v_destroy() below
 	// update the hash table for the right end of p
 	kp = kh_get(64, g->h, p->k[1]);
 	assert(kp != kh_end((hash64_t*)g->h));
 	kh_val(h, kp) = (p - g->v.a)<<1 | 1;
 	// clean up q
-	mog_v_destroy(q);
+	mag_v_destroy(q);
 	return 0;
 }
 
-void mog_g_merge(mog_t *g, int rmdup)
+void mag_g_merge(mag_t *g, int rmdup)
 {
 	int i;
 	for (i = 0; i < g->v.n; ++i) { // remove multiedges; FIXME: should we do that?
@@ -467,11 +467,11 @@ void mog_g_merge(mog_t *g, int rmdup)
 		}
 	}
 	for (i = 0; i < g->v.n; ++i) {
-		mogv_t *p = &g->v.a[i];
+		magv_t *p = &g->v.a[i];
 		if (p->len < 0) continue;
-		while (mog_vh_merge_try(g, p) == 0);
-		mog_v_flip(g, p);
-		while (mog_vh_merge_try(g, p) == 0);
+		while (mag_vh_merge_try(g, p) == 0);
+		mag_v_flip(g, p);
+		while (mag_vh_merge_try(g, p) == 0);
 	}
 }
 
@@ -479,31 +479,31 @@ void mog_g_merge(mog_t *g, int rmdup)
  * Easy graph simplification *
  *****************************/
 
-void mog_g_rm_vext(mog_t *g, int min_len, int min_nsr)
+void mag_g_rm_vext(mag_t *g, int min_len, int min_nsr)
 {
 	int i;
 	for (i = 0; i < g->v.n; ++i) {
-		mogv_t *p = &g->v.a[i];
+		magv_t *p = &g->v.a[i];
 		if (p->len >= 0 && (p->nei[0].n == 0 || p->nei[1].n == 0) && p->len < min_len && p->nsr < min_nsr)
-			mog_v_del(g, p);
+			mag_v_del(g, p);
 	}
 }
 
-void mog_g_rm_vint(mog_t *g, int min_len, int min_nsr, int min_ovlp)
+void mag_g_rm_vint(mag_t *g, int min_len, int min_nsr, int min_ovlp)
 {
 	int i;
 	for (i = 0; i < g->v.n; ++i) {
-		mogv_t *p = &g->v.a[i];
+		magv_t *p = &g->v.a[i];
 		if (p->len >= 0 && p->len < min_len && p->nsr < min_nsr)
-			mog_v_transdel(g, p, min_ovlp);
+			mag_v_transdel(g, p, min_ovlp);
 	}
 }
 
-void mog_g_rm_edge(mog_t *g, int min_ovlp, double min_ratio)
+void mag_g_rm_edge(mag_t *g, int min_ovlp, double min_ratio)
 {
 	int i, j, k;
 	for (i = 0; i < g->v.n; ++i) {
-		mogv_t *p = &g->v.a[i];
+		magv_t *p = &g->v.a[i];
 		for (j = 0; j < 2; ++j) {
 			ku128_v *r = &p->nei[j];
 			int max_ovlp = min_ovlp;
@@ -513,7 +513,7 @@ void mog_g_rm_edge(mog_t *g, int min_ovlp, double min_ratio)
 			for (k = 0; k < r->n; ++k) {
 				if (edge_is_del(r->a[k])) continue;
 				if (r->a[k].y < min_ovlp || (double)r->a[k].y / max_ovlp < min_ratio) {
-					mog_eh_markdel(g, r->a[k].x, p->k[j]); // FIXME: should we check if r->a[k] is p itself?
+					mag_eh_markdel(g, r->a[k].x, p->k[j]); // FIXME: should we check if r->a[k] is p itself?
 					edge_mark_del(r->a[k]);
 				}
 			}
@@ -528,9 +528,9 @@ void mog_g_rm_edge(mog_t *g, int min_ovlp, double min_ratio)
 #define A_THRES 20.
 #define A_MIN_SUPP 5
 
-double mog_cal_rdist(mog_t *g)
+double mag_cal_rdist(mag_t *g)
 {
-	mogv_v *v = &g->v;
+	magv_v *v = &g->v;
 	int j;
 	uint64_t *srt;
 	double rdist = -1., t;
@@ -547,7 +547,7 @@ double mog_cal_rdist(mog_t *g)
 	for (j = 0; j < 2; ++j) {
 		sum_n = sum_l = 0;
 		for (i = v->n - 1; i >= 0; --i) {
-			const mogv_t *p = &v->a[srt[i]<<32>>32];
+			const magv_t *p = &v->a[srt[i]<<32>>32];
 			int tmp1, tmp2;
 			tmp1 = tmp2 = 0;
 			if (p->nei[0].n) ++tmp1, tmp2 += p->nei[0].a[0].y;
@@ -572,9 +572,9 @@ double mog_cal_rdist(mog_t *g)
 	return rdist;
 }
 
-void mog_vh_flowflt(mog_t *g, size_t idd, double thres)
+void mag_vh_flowflt(mag_t *g, size_t idd, double thres)
 { // only works for: {p,r}->q, where both p and q are unique and p has a single neighbor q
-	mogv_t *p, *q, *t;
+	magv_t *p, *q, *t;
 	double A;
 	uint64_t u, v;
 	ku128_v *r;
@@ -606,7 +606,7 @@ void mog_vh_flowflt(mog_t *g, size_t idd, double thres)
 		} else to_cut = 1;
 		if (to_cut) {
 			if (r->a[i].x != q->k[0] && r->a[i].x != q->k[1])
-				mog_eh_markdel(g, r->a[i].x, q->k[u&1]);
+				mag_eh_markdel(g, r->a[i].x, q->k[u&1]);
 			edge_mark_del(r->a[i]);
 		}
 	}
@@ -616,11 +616,11 @@ void mog_vh_flowflt(mog_t *g, size_t idd, double thres)
  * Key portal *
  **************/
 
-mogopt_t *mog_init_opt()
+magopt_t *mag_init_opt()
 {
-	mogopt_t *o;
+	magopt_t *o;
 
-	o = calloc(1, sizeof(mogopt_t));
+	o = calloc(1, sizeof(magopt_t));
 	o->flag = MOG_F_READnMERGE;
 	o->max_arc = 512;
 	o->min_dratio0 = 0.7;
@@ -640,7 +640,7 @@ mogopt_t *mog_init_opt()
 	return o;
 }
 
-void mog_g_clean(mog_t *g, const mogopt_t *opt)
+void mag_g_clean(mag_t *g, const magopt_t *opt)
 {
 	double t, a_thres = opt->a_thres > 20.? opt->a_thres : 20.;
 	int j;
@@ -648,55 +648,55 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
-	//mog_vh_simplify_bubble(g, tid2idd(g->h, 49449609), 512, 500, a); exit(0);
-	//mog_vh_simplify_bubble(g, tid2idd(g->h, 34356802), 512, 500, a); exit(0); // a good case
-	//mog_vh_simplify_bubble(g, tid2idd(g->h, 51220518), 512, 500, a); exit(0);
+	//mag_vh_simplify_bubble(g, tid2idd(g->h, 49449609), 512, 500, a); exit(0);
+	//mag_vh_simplify_bubble(g, tid2idd(g->h, 34356802), 512, 500, a); exit(0); // a good case
+	//mag_vh_simplify_bubble(g, tid2idd(g->h, 51220518), 512, 500, a); exit(0);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		t = cputime();
-		mog_g_rm_edge(g, opt->min_ovlp * r, opt->min_dratio1 * r);
-		mog_g_rm_vext(g, opt->min_elen * r, opt->min_ensr * r > 2.? opt->min_ensr * r > 2. : 2);
-		mog_g_merge(g, 1);
+		mag_g_rm_edge(g, opt->min_ovlp * r, opt->min_dratio1 * r);
+		mag_g_rm_vext(g, opt->min_elen * r, opt->min_ensr * r > 2.? opt->min_ensr * r > 2. : 2);
+		mag_g_merge(g, 1);
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] finished simple graph simplification round %d in %.3f sec.\n", __func__, j+1, cputime() - t);
 	}
 	t = cputime();
 	for (j = 0; j < opt->n_iter; ++j) {
-		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
-		mog_g_merge(g, 0);
+		mag_g_rm_vext(g, opt->min_elen, opt->min_ensr);
+		mag_g_merge(g, 0);
 	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] finished another %d rounds of tip removal in %.3f sec.\n", __func__, opt->n_iter, cputime() - t);
 	if (opt->flag & MOG_F_AGGRESSIVE) {
 		t = cputime();
-		for (i = 0; i < g->v.n; ++i) mog_v_pop_open(g, &g->v.a[i], opt->min_elen);
-		mog_g_merge(g, 0);
+		for (i = 0; i < g->v.n; ++i) mag_v_pop_open(g, &g->v.a[i], opt->min_elen);
+		mag_g_merge(g, 0);
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] popped open bubbles in %.3f sec.\n", __func__, cputime() - t);
 	}
 	t = cputime();
 	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_flowflt(g, i<<1|0, a_thres);
-		mog_vh_flowflt(g, i<<1|1, a_thres);
+		mag_vh_flowflt(g, i<<1|0, a_thres);
+		mag_vh_flowflt(g, i<<1|1, a_thres);
 	}
-	mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
-	mog_g_merge(g, 0);
+	mag_g_rm_vext(g, opt->min_elen, opt->min_ensr);
+	mag_g_merge(g, 0);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] coverage based false overlap removal %.3f sec.\n", __func__, cputime() - t);
 	t = cputime();
-	mog_g_simplify_bubble(g, opt->max_bvtx, opt->max_bdist);
+	mag_g_simplify_bubble(g, opt->max_bvtx, opt->max_bdist);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] simplified complex bubbles in %.3f sec.\n", __func__, cputime() - t);
 	t = cputime();
-	mog_g_pop_simple(g, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
+	mag_g_pop_simple(g, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] popped closed bubbles in %.3f sec.\n", __func__, cputime() - t);
 	if (opt->min_insr >= 2) {
 		t = cputime();
-		mog_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
-		mog_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
-		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
-		mog_g_merge(g, 1);
+		mag_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
+		mag_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
+		mag_g_rm_vext(g, opt->min_elen, opt->min_ensr);
+		mag_g_merge(g, 1);
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);
 	}

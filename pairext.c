@@ -87,7 +87,7 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 	rd.l = seq.l = rd.m = seq.m = out.l = out.m = 0; rd.s = seq.s = out.s = 0;
 	for (i = start; i < n; i += step) {
 		ext1_t *p = &buf[i];
-		mog_t *g;
+		mag_t *g;
 		int tmp, max_len = 0;
 
 		seq.l = 0;
@@ -103,23 +103,23 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 		// de novo assembly
 		fm6_api_correct(16, seq.l, seq.s, 0);
 		g = fm6_api_unitig(-1, seq.l, seq.s);
-		mog_g_rm_vext(g, max_len + 1, 2); // very mild tip removal; note that max_len+1 <= p->len
-		mog_g_merge(g, 1);
-		mog_g_simplify_bubble(g, 25, max_len * 2);
-		mog_g_pop_simple(g, 10., 0.15, is_aggressive);
+		mag_g_rm_vext(g, max_len + 1, 2); // very mild tip removal; note that max_len+1 <= p->len
+		mag_g_merge(g, 1);
+		mag_g_simplify_bubble(g, 25, max_len * 2);
+		mag_g_pop_simple(g, 10., 0.15, is_aggressive);
 		// decide if keep the longest contig
 		for (j = 0, max_len = 0, tmp = -1; j < g->v.n; ++j)
 			if (g->v.a[j].len >= max_len)
 				max_len = g->v.a[j].len, tmp = j;
 		if (max_len > p->len) { // the semitig is extensible
-			mogv_t *q = &g->v.a[tmp];
+			magv_t *q = &g->v.a[tmp];
 			out.l = 0;
 			kputc('>', &out); kputw(i, &out); kputc(' ', &out); kputw(max_len - p->len, &out); kputc('\n', &out);
 			for (j = 0; j < q->len; ++j)
 				kputc("$ACGTN"[(int)q->seq[j]], &out);
 			puts(out.s);
 		}
-		mog_g_destroy(g);
+		mag_g_destroy(g);
 	}
 	free(rd.s); free(seq.s); free(out.s);
 }

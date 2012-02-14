@@ -303,17 +303,17 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, mogv_v *nodes)
+static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, magv_v *nodes)
 {
 	uint64_t i, j;
 	int max_l = 0;
 	aux_t a;
 	kstring_t str, cov, out;
-	mogv_t z;
+	magv_t z;
 
 	// initialize aux_t and all the vectors
 	memset(&a, 0, sizeof(aux_t));
-	memset(&z, 0, sizeof(mogv_t));
+	memset(&z, 0, sizeof(magv_t));
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	// the core loop
@@ -333,11 +333,11 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 				memcpy(z.seq, str.s, z.len);
 				memcpy(z.cov, cov.s, z.len + 1);
 				if (nodes) { // keep in the nodes array
-					mogv_t *q;
-					kv_pushp(mogv_t, *nodes, &q);
-					mog_v_copy_to_empty(q, &z);
+					magv_t *q;
+					kv_pushp(magv_t, *nodes, &q);
+					mag_v_copy_to_empty(q, &z);
 				} else { // print out
-					mog_v_write(&z, &out);
+					mag_v_write(&z, &out);
 					fputs(out.s, stdout);
 				}
 			}
@@ -397,10 +397,10 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
  * High-level API *
  ******************/
 
-mog_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
+mag_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 {
 	rld_t *e;
-	mog_t *g;
+	mag_t *g;
 	uint64_t i, *used, *bend, *visited;
 	if (min_match < 0) {
 		min_match = (int)(fm6_api_seqlen(l, seq, .25) * .33 + .499);
@@ -412,7 +412,7 @@ mog_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 	used    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	bend    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	visited = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
-	g = calloc(1, sizeof(mog_t));
+	g = calloc(1, sizeof(mag_t));
 	unitig_core(e, min_match, 0, e->mcnt[1], used, bend, visited, 0, &g->v);
 	free(used); free(bend); free(visited);
 	rld_destroy(e);

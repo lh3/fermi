@@ -510,10 +510,10 @@ int main_seqsort(int argc, char *argv[])
 
 int main_clean(int argc, char *argv[])
 {
-	mog_t *g;
+	mag_t *g;
 	int c;
-	mogopt_t *opt;
-	opt = mog_init_opt();
+	magopt_t *opt;
+	opt = mag_init_opt();
 	while ((c = getopt(argc, argv, "ON:d:CFAl:e:i:o:R:n:a:w:r:")) >= 0) {
 		switch (c) {
 		case 'F': opt->flag |= MOG_F_NO_AMEND; break;
@@ -552,10 +552,10 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		return 1;
 	}
-	g = mog_g_read(argv[optind], opt);
-	mog_g_clean(g, opt);
-	mog_g_print(g);
-	mog_g_destroy(g);
+	g = mag_g_read(argv[optind], opt);
+	mag_g_clean(g, opt);
+	mag_g_print(g);
+	mag_g_destroy(g);
 	free(opt);
 	return 0;
 }

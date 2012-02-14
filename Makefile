@@ -3,7 +3,7 @@ CFLAGS=		-g -Wall -O2
 DFLAGS=		#-D_USE_RLE6 #-DNDEBUG
 OBJS=		utils.o seq.o ksa.o ksa64.o rld.o exact.o merge.o correct.o \
 			build.o smem.o unitig.o seqsort.o cmd.o example.o \
-			pairext.o ksw.o mog.o bubble.o
+			pairext.o ksw.o mag.o bubble.o
 PROG=		fermi
 INCLUDES=	
 LIBS=		-lpthread -lm -lz
@@ -31,9 +31,8 @@ correct.o:fermi.h rld.h kvec.h kseq.h
 smem.o:fermi.h rld.h kvec.h
 merge.o:fermi.h rld.h ksort.h
 cmd.o:fermi.h rld.h kseq.h
-mog.o:mog.h kseq.h
-bubble.o:mog.h ksw.h
-msg.o:fermi.h khash.h kseq.h
+mag.o:mag.h kseq.h
+bubble.o:mag.h ksw.h
 main.o:fermi.h
 
 clean:
