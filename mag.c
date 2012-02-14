@@ -645,7 +645,7 @@ magopt_t *mag_init_opt()
 
 	o->max_bcov = 10.;
 	o->max_bfrac = 0.15;
-	o->max_bvtx = 512;
+	o->max_bvtx = 64;
 	o->max_bdist = 512;
 	return o;
 }
