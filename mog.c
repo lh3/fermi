@@ -627,6 +627,11 @@ mogopt_t *mog_init_opt()
 	o->min_insr = 3;
 	o->min_dratio1 = 0.8;
 	o->a_thres = 100.;
+
+	o->max_bcov = 10.;
+	o->max_bfrac = 0.15;
+	o->max_bvtx = 512;
+	o->max_bdist = 512;
 	return o;
 }
 
@@ -652,15 +657,20 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] finished simple graph simplification round %d in %.3f sec.\n", __func__, j+1, cputime() - t);
 	}
+	for (j = 0; j < opt->n_iter; ++j) {
+		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
+		mog_g_merge(g);
+	}
 	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_simplify_bubble(g, i<<1|0, 512, 500, a);
-		mog_vh_simplify_bubble(g, i<<1|1, 512, 500, a);
+		mog_vh_simplify_bubble(g, i<<1|0, opt->max_bvtx, opt->max_bdist, a);
+		mog_vh_simplify_bubble(g, i<<1|1, opt->max_bvtx, opt->max_bdist, a);
 	}
 	mog_g_merge(g);
 	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_pop_simple(g, i<<1|0, 100, 100);
-		mog_vh_pop_simple(g, i<<1|1, 100, 100);
+		mog_vh_pop_simple(g, i<<1|0, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
+		mog_vh_pop_simple(g, i<<1|1, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
 	}
+	mog_g_merge(g);
 	if (opt->flag & MOG_F_AGGRESSIVE) {
 		for (i = 0; i < g->v.n; ++i) mog_v_swrm(g, &g->v.a[i], opt->min_elen);
 		mog_g_merge(g);

@@ -8,8 +8,8 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 
 typedef khash_t(64) hash64_t;
 
-#define MIN_N_DIFF 2.01 // for evaluating alignment after SW
-#define MIN_R_DIFF 0.1
+#define MAX_N_DIFF 2.01 // for evaluating alignment after SW
+#define MAX_R_DIFF 0.1
 
 #define edge_mark_del(_x) ((_x).x = (uint64_t)-2, (_x).y = 0)
 #define edge_is_del(_x)   ((_x).x == (uint64_t)-2 || (_x).y == 0)
@@ -155,20 +155,20 @@ void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, m
 	}
 }
 
-void mog_vh_pop_simple(mog_t *g, uint64_t idd, float min_cov, float min_ratio)
+void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_frac, int aggressive)
 {
 	mogv_t *p = &g->v.a[idd>>1], *q[2];
 	ku128_v *r;
 	int i, j, k, dir[2], l[2];
 	char *mem, *seq[2], *cov[2], *s;
-	int8_t mat[16];
-	ksw_query_t *qry;
-	ksw_aux_t aux;
+	float max_n_diff = aggressive? MAX_N_DIFF * 2. : MAX_N_DIFF;
 
 	if (p->len < 0 || p->nei[idd&1].n != 2) return; // deleted or no bubble
 	r = &p->nei[idd&1];
 	for (j = 0; j < 2; ++j) {
-		uint64_t x = mog_tid2idd(g->h, r->a[j].x);
+		uint64_t x;
+		if (edge_is_del(r->a[j])) return;
+		x = mog_tid2idd(g->h, r->a[j].x);
 		dir[j] = x&1;
 		q[j] = &g->v.a[x>>1];
 		if (q[j]->nei[0].n != 1 || q[j]->nei[1].n != 1) return; // no bubble
@@ -189,20 +189,31 @@ void mog_vh_pop_simple(mog_t *g, uint64_t idd, float min_cov, float min_ratio)
 		}
 		for (i = 0; i < l[j]; ++i) --seq[j][i];
 	}
-	// prepare to do smith-waterman
-	for (i = k = 0; i < 4; ++i)
-		for (j = 0; j < 4; ++j)
-			mat[k++] = i == j? 5 : -4;
-	aux.gapo = 6; aux.gape = 3;
-	qry = ksw_qinit(2, l[0], seq[0], 4, mat);
-	ksw_sse2(qry, l[1], seq[1], &aux);
-	fprintf(stderr, "===> %d <===\n", aux.score);
-	for (j = 0; j < 2; ++j) {
-		for (i = 0; i < l[j]; ++i)
-			fputc("ACGTN"[(int)seq[j][i]], stderr);
-		fputc('\n', stderr);
+	{ // try to collapse the bubble
+		int8_t mat[16];
+		ksw_query_t *qry;
+		ksw_aux_t aux;
+		double n_diff, r_diff, avg[2];
+		for (i = k = 0; i < 4; ++i)
+			for (j = 0; j < 4; ++j)
+				mat[k++] = i == j? 5 : -4;
+		aux.gapo = 5; aux.gape = 2;
+		qry = ksw_qinit(2, l[0], (uint8_t*)seq[0], 4, mat);
+		ksw_sse2(qry, l[1], (uint8_t*)seq[1], &aux);
+		free(qry);
+		n_diff = ((l[0] < l[1]? l[0] : l[1]) * 5. - aux.score) / (5. + 4.); // 5: matching score; -4: mismatchig score
+		r_diff = n_diff / ((l[0] + l[1]) / 2.);
+		if (n_diff < max_n_diff || r_diff < MAX_R_DIFF) {
+			for (j = 0; j < 2; ++j)
+				for (i = 0, avg[j] = 0.; i < l[j]; ++i)
+					avg[j] += cov[j][i] - 33;
+			avg[0] /= l[0]; avg[1] /= l[1];
+			j = avg[0] < avg[1]? 0 : 1;
+			if (aggressive || (avg[j] < max_cov && avg[j] / (avg[j^1] + avg[j]) < max_frac))
+				mog_v_del(g, q[j]);
+		}
 	}
-	free(mem); free(qry);
+	free(mem);
 }
 
 /****************
@@ -227,7 +238,7 @@ void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen)
 	for (i = k = 0; i < 4; ++i)
 		for (j = 0; j < 4; ++j)
 			mat[k++] = i == j? 5 : -4;
-	aux.gapo = 6; aux.gape = 3;
+	aux.gapo = 5; aux.gape = 2;
 	
 	s = &p->nei[dir];
 	for (l = 0; l < s->n; ++l) { // if we use "if (p->nei[0].n + p->nei[1].n != 1)", s->n == 1
@@ -271,7 +282,7 @@ void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen)
 				double r_diff, n_diff;
 				n_diff = (l_qry * 5. - aux.score) / (5. + 4.); // 5: matching score; -4: mismatchig score
 				r_diff = n_diff / l_qry;
-				if (n_diff < MIN_N_DIFF || r_diff < MIN_R_DIFF) break;
+				if (n_diff < MAX_N_DIFF || r_diff < MAX_R_DIFF) break;
 			}
 		}
 

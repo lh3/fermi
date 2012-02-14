@@ -573,7 +573,7 @@ int main_clean(int argc, char *argv[])
 	int c;
 	mogopt_t *opt;
 	opt = mog_init_opt();
-	while ((c = getopt(argc, argv, "ON:d:CFAl:e:i:o:R:n:a:")) >= 0) {
+	while ((c = getopt(argc, argv, "ON:d:CFAl:e:i:o:R:n:a:w:r:")) >= 0) {
 		switch (c) {
 		case 'F': opt->flag |= MOG_F_NO_AMEND; break;
 		case 'C': opt->flag |= MOG_F_CLEAN; break;
@@ -588,6 +588,8 @@ int main_clean(int argc, char *argv[])
 		case 'a': opt->a_thres  = atof(optarg); break;
 		case 'n': opt->n_iter   = atoi(optarg); break;
 		case 'R': opt->min_dratio1 = atof(optarg); break;
+		case 'w': opt->max_bcov = atof(optarg); break;
+		case 'r': opt->max_bdist= atof(optarg); break;
 		}
 	}
 	if (argc == optind) {
@@ -602,8 +604,10 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "         -o INT      minimum overlap [%d]\n", opt->min_ovlp);
 		fprintf(stderr, "         -R FLOAT    minimum relative overlap ratio [%.2f]\n", opt->min_dratio1);
 		fprintf(stderr, "         -n INT      number of iterations [%d]\n", opt->n_iter);
+		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n\n", opt->a_thres);
 		fprintf(stderr, "         -A          aggressive bubble popping\n");
-		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n", opt->a_thres);
+		fprintf(stderr, "         -w FLOAT    minimum coverage to keep a bubble\n");
+		fprintf(stderr, "         -r FLOAT    minimum fraction to keep a bubble\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
