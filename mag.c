@@ -605,8 +605,7 @@ void mag_vh_flowflt(mag_t *g, size_t idd, double thres)
 			if (t->nsr <= 2 && t->nei[(v&1)^1].n == 0) to_cut = 1; // a small tip
 		} else to_cut = 1;
 		if (to_cut) {
-			if (r->a[i].x != q->k[0] && r->a[i].x != q->k[1])
-				mag_eh_markdel(g, r->a[i].x, q->k[u&1]);
+			mag_eh_markdel(g, r->a[i].x, q->k[u&1]);
 			edge_mark_del(r->a[i]);
 		}
 	}
