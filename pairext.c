@@ -32,13 +32,12 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 		int beg, end;
 		if (kseq->comment.l == 0) continue; // no comments
 		if (kseq->seq.l < min_dist) continue; // too short; skip
-		reads.n = 0;
-		for (k = 0, q = kseq->comment.s; *q && k < 2; ++q) // skip the first two fields
-			if (isspace(*q)) ++k;
+		if ((q = strstr(kseq->comment.s, "UR:Z:")) == 0) continue; // no UR tag
+		reads.n = 0; q += 5; // jump to the first unmapped read (UR)
 		while (isdigit(*q)) { // read mapping
 			ku128_t x;
 			x.x = strtol(q, &q, 10); ++q;
-			x.y = *q == '-'? 1 : 0; q += 2;
+			x.y = x.x&1; x.x >>= 1; // to fit the msg format; FIXME: better make this cleaner...
 			x.y |= (uint64_t)strtol(q, &q, 10)<<32; ++q;
 			x.y |= strtol(q, &q, 10)<<1;
 			kv_push(ku128_t, reads, x);

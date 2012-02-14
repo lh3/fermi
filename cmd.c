@@ -215,7 +215,7 @@ int main_unitig(int argc, char *argv[])
 	return 0;
 }
 
-int main_paircov(int argc, char *argv[])
+int main_remap(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1, skip = 50, min_pcv = 0;
 	rld_t *e;
@@ -232,7 +232,7 @@ int main_paircov(int argc, char *argv[])
 	}
 	if (optind + 2 > argc) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi paircov [options] <reads.fmd> <contigs.fq>\n\n");
+		fprintf(stderr, "Usage:   fermi remap [options] <reads.fmd> <contigs.fq>\n\n");
 		fprintf(stderr, "Options: -l INT      skip ending INT bases of a read pair [%d]\n", skip);
 		fprintf(stderr, "         -c INT      minimum paired-end coverage [%d]\n", min_pcv);
 		fprintf(stderr, "         -r FILE     rank [null]\n");
@@ -242,7 +242,7 @@ int main_paircov(int argc, char *argv[])
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	if (fn_sorted) sorted = load_sorted(e->mcnt[1], fn_sorted);
-	fm6_paircov(argv[optind+1], e, sorted, skip, min_pcv, n_threads);
+	fm6_remap(argv[optind+1], e, sorted, skip, min_pcv, n_threads);
 	free(sorted);
 	rld_destroy(e);
 	return 0;

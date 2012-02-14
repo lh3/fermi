@@ -1,3 +1,4 @@
+#include <math.h>
 #include "priv.h"
 #include "kvec.h"
 #include "kstring.h"
@@ -110,8 +111,9 @@ int fm6_smem1(const rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, i
 	return ret;
 }
 
-/****************
- ****************/
+/***************
+ * Remap reads *
+ ***************/
 
 #include <zlib.h>
 #include <ctype.h>
@@ -130,7 +132,7 @@ typedef struct {
 	ku128_v unpaired;
 } pcov_t;
 
-static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h)
+static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h, uint64_t rec[3])
 {
 	const uint64_t mask = (uint64_t)FM_MASK30<<32 | FM_MASK30;
 	fmsmem_i *iter;
@@ -162,7 +164,11 @@ static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const
 						if (kk != kh_end(h)) { // mate found on the forward strand
 							beg = kh_val(h, kk)>>32;
 							end = p->info&FM_MASK30;
-							if (end - beg >= FM6_MAX_ISIZE) to_add = 1; // excessive insert size
+							if (end - beg < FM6_MAX_ISIZE) { // a proper pair
+								++rec[0];
+								rec[1] += end - beg;
+								rec[2] += (end - beg) * (end - beg);
+							} else to_add = 1; // excessive insert size
 						} else to_add = 1;
 						if (to_add == 1) {
 							ku128_t *q;
@@ -222,7 +228,8 @@ static void mask_pcv(int l, char *seq, const uint8_t *pcv, int skip, int min_pcv
 }
 
 // if unpaired, skip<=0 or sorted==0
-static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, int min_pcv, char *const* name, char *const* comment)
+static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, int min_pcv, char *const* name,
+						char *const* comment, uint64_t rec[3])
 {
 	int i, j;
 	hash64_t *h;
@@ -241,7 +248,7 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 			kh_destroy(64, h);
 			h = kh_init(64);
 		}
-		r = paircov(e, l, si, skip, sorted, h);
+		r = paircov(e, l, si, skip, sorted, h, rec);
 		for (j = 0; j < l; ++j)
 			r.cov[j] = r.cov[j] + 33 < 126? r.cov[j] + 33 : 126;
 		if (min_pcv > 0) { // we want to break the sequence
@@ -331,16 +338,17 @@ typedef struct {
 	const uint64_t *sorted;
 	int start, step, skip, min_pcv;
 	seqbuf_t *buf;
+	uint64_t rec[3];
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	paircov_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->min_pcv, w->buf->name, w->buf->comment);
+	paircov_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->min_pcv, w->buf->name, w->buf->comment, w->rec);
 	return 0;
 }
 
-int fm6_paircov(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int n_threads)
+int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int n_threads)
 {
 	int i;
 	kseq_t *seq;
@@ -349,6 +357,8 @@ int fm6_paircov(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int 
 	seqbuf_t *buf;
 	pthread_t *tid;
 	pthread_attr_t attr;
+	uint64_t rec[3];
+	double avg, std;
 
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -367,6 +377,12 @@ int fm6_paircov(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int 
 		for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], &attr, worker, w + i);
 		for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 	}
+	rec[0] = rec[1] = rec[2] = 0;
+	for (i = 0; i < n_threads; ++i)
+		rec[0] += w[i].rec[0], rec[1] += w[i].rec[1], rec[2] += w[i].rec[2];
+	avg = (double)rec[1] / rec[0];
+	std = sqrt((double)rec[2] / rec[0] - avg * avg);
+	fprintf(stderr, "[M::%s] avg = %.2f std = %.2f\n", __func__, avg, std);
 
 	free(buf->l); free(buf->s); free(buf->name); free(buf->comment); free(buf);
 	kseq_destroy(seq);
