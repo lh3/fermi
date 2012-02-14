@@ -84,14 +84,14 @@ static inline void v128_cap(ku128_v *r, int max)
  * Mapping between vertex id and interval end id *
  *************************************************/
 
-static hash64_t *build_hash(const magv_v *nodes)
+void mag_g_build_hash(mag_t *g)
 {
 	long i;
 	int j, ret;
 	hash64_t *h;
 	h = kh_init(64);
-	for (i = 0; i < nodes->n; ++i) {
-		const magv_t *p = &nodes->a[i];
+	for (i = 0; i < g->v.n; ++i) {
+		const magv_t *p = &g->v.a[i];
 		for (j = 0; j < 2; ++j) {
 			khint_t k = kh_put(64, h, p->k[j], &ret);
 			if (ret == 0) {
@@ -101,7 +101,7 @@ static hash64_t *build_hash(const magv_v *nodes)
 			} else kh_val(h, k) = i<<1|j;
 		}
 	}
-	return h;
+	g->h = h;
 }
 
 static inline uint64_t tid2idd(hash64_t *h, uint64_t tid)
@@ -184,6 +184,7 @@ void mag_g_print(const mag_t *g)
 		fwrite(out.s, 1, out.l, stdout);
 	}
 	free(out.s);
+	fflush(stdout);
 }
 
 mag_t *mag_g_read(const char *fn, const magopt_t *opt)
@@ -265,7 +266,7 @@ mag_t *mag_g_read(const char *fn, const magopt_t *opt)
 	gzclose(fp);
 	free(nei.a);
 	// finalize
-	g->h = build_hash(&g->v);
+	mag_g_build_hash(g);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] read the graph and constructed the dictionary in %.3f sec\n", __func__, cputime() - t);
 	if (is_mod && fm_verbose >= 3)

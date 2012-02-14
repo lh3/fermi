@@ -55,6 +55,7 @@ extern "C" {
 
 	void mag_g_destroy(mag_t *g);
 	mag_t *mag_g_read(const char *fn, const magopt_t *opt);
+	void mag_g_build_hash(mag_t *g);
 	void mag_g_print(const mag_t *g);
 	void mag_g_rm_vext(mag_t *g, int min_len, int min_nsr);
 	void mag_g_merge(mag_t *g, int rmdup);

@@ -413,7 +413,8 @@ mag_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 	bend    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	visited = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	g = calloc(1, sizeof(mag_t));
-	unitig_core(e, min_match, 0, e->mcnt[1], used, bend, visited, 0, &g->v);
+	unitig_core(e, min_match, 0, 1, used, bend, visited, 0, &g->v);
+	mag_g_build_hash(g);
 	free(used); free(bend); free(visited);
 	rld_destroy(e);
 	return g;
