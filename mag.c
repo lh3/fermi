@@ -654,7 +654,6 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 {
 	double t, a_thres = opt->a_thres > 20.? opt->a_thres : 20.;
 	int j;
-	uint32_t i;
 
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
