@@ -220,7 +220,7 @@ void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_frac, in
  * Open bubbles *
  ****************/
 
-void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen)
+void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen)
 {
 	int i, j, k, l, dir, max_l, l_qry;
 	mogv_t *q, *t;

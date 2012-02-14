@@ -57,7 +57,7 @@ extern "C" {
 	mog_t *mog_g_read(const char *fn, const mogopt_t *opt);
 	void mog_v_write(const mogv_t *p, kstring_t *out);
 	void mog_g_print(const mog_t *g);
-	void mog_g_merge(mog_t *g);
+	void mog_g_merge(mog_t *g, int rmdup);
 	double mog_cal_rdist(mog_t *g);
 
 	void mog_v_del(mog_t *g, mogv_t *p);
@@ -66,7 +66,7 @@ extern "C" {
 	void mog_b_destroyaux(mogb_aux_t *b);
 	void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a);
 	void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_ratio, int aggressive);
-	void mog_v_swrm(mog_t *g, mogv_t *p, int min_elen);
+	void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen);
 
 	void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src); // NB: memory leak if dst is allocated
 

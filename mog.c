@@ -276,7 +276,7 @@ mog_t *mog_g_read(const char *fn, const mogopt_t *opt)
 		fprintf(stderr, "[M::%s] amended the graph in %.3f sec.\n", __func__, cputime() - t);
 	}
 	g->rdist = mog_cal_rdist(g);
-	if (opt->flag & MOG_F_READnMERGE) mog_g_merge(g);
+	if (opt->flag & MOG_F_READnMERGE) mog_g_merge(g, 1);
 	return g;
 }
 
@@ -454,12 +454,17 @@ int mog_vh_merge_try(mog_t *g, mogv_t *p) // merge p's neighbor to the right-end
 	return 0;
 }
 
-void mog_g_merge(mog_t *g)
+void mog_g_merge(mog_t *g, int rmdup)
 {
 	int i;
 	for (i = 0; i < g->v.n; ++i) { // remove multiedges; FIXME: should we do that?
-		v128_rmdup(&g->v.a[i].nei[0]);
-		v128_rmdup(&g->v.a[i].nei[1]);
+		if (rmdup) {
+			v128_rmdup(&g->v.a[i].nei[0]);
+			v128_rmdup(&g->v.a[i].nei[1]);
+		} else {
+			v128_clean(&g->v.a[i].nei[0]);
+			v128_clean(&g->v.a[i].nei[1]);
+		}
 	}
 	for (i = 0; i < g->v.n; ++i) {
 		mogv_t *p = &g->v.a[i];
@@ -653,41 +658,56 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 		t = cputime();
 		mog_g_rm_edge(g, opt->min_ovlp * r, opt->min_dratio1 * r);
 		mog_g_rm_vext(g, opt->min_elen * r, opt->min_ensr * r > 2.? opt->min_ensr * r > 2. : 2);
-		mog_g_merge(g);
+		mog_g_merge(g, 1);
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] finished simple graph simplification round %d in %.3f sec.\n", __func__, j+1, cputime() - t);
 	}
+	t = cputime();
 	for (j = 0; j < opt->n_iter; ++j) {
 		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
-		mog_g_merge(g);
+		mog_g_merge(g, 0);
 	}
-	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_simplify_bubble(g, i<<1|0, opt->max_bvtx, opt->max_bdist, a);
-		mog_vh_simplify_bubble(g, i<<1|1, opt->max_bvtx, opt->max_bdist, a);
-	}
-	mog_g_merge(g);
-	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_pop_simple(g, i<<1|0, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
-		mog_vh_pop_simple(g, i<<1|1, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
-	}
-	mog_g_merge(g);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] finished another %d rounds of tip removal in %.3f sec.\n", __func__, opt->n_iter, cputime() - t);
 	if (opt->flag & MOG_F_AGGRESSIVE) {
-		for (i = 0; i < g->v.n; ++i) mog_v_swrm(g, &g->v.a[i], opt->min_elen);
-		mog_g_merge(g);
-	}
-	if (opt->min_insr >= 2) {
 		t = cputime();
-		mog_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
-		mog_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
-		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
-		mog_g_merge(g);
+		for (i = 0; i < g->v.n; ++i) mog_v_pop_open(g, &g->v.a[i], opt->min_elen);
+		mog_g_merge(g, 0);
 		if (fm_verbose >= 3)
-			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);
+			fprintf(stderr, "[M::%s] popped open bubbles in %.3f sec.\n", __func__, cputime() - t);
 	}
+	t = cputime();
 	for (i = 0; i < g->v.n; ++i) {
 		mog_vh_flowflt(g, i<<1|0, a_thres);
 		mog_vh_flowflt(g, i<<1|1, a_thres);
 	}
 	mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
-	mog_g_merge(g);
+	mog_g_merge(g, 0);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] coverage based false overlap removal %.3f sec.\n", __func__, cputime() - t);
+	t = cputime();
+	for (i = 0; i < g->v.n; ++i) {
+		mog_vh_simplify_bubble(g, i<<1|0, opt->max_bvtx, opt->max_bdist, a);
+		mog_vh_simplify_bubble(g, i<<1|1, opt->max_bvtx, opt->max_bdist, a);
+	}
+	mog_g_merge(g, 0);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] simplified complex bubbles in %.3f sec.\n", __func__, cputime() - t);
+	t = cputime();
+	for (i = 0; i < g->v.n; ++i) {
+		mog_vh_pop_simple(g, i<<1|0, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
+		mog_vh_pop_simple(g, i<<1|1, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
+	}
+	mog_g_merge(g, 0);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] popped closed bubbles in %.3f sec.\n", __func__, cputime() - t);
+	if (opt->min_insr >= 2) {
+		t = cputime();
+		mog_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
+		mog_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
+		mog_g_rm_vext(g, opt->min_elen, opt->min_ensr);
+		mog_g_merge(g, 1);
+		if (fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);
+	}
 }
