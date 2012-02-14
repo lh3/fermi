@@ -60,6 +60,7 @@ extern "C" {
 	void mag_g_merge(mag_t *g, int rmdup);
 	void mag_g_simplify_bubble(mag_t *g, int max_vtx, int max_dist);
 	void mag_g_pop_simple(mag_t *g, float max_cov, float max_frac, int aggressive);
+	void mag_g_pop_open(mag_t *g, int min_elen);
 
 	void mag_v_copy_to_empty(magv_t *dst, const magv_t *src); // NB: memory leak if dst is allocated
 	void mag_v_del(mag_t *g, magv_t *p);

@@ -323,3 +323,11 @@ void mag_v_pop_open(mag_t *g, magv_t *p, int min_elen)
 		if (!edge_is_del(s->a[i])) break;
 	if (i == s->n) mag_v_del(g, p); // p is not connected to any other vertices
 }
+
+void mag_g_pop_open(mag_t *g, int min_elen)
+{
+	int64_t i;
+	for (i = 0; i < g->v.n; ++i)
+		mag_v_pop_open(g, &g->v.a[i], min_elen);
+	mag_g_merge(g, 0);
+}

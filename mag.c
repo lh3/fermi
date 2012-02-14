@@ -611,6 +611,16 @@ void mag_vh_flowflt(mag_t *g, size_t idd, double thres)
 	}
 }
 
+void mag_g_flowflt(mag_t *g, double thres)
+{
+	int64_t i;
+	for (i = 0; i < g->v.n; ++i) {
+		mag_vh_flowflt(g, i<<1|0, thres);
+		mag_vh_flowflt(g, i<<1|1, thres);
+	}
+	mag_g_merge(g, 0);
+}
+
 /**************
  * Key portal *
  **************/
@@ -668,20 +678,10 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 		fprintf(stderr, "[M::%s] finished another %d rounds of tip removal in %.3f sec.\n", __func__, opt->n_iter, cputime() - t);
 	if (opt->flag & MOG_F_AGGRESSIVE) {
 		t = cputime();
-		for (i = 0; i < g->v.n; ++i) mag_v_pop_open(g, &g->v.a[i], opt->min_elen);
-		mag_g_merge(g, 0);
+		mag_g_pop_open(g, opt->min_elen);
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] popped open bubbles in %.3f sec.\n", __func__, cputime() - t);
 	}
-	t = cputime();
-	for (i = 0; i < g->v.n; ++i) {
-		mag_vh_flowflt(g, i<<1|0, a_thres);
-		mag_vh_flowflt(g, i<<1|1, a_thres);
-	}
-	mag_g_rm_vext(g, opt->min_elen, opt->min_ensr);
-	mag_g_merge(g, 0);
-	if (fm_verbose >= 3)
-		fprintf(stderr, "[M::%s] coverage based false overlap removal %.3f sec.\n", __func__, cputime() - t);
 	t = cputime();
 	mag_g_simplify_bubble(g, opt->max_bvtx, opt->max_bdist);
 	if (fm_verbose >= 3)
@@ -699,4 +699,13 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);
 	}
+	t = cputime();
+	mag_g_flowflt(g, a_thres);
+	if (opt->flag & MOG_F_AGGRESSIVE) mag_g_pop_open(g, opt->min_elen);
+	else {
+		mag_g_rm_vext(g, opt->min_elen, opt->min_ensr);
+		mag_g_merge(g, 0);
+	}
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] coverage based graph cleanup in %.3f sec.\n", __func__, cputime() - t);
 }
