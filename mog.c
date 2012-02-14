@@ -643,12 +643,10 @@ mogopt_t *mog_init_opt()
 void mog_g_clean(mog_t *g, const mogopt_t *opt)
 {
 	double t, a_thres = opt->a_thres > 20.? opt->a_thres : 20.;
-	mogb_aux_t *a;
 	int j;
 	uint32_t i;
 
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
-	a = mog_b_initaux();
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
 	//mog_vh_simplify_bubble(g, tid2idd(g->h, 49449609), 512, 500, a); exit(0);
 	//mog_vh_simplify_bubble(g, tid2idd(g->h, 34356802), 512, 500, a); exit(0); // a good case
@@ -686,19 +684,11 @@ void mog_g_clean(mog_t *g, const mogopt_t *opt)
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] coverage based false overlap removal %.3f sec.\n", __func__, cputime() - t);
 	t = cputime();
-	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_simplify_bubble(g, i<<1|0, opt->max_bvtx, opt->max_bdist, a);
-		mog_vh_simplify_bubble(g, i<<1|1, opt->max_bvtx, opt->max_bdist, a);
-	}
-	mog_g_merge(g, 0);
+	mog_g_simplify_bubble(g, opt->max_bvtx, opt->max_bdist);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] simplified complex bubbles in %.3f sec.\n", __func__, cputime() - t);
 	t = cputime();
-	for (i = 0; i < g->v.n; ++i) {
-		mog_vh_pop_simple(g, i<<1|0, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
-		mog_vh_pop_simple(g, i<<1|1, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
-	}
-	mog_g_merge(g, 0);
+	mog_g_pop_simple(g, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] popped closed bubbles in %.3f sec.\n", __func__, cputime() - t);
 	if (opt->min_insr >= 2) {

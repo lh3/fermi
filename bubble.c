@@ -155,6 +155,19 @@ void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, m
 	}
 }
 
+void mog_g_simplify_bubble(mog_t *g, int max_vtx, int max_dist)
+{
+	int64_t i;
+	mogb_aux_t *a;
+	a = mog_b_initaux();
+	for (i = 0; i < g->v.n; ++i) {
+		mog_vh_simplify_bubble(g, i<<1|0, max_vtx, max_dist, a);
+		mog_vh_simplify_bubble(g, i<<1|1, max_vtx, max_dist, a);
+	}
+	mog_b_destroyaux(a);
+	mog_g_merge(g, 0);
+}
+
 void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_frac, int aggressive)
 {
 	mogv_t *p = &g->v.a[idd>>1], *q[2];
@@ -214,6 +227,16 @@ void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_frac, in
 		}
 	}
 	free(mem);
+}
+
+void mog_g_pop_simple(mog_t *g, float max_cov, float max_frac, int aggressive)
+{
+	int64_t i;
+	for (i = 0; i < g->v.n; ++i) {
+		mog_vh_pop_simple(g, i<<1|0, max_cov, max_frac, aggressive);
+		mog_vh_pop_simple(g, i<<1|1, max_cov, max_frac, aggressive);
+	}
+	mog_g_merge(g, 0);
 }
 
 /****************

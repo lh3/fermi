@@ -87,8 +87,9 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 	rd.l = seq.l = rd.m = seq.m = out.l = out.m = 0; rd.s = seq.s = out.s = 0;
 	for (i = start; i < n; i += step) {
 		ext1_t *p = &buf[i];
-		msg_t *g;
+		mog_t *g;
 		int tmp, max_len = 0;
+
 		seq.l = 0;
 		kputsn((char*)p->semitig, p->len + 1, &seq); // +1 to include the ending NULL
 		for (j = 0; j < p->reads.n; ++j) {
@@ -102,26 +103,23 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 		// de novo assembly
 		fm6_api_correct(16, seq.l, seq.s, 0);
 		g = fm6_api_unitig(-1, seq.l, seq.s);
-		msg_rm_tips(g, max_len + 1, 2); // very mild tip removal; note that max_len+1 <= p->len
-		msg_join_unambi(g);
-		if (is_aggressive) { // aggressive bubble popping
-			//msg_popbub_open(g, max_len - 1, 1); msg_join_unambi(g);
-			msg_popbub(g, max_len * 2, 25);
-			msg_join_unambi(g);
-		}
+		mog_g_rm_vext(g, max_len + 1, 2); // very mild tip removal; note that max_len+1 <= p->len
+		mog_g_merge(g, 1);
+		mog_g_simplify_bubble(g, 25, max_len * 2);
+		mog_g_pop_simple(g, 10., 0.15, is_aggressive);
 		// decide if keep the longest contig
-		for (j = 0, max_len = 0, tmp = -1; j < g->nodes.n; ++j)
-			if (g->nodes.a[j].l >= max_len)
-				max_len = g->nodes.a[j].l, tmp = j;
+		for (j = 0, max_len = 0, tmp = -1; j < g->v.n; ++j)
+			if (g->v.a[j].len >= max_len)
+				max_len = g->v.a[j].len, tmp = j;
 		if (max_len > p->len) { // the semitig is extensible
-			fmnode_t *q = &g->nodes.a[tmp];
+			mogv_t *q = &g->v.a[tmp];
 			out.l = 0;
 			kputc('>', &out); kputw(i, &out); kputc(' ', &out); kputw(max_len - p->len, &out); kputc('\n', &out);
-			for (j = 0; j < q->l; ++j)
+			for (j = 0; j < q->len; ++j)
 				kputc("$ACGTN"[(int)q->seq[j]], &out);
 			puts(out.s);
 		}
-		msg_destroy(g);
+		mog_g_destroy(g);
 	}
 	free(rd.s); free(seq.s); free(out.s);
 }

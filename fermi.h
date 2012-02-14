@@ -20,17 +20,12 @@ typedef struct { size_t n, m; uint32_t *a; } fm32_v;
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
 
 struct __rld_t; // defined in rld.h
+struct __mog_t; // defined in mog.h
 
 typedef struct {
 	int w, min_occ, keep_bad, is_paired;
 	float max_corr;
 } fmecopt_t;
-
-typedef struct {
-	float min_bub_ratio, min_bub_cov, min_ovlp_ratio, a_thres;
-	int min_ext_len, min_ext_cnt, min_int_cnt, min_ovlp, max_bub_len;
-	int n_iter, aggressive_pop;
-} fmclnopt_t;
 
 #ifndef KINT_DEF
 #define KINT_DEF
@@ -38,24 +33,6 @@ typedef struct { uint64_t x, y; } ku128_t;
 typedef struct { size_t n, m; uint64_t *a; } ku64_v;
 typedef struct { size_t n, m; ku128_t *a; } ku128_v;
 #endif
-
-typedef struct {
-	uint64_t k[2];
-	ku128_v nei[2], mapping;
-	int l, n;
-	float avg_cov;
-	int aux[2];
-	char *seq, *cov;
-} fmnode_t;
-
-typedef struct { size_t n, m; fmnode_t *a; } fmnode_v;
-
-typedef struct {
-	fmnode_v nodes;
-	void *h;
-	int min_ovlp;
-	float rdist;
-} msg_t, fmgraph_t;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -129,17 +106,11 @@ extern "C" {
 	 */
 	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
-	msg_t *msg_read(const char *fn, int drop_tip, int max_arc, float diff_ratio);
-	void msg_amend(msg_t *g);
-	void msg_clean(msg_t *g, const fmclnopt_t *opt);
-	void msg_print(const fmnode_v *nodes);
-	void msg_destroy(msg_t *g);
-
 	int64_t fm6_api_readseq(const char *fn, char **_seq, char **_qual);
 	void fm6_api_writeseq(int64_t l, char *seq, char *qual);
 	int fm6_api_seqlen(int64_t l, const char *seq, double quantile);
 	int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual);
-	msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq);
+	struct __mog_t *fm6_api_unitig(int min_match, int64_t l, char *seq);
 
 #ifdef __cplusplus
 }

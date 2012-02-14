@@ -36,7 +36,7 @@ typedef struct {
 
 typedef struct { size_t n, m; mogv_t *a; } mogv_v;
 
-typedef struct {
+typedef struct __mog_t {
 	mogv_v v;
 	float rdist;  // read distance
 	int min_ovlp; // minimum overlap seen from the graph
@@ -55,23 +55,20 @@ extern "C" {
 
 	void mog_g_destroy(mog_t *g);
 	mog_t *mog_g_read(const char *fn, const mogopt_t *opt);
-	void mog_v_write(const mogv_t *p, kstring_t *out);
 	void mog_g_print(const mog_t *g);
+	void mog_g_rm_vext(mog_t *g, int min_len, int min_nsr);
 	void mog_g_merge(mog_t *g, int rmdup);
-	double mog_cal_rdist(mog_t *g);
-
-	void mog_v_del(mog_t *g, mogv_t *p);
-
-	mogb_aux_t *mog_b_initaux(void);
-	void mog_b_destroyaux(mogb_aux_t *b);
-	void mog_vh_simplify_bubble(mog_t *g, uint64_t idd, int max_vtx, int max_dist, mogb_aux_t *a);
-	void mog_vh_pop_simple(mog_t *g, uint64_t idd, float max_cov, float max_ratio, int aggressive);
-	void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen);
+	void mog_g_simplify_bubble(mog_t *g, int max_vtx, int max_dist);
+	void mog_g_pop_simple(mog_t *g, float max_cov, float max_frac, int aggressive);
 
 	void mog_v_copy_to_empty(mogv_t *dst, const mogv_t *src); // NB: memory leak if dst is allocated
+	void mog_v_del(mog_t *g, mogv_t *p);
+	void mog_v_write(const mogv_t *p, kstring_t *out);
+	void mog_v_pop_open(mog_t *g, mogv_t *p, int min_elen);
 
 	uint64_t mog_tid2idd(void *h, uint64_t tid);
 	void mog_v128_clean(ku128_v *r);
+	double mog_cal_rdist(mog_t *g);
 
 #ifdef __cplusplus
 }

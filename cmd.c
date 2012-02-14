@@ -508,65 +508,6 @@ int main_seqsort(int argc, char *argv[])
 	return 0;
 }
 
-int main_clean2(int argc, char *argv[])
-{
-	msg_t *g;
-	int c, do_clean = 0, max_arc = 512;
-	float read_diff_ratio = 0.7;
-	fmclnopt_t opt;
-	opt.aggressive_pop = 0;
-	opt.min_ext_len = 300; opt.min_ext_cnt = 4;
-	opt.min_int_cnt = 2;
-	opt.min_bub_cov = 10.; opt.min_bub_ratio= 0.3; opt.max_bub_len = 500;
-	opt.min_ovlp    = 60;  opt.min_ovlp_ratio=0.8;
-	opt.n_iter = 3;
-	opt.a_thres = 100.;
-	while ((c = getopt(argc, argv, "CAl:e:i:T:r:w:o:R:n:N:d:b:a:")) >= 0) {
-		switch (c) {
-			case 'b': opt.max_bub_len =  atoi(optarg); break;
-			case 'l': opt.min_ext_len =  atoi(optarg); break;
-			case 'e': opt.min_ext_cnt =  atoi(optarg); break;
-			case 'i': opt.min_int_cnt =  atoi(optarg); break;
-			case 'w': opt.min_bub_cov =  atof(optarg); break;
-			case 'r': opt.min_bub_ratio= atof(optarg); break;
-			case 'o': opt.min_ovlp    =  atoi(optarg); break;
-			case 'R': opt.min_ovlp_ratio=atof(optarg); break;
-			case 'n': opt.n_iter = atoi(optarg); break;
-			case 'N': max_arc = atoi(optarg); break;
-			case 'd': read_diff_ratio =  atof(optarg); break;
-			case 'C': do_clean = 1; break;
-			case 'A': opt.aggressive_pop = 1; break;
-			case 'a': opt.a_thres = atof(optarg); break;
-		}
-	}
-	if (argc == optind) {
-		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi clean [options] <in.msg>\n\n");
-		fprintf(stderr, "Options: -N INT      read maximum INT neighbors per node [%d]\n", max_arc);
-		fprintf(stderr, "         -d FLOAT    drop a neighbor if relative overlap ratio below FLOAT [%.2f]\n\n", read_diff_ratio); 
-		fprintf(stderr, "         -C          clean the graph\n");
-		fprintf(stderr, "         -l INT      minimum tip length [%d]\n", opt.min_ext_len);
-		fprintf(stderr, "         -e INT      minimum tip read count [%d]\n", opt.min_ext_cnt);
-		fprintf(stderr, "         -i INT      minimum internal unitig read count [%d]\n", opt.min_int_cnt);
-		fprintf(stderr, "         -o INT      minimum overlap [%d]\n", opt.min_ovlp);
-		fprintf(stderr, "         -R FLOAT    minimum relative overlap ratio [%.2f]\n", opt.min_ovlp_ratio);
-		fprintf(stderr, "         -n INT      number of iterations [%d]\n", opt.n_iter);
-		fprintf(stderr, "         -A          aggressive bubble popping\n");
-		fprintf(stderr, "         -b INT      maximum bubble length (effective with -A) [%d]\n", opt.max_bub_len);
-		fprintf(stderr, "         -w FLOAT    minimum simple bubble coverage [%.1f]\n", opt.min_bub_cov);
-		fprintf(stderr, "         -r FLOAT    minimum simple bubble ratio [%.2f]\n", opt.min_bub_ratio);
-		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n", opt.a_thres);
-		fprintf(stderr, "\n");
-		return 1;
-	}
-	g = msg_read(argv[optind], 1, max_arc, read_diff_ratio);
-	msg_join_unambi(g);
-	if (do_clean) msg_clean(g, &opt);
-	msg_print(&g->nodes);
-	msg_destroy(g);
-	return 0;
-}
-
 int main_clean(int argc, char *argv[])
 {
 	mog_t *g;

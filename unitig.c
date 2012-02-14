@@ -397,7 +397,7 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
  * High-level API *
  ******************/
 
-msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
+mog_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 {
 	rld_t *e;
 	mog_t *g;
@@ -412,9 +412,9 @@ msg_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 	used    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	bend    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	visited = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
-	g = calloc(1, sizeof(msg_t));
+	g = calloc(1, sizeof(mog_t));
 	unitig_core(e, min_match, 0, e->mcnt[1], used, bend, visited, 0, &g->v);
 	free(used); free(bend); free(visited);
 	rld_destroy(e);
-	return (msg_t*)g;
+	return g;
 }
