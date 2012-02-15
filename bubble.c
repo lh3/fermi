@@ -48,10 +48,11 @@ mogb_aux_t *mag_b_initaux(void)
 void mag_b_destroyaux(mogb_aux_t *b)
 {
 	int i;
-	for (i = 0; i < b->pool.n; ++i)
+	for (i = 0; i < b->pool.m; ++i)
 		free(b->pool.buf[i]);
 	free(b->pool.buf); free(b->stack.a);
 	kh_destroy(64, b->h);
+	free(b);
 }
 
 #define tiptr(p) ((trinfo_t*)(p)->ptr)
@@ -64,6 +65,7 @@ static inline trinfo_t *tip_alloc(tipool_t *pool, uint32_t id)
 		pool->buf = realloc(pool->buf, new_m * sizeof(void*));
 		for (i = pool->m; i < new_m; ++i)
 			pool->buf[i] = malloc(sizeof(trinfo_t));
+		pool->m = new_m;
 	}
 	p = pool->buf[pool->n++];
 	*p = g_trinull;
@@ -210,7 +212,7 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 		for (i = k = 0; i < 4; ++i)
 			for (j = 0; j < 4; ++j)
 				mat[k++] = i == j? 5 : -4;
-		aux.gapo = 5; aux.gape = 2;
+		aux.gapo = 5; aux.gape = 2; aux.T = (l[0] < l[1]? l[0] : l[1]) * 5 / 2;
 		qry = ksw_qinit(2, l[0], (uint8_t*)seq[0], 4, mat);
 		ksw_sse2(qry, l[1], (uint8_t*)seq[1], &aux);
 		free(qry);
