@@ -113,7 +113,7 @@ void mag_vh_simplify_bubble(mag_t *g, uint64_t idd, int max_vtx, int max_dist, m
 		// set the distance to p's neighbors
 		for (i = 0; i < r->n; ++i) {
 			int nsr, dist, which;
-			if (edge_is_del(r->a[i])) continue;
+			if ((int64_t)r->a[i].x < 0) continue;
 			y = mag_tid2idd(g->h, r->a[i].x);
 			q = &g->v.a[y>>1];
 			if (q->ptr == 0) { // has not been attempted
@@ -182,7 +182,7 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 	r = &p->nei[idd&1];
 	for (j = 0; j < 2; ++j) {
 		uint64_t x;
-		if (edge_is_del(r->a[j])) return;
+		if ((int64_t)r->a[j] < 0) return;
 		x = mag_tid2idd(g->h, r->a[j].x);
 		dir[j] = x&1;
 		q[j] = &g->v.a[x>>1];
