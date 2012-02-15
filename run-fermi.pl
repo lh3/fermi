@@ -75,7 +75,7 @@ Options: -P        the input is paired
 		push(@lines, "$opts{p}.c0r.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd $opts{p}.c0.mag.gz");
 		push(@lines, "\t\$(FERMI) remap -t $opts{t} -r \$^ 2> \$@.log | gzip -1 > \$@");
 		push(@lines, "$opts{p}.c1.mag.gz:$opts{p}.c0.mag.gz");
-		push(@lines, "\t\$(FERMI) clean -CA \$< 2> \$@.log | gzip -1 > \$@");
+		push(@lines, "\t\$(FERMI) clean -CAOF \$< 2> \$@.log | gzip -1 > \$@");
 		push(@lines, "$opts{p}.c1r.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd $opts{p}.c1.mag.gz");
 		push(@lines, "\t\$(FERMI) remap -t $opts{t} -r \$^ 2> \$@.log | gzip -1 > \$@");
 		push(@lines, "$opts{p}.ext0.fa.gz:$opts{p}.ec.fmd $opts{p}.c0r.mag.gz $opts{p}.c1r.mag.gz");
