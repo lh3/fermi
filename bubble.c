@@ -115,6 +115,10 @@ void mag_vh_simplify_bubble(mag_t *g, uint64_t idd, int max_vtx, int max_dist, m
 			int nsr, dist, which;
 			if ((int64_t)r->a[i].x < 0) continue;
 			y = mag_tid2idd(g->h, r->a[i].x);
+			if (y == (idd^1)) { // there is a loop involving the initial vertex
+				a->stack.n = 0;
+				break; // not a bubble; stop; this will jump out of the while() loop
+			}
 			q = &g->v.a[y>>1];
 			if (q->ptr == 0) { // has not been attempted
 				q->ptr = tip_alloc(&a->pool, y>>1), ++n_pending;
