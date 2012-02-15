@@ -530,7 +530,7 @@ int main_clean(int argc, char *argv[])
 		case 'n': opt->n_iter   = atoi(optarg); break;
 		case 'R': opt->min_dratio1 = atof(optarg); break;
 		case 'w': opt->max_bcov = atof(optarg); break;
-		case 'r': opt->max_bdist= atof(optarg); break;
+		case 'r': opt->max_bfrac= atof(optarg); break;
 		}
 	}
 	if (argc == optind) {
@@ -547,8 +547,8 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "         -n INT      number of iterations [%d]\n", opt->n_iter);
 		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n\n", opt->a_thres);
 		fprintf(stderr, "         -A          aggressive bubble popping\n");
-		fprintf(stderr, "         -w FLOAT    minimum coverage to keep a bubble\n");
-		fprintf(stderr, "         -r FLOAT    minimum fraction to keep a bubble\n");
+		fprintf(stderr, "         -w FLOAT    minimum coverage to keep a bubble [%.2f]\n", opt->max_bcov);
+		fprintf(stderr, "         -r FLOAT    minimum fraction to keep a bubble [%.2f]\n", opt->max_bfrac);
 		fprintf(stderr, "\n");
 		return 1;
 	}
