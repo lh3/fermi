@@ -109,7 +109,7 @@ void mag_vh_simplify_bubble(mag_t *g, uint64_t idd, int max_vtx, int max_dist, m
 		p = &g->v.a[x>>1];
 		//printf("%lld:%lld\n", p->k[0], p->k[1]);
 		r = &p->nei[(x&1)^1]; // we will look the the neighbors from the other end of the unitig
-		if (a->stack.n > max_vtx || tiptr(p)->d[x&1][0] > max_dist || tiptr(p)->d[x&1][1] > max_dist || r->n == 0) break; // we failed
+		if (a->pool.n > max_vtx || tiptr(p)->d[x&1][0] > max_dist || tiptr(p)->d[x&1][1] > max_dist || r->n == 0) break; // we failed
 		// set the distance to p's neighbors
 		for (i = 0; i < r->n; ++i) {
 			int nsr, dist, which;
@@ -182,7 +182,7 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 	r = &p->nei[idd&1];
 	for (j = 0; j < 2; ++j) {
 		uint64_t x;
-		if ((int64_t)r->a[j] < 0) return;
+		if ((int64_t)r->a[j].x < 0) return;
 		x = mag_tid2idd(g->h, r->a[j].x);
 		dir[j] = x&1;
 		q[j] = &g->v.a[x>>1];
