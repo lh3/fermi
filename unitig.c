@@ -224,18 +224,25 @@ static int check_left(aux_t *a, int beg, int rbeg, const kstring_t *s)
 	return ret;
 }
 
-static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end)
+static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint64_t k0, uint64_t *end, int *is_loop)
 {
 	int i, beg = beg0, rbeg, ori_l = s->l, n_reads = 0;
+	*is_loop = 0;
 	while ((rbeg = try_right(a, beg, s)) >= 0) { // loop if there is at least one overlap
 		uint64_t k;
 		if (a->nei.n > 1) { // forward bifurcation
 			set_bit(a->bend, *end);
 			break;
 		}
-		k = a->nei.a[0].x[0];
-		if (k == k0) break; // a loop like a>>b>>c>>a
-		if (k == *end || a->nei.a[0].x[1] == *end) break; // a loop like a>>a or a><a
+		if ((k = a->nei.a[0].x[0]) == k0) { // a loop like a>>b>>c>>a
+			*is_loop = 1;
+			break;
+		}
+		if (a->nei.a[0].x[1] == *end) { // a loop like b>>c>>a>>a; cut the last link
+			a->nei.n = 0;
+			break;
+		}
+		if (k == *end) break; // a loop like b>>c>>a><a; keep the link but stop extension
 		if (((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0)) { // backward bifurcation
 			set_bit(a->bend, k);
 			break;
@@ -267,7 +274,7 @@ static void copy_nei(ku128_v *dst, const fmintv_v *src)
 static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], ku128_v nei[2], int *n_reads)
 {
 	fmintv_t intv0;
-	int seed_len, ret;
+	int seed_len, ret, is_loop;
 	int64_t k;
 	size_t i;
 
@@ -291,14 +298,20 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	// left-wards extension
 	end[0] = intv0.x[1]; end[1] = intv0.x[0];
 	if (a->a[0].n) { // no need to extend to the right if there is no overlap
-		*n_reads += unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0]);
+		*n_reads += unitig_unidir(a, s, cov, 0, intv0.x[0], &end[0], &is_loop);
 		copy_nei(&nei[0], &a->nei);
+		if (is_loop) {
+			ku128_t z;
+			z.x = end[0]; z.y = a->nei.a[0].info;
+			kv_push(ku128_t, nei[1], z);
+			return 0;
+		}
 	}
 	// right-wards extension
 	a->a[0].n = a->a[1].n = a->nei.n = 0;
 	seq_revcomp6(s->l, (uint8_t*)s->s); // reverse complement for extension in the other direction
 	seq_reverse(cov->l, (uint8_t*)cov->s); // reverse the coverage
-	*n_reads += unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1]);
+	*n_reads += unitig_unidir(a, s, cov, s->l - seed_len, intv0.x[1], &end[1], &is_loop);
 	copy_nei(&nei[1], &a->nei);
 	return 0;
 }
