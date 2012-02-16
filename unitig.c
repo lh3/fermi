@@ -317,8 +317,8 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
 	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
 	// the core loop
-	for (j = start; j < e->mcnt[1]>>2; j += step) {
-		for (i = j<<2|1; i < (j<<2) + 4; i += 2) {
+	for (j = start; j <= e->mcnt[1]>>2; j += step) {
+		for (i = j<<2|1; i < (j<<2) + 4 && i < e->mcnt[1]; i += 2) {
 			if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.nsr) >= 0) { // then we keep the unitig
 				uint64_t *p[2], x[2];
 				p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
