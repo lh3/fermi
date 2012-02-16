@@ -8,9 +8,10 @@ use Getopt::Std;
 
 sub main {
 	my %opts = (e=>'fermi', t=>2, p=>'fmdef', f=>17, k=>50);
-	getopts('e:t:p:Pcf:k:Ad', \%opts);
+	getopts('e:t:p:Pcf:k:Adl:', \%opts);
 	$opts{P} = 1 if defined($opts{c});
 	$opts{A} = defined($opts{A})? "A" : "";
+	$opts{l} = defined($opts{l})? "-l$opts{l}" : "";
 
 	die(qq/
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
@@ -22,6 +23,7 @@ Options: -P        the input is paired
          -t INT    number of threads [$opts{t}]
          -p STR    prefix of output files [$opts{p}]
          -f INT    k-mer length for unique-mer filtering [$opts{f}]
+         -l INT    trim reads to INT bp after error correction [inf]
          -k INT    minimum overlap [$opts{k}]
 \n/) if (@ARGV == 0);
 
@@ -52,7 +54,7 @@ Options: -P        the input is paired
 	my $pre = "$opts{p}.raw";
 	push(@lines, "$pre.split.log:$in_list");
 	push(@lines, "\t$fqs | \$(FERMI) splitfa - $pre $n_split 2> $pre.split.log\n");
-	&build_fmd(\@lines, $n_split, $pre, $opts{t});
+	&build_fmd(\@lines, $n_split, $pre, '', $opts{t}); # do not trim for the initial index
 
 	push(@lines, "# Error correction");
 	push(@lines, "$opts{p}.ec.fq.gz:$opts{p}.raw.fmd");
@@ -62,7 +64,7 @@ Options: -P        the input is paired
 	$pre = "$opts{p}.ec";
 	push(@lines, "$pre.split.log:$opts{p}.ec.fq.gz");
 	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $n_split 2> \$@\n");
-	&build_fmd(\@lines, $n_split, $pre, $opts{t});
+	&build_fmd(\@lines, $n_split, $pre, $opts{l}, $opts{t});
 
 	if (defined($opts{P})) {
 		push(@lines, "# Generate unitigs");
@@ -89,7 +91,7 @@ Options: -P        the input is paired
 		push(@lines, "# Build FM-index for the extended sequences");
 		push(@lines, "$pre.split.log:$opts{p}.ext0.fa.gz $opts{p}.ext1.fa.gz");
 		push(@lines, "\tgzip -dc \$^ | \$(FERMI) splitfa - $pre $opts{t} 2> \$@\n");
-		&build_fmd(\@lines, $opts{t}, $pre);
+		&build_fmd(\@lines, $opts{t}, $pre, ''); # do not trim, either
 		push(@lines, "$opts{p}.final.fmd.log:$opts{p}.ec.fmd $opts{p}.ext.fmd");
 		push(@lines, "\t\$(FERMI) merge -t $opts{t} -fo $opts{p}.final.fmd \$^ 2> \$@");
 		push(@lines, "$opts{p}.ext.mag.gz:$opts{p}.final.fmd.log");
@@ -104,7 +106,7 @@ Options: -P        the input is paired
 }
 
 sub build_fmd {
-	my ($lines, $t, $pre, $n_threads) = @_;
+	my ($lines, $t, $pre, $optl, $n_threads) = @_;
 	my ($logs, $fmds) = ('', '');
 	$n_threads ||= $t;
 	for (0 .. $t-1) {
@@ -112,7 +114,7 @@ sub build_fmd {
 		$logs .= "$p.fmd.log ";
 		$fmds .= "$p.fmd ";
 		push(@$lines, "$p.fmd.log:$pre.split.log");
-		push(@$lines, "\t\$(FERMI) build -fo $p.fmd $p.fq.gz 2> \$@; rm -f $p.fq.gz");
+		push(@$lines, "\t\$(FERMI) build $optl -fo $p.fmd $p.fq.gz 2> \$@; rm -f $p.fq.gz");
 	}
 	push(@$lines, "", "$pre.fmd:$logs");
 	push(@$lines, "\t\$(FERMI) merge -t $n_threads -fo \$@ $fmds 2> \$@.log; rm -f $fmds\n");

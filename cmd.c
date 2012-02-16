@@ -392,7 +392,7 @@ int main_merge(int argc, char *argv[])
 
 int main_build(int argc, char *argv[]) // this routinue to replace main_index() in future
 {
-	int sbits = 3, force = 0, asize = 6;
+	int sbits = 3, force = 0, asize = 6, max_len = INT_MAX, no_fr = 1;
 	int64_t sum_l = 0, l, max, block_size = 250000000;
 	uint8_t *s;
 	char *idxfn = 0;
@@ -401,7 +401,7 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 
 	{ // parse the command line
 		int c;
-		while ((c = getopt(argc, argv, "fb:o:i:s:")) >= 0) {
+		while ((c = getopt(argc, argv, "fb:o:i:s:l:O")) >= 0) {
 			switch (c) {
 				case 'i':
 					e = rld_restore(optarg);
@@ -414,6 +414,8 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 				case 'b': sbits = atoi(optarg); break;
 				case 'o': idxfn = strdup(optarg); break;
 				case 's': block_size = atol(optarg); break;
+				case 'l': max_len = atoi(optarg); break;
+				case 'O': no_fr = 0; break;
 			}
 		}
 		if (argc == optind) {
@@ -422,7 +424,9 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 			fprintf(stderr, "Options: -b INT    use a small marker per 2^(INT+3) bytes [%d]\n", sbits);
 			fprintf(stderr, "         -f        force to overwrite the output file (effective with -o)\n");
 			fprintf(stderr, "         -i FILE   append the FM-index to the existing FILE [null]\n");
+			fprintf(stderr, "         -l INT    trim read down to INT bp [inf]\n");
 			fprintf(stderr, "         -o FILE   output file name [null]\n");
+			fprintf(stderr, "         -O        do not trim 1bp for reads whose forward and reverse are identical\n");
 			fprintf(stderr, "         -s INT    number of symbols to process at a time [%ld]\n", (long)block_size);
 			fprintf(stderr, "\n");
 			return 1;
@@ -453,6 +457,8 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 		s = malloc(max);
 		t = cputime();
 		while (kseq_read(seq) >= 0) {
+			if (seq->seq.l > max_len)
+				seq->seq.l = max_len, seq->seq.s[max_len] = 0;
 			if (l && l + (seq->seq.l + 1) * 2 > block_size) {
 				e = fm_build(e, asize, sbits, l, s);
 				fprintf(stderr, "[M::%s] Constructed BWT for %lld million symbols in %.3f seconds.\n", __func__, (long long)sum_l/1000000, cputime() - t);
@@ -464,6 +470,12 @@ int main_build(int argc, char *argv[]) // this routinue to replace main_index() 
 				s = realloc(s, max);
 			}
 			seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
+			if (no_fr && (seq->seq.l&1) == 0) {
+				int i;
+				for (i = 0; i < seq->seq.l>>1; ++i)
+					if (seq->seq.s[i] + seq->seq.s[seq->seq.l-1-i] != 5) break;
+				if (i == seq->seq.l>>1) --seq->seq.l, seq->seq.s[seq->seq.l] = 0;
+			}
 			memcpy(s + l, seq->seq.s, seq->seq.l + 1);
 			l += seq->seq.l + 1;
 			seq_revcomp6(seq->seq.l, (uint8_t*)seq->seq.s);
