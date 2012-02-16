@@ -10,6 +10,7 @@ typedef khash_t(64) hash64_t;
 
 #define MAX_N_DIFF 2.01 // for evaluating alignment after SW
 #define MAX_R_DIFF 0.1
+#define L_DIFF_COEF 0.2 // n_diff=|l_0 - l_1|*L_DIFF_COEF
 
 #define edge_mark_del(_x) ((_x).x = (uint64_t)-2, (_x).y = 0)
 #define edge_is_del(_x)   ((_x).x == (uint64_t)-2 || (_x).y == 0)
@@ -179,8 +180,8 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 	magv_t *p = &g->v.a[idd>>1], *q[2];
 	ku128_v *r;
 	int i, j, k, dir[2], l[2];
-	char *mem, *seq[2], *cov[2], *s;
-	float max_n_diff = aggressive? MAX_N_DIFF * 2. : MAX_N_DIFF;
+	char *seq[2], *cov[2];
+	float n_diff, r_diff, avg[2], max_n_diff = aggressive? MAX_N_DIFF * 2. : MAX_N_DIFF;
 
 	if (p->len < 0 || p->nei[idd&1].n != 2) return; // deleted or no bubble
 	r = &p->nei[idd&1];
@@ -193,26 +194,40 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 		if (q[j]->nei[0].n != 1 || q[j]->nei[1].n != 1) return; // no bubble
 		l[j] = q[j]->len - (int)(q[j]->nei[0].a->y + q[j]->nei[1].a->y);
 	}
-	if (l[0] <= 0 || l[1] <= 0 || q[0]->nei[dir[0]^1].a->x != q[1]->nei[dir[1]^1].a->x) return; // no bubble
-	mem = calloc(1, (l[0] + l[1])*2);
-	for (j = 0, s = mem; j < 2; ++j) {
-		seq[j] = s; s += l[j]; 
-		cov[j] = s; s += l[j];
-		for (i = 0; i < l[j]; ++i) {
-			seq[j][i] = q[j]->seq[i + q[j]->nei[0].a->y];
-			cov[j][i] = q[j]->cov[i + q[j]->nei[0].a->y];
+	if (q[0]->nei[dir[0]^1].a->x != q[1]->nei[dir[1]^1].a->x) return; // no bubble
+	for (j = 0; j < 2; ++j) { // set seq[] and cov[], and compute avg[]
+		if (l[j] > 0) {
+			seq[j] = malloc(l[j]<<1);
+			cov[j] = seq[j] + l[j];
+			for (i = 0; i < l[j]; ++i) {
+				seq[j][i] = q[j]->seq[i + q[j]->nei[0].a->y];
+				cov[j][i] = q[j]->cov[i + q[j]->nei[0].a->y];
+			}
+			if (dir[j]) {
+				seq_revcomp6(l[j], (uint8_t*)seq[j]);
+				seq_reverse(l[j], (uint8_t*)cov[j]);
+			}
+			for (i = 0, avg[j] = 0.; i < l[j]; ++i) {
+				--seq[j][i]; // change DNA6 encoding to DNA4 for SW below
+				avg[j] += cov[j][i] - 33;
+			}
+			avg[j] /= l[j];
+		} else { // l[j] <= 0; this may happen around a tandem repeat
+			int beg, end;
+			seq[j] = cov[j] = 0;
+			beg = q[j]->nei[0].a->y; end = q[j]->len - q[j]->nei[1].a->y;
+			if (beg > end) beg ^= end, end ^= beg, beg ^= end; // swap
+			if (beg < end) {
+				for (i = beg, avg[j] = 0.; i < end; ++i)
+					avg[j] += q[j]->cov[i] - 33;
+				avg[j] /= end - beg;
+			} else avg[j] = q[j]->cov[beg] - 33; // FIXME: when q[j] is contained, weird thing may happen
 		}
-		if (dir[j]) {
-			seq_revcomp6(l[j], (uint8_t*)seq[j]);
-			seq_reverse(l[j], (uint8_t*)cov[j]);
-		}
-		for (i = 0; i < l[j]; ++i) --seq[j][i];
 	}
-	{ // try to collapse the bubble
+	if (l[0] > 0 && l[1] > 0) { // then do SW to compute n_diff and r_diff
 		int8_t mat[16];
 		ksw_query_t *qry;
 		ksw_aux_t aux;
-		double n_diff, r_diff, avg[2];
 		for (i = k = 0; i < 4; ++i)
 			for (j = 0; j < 4; ++j)
 				mat[k++] = i == j? 5 : -4;
@@ -222,17 +237,18 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 		free(qry);
 		n_diff = ((l[0] < l[1]? l[0] : l[1]) * 5. - aux.score) / (5. + 4.); // 5: matching score; -4: mismatchig score
 		r_diff = n_diff / ((l[0] + l[1]) / 2.);
-		if (n_diff < max_n_diff || r_diff < MAX_R_DIFF) {
-			for (j = 0; j < 2; ++j)
-				for (i = 0, avg[j] = 0.; i < l[j]; ++i)
-					avg[j] += cov[j][i] - 33;
-			avg[0] /= l[0]; avg[1] /= l[1];
-			j = avg[0] < avg[1]? 0 : 1;
-			if (aggressive || (avg[j] < max_cov && avg[j] / (avg[j^1] + avg[j]) < max_frac))
-				mag_v_del(g, q[j]);
-		}
+		//fprintf(stderr, "===> %f %f <===\n", n_diff, r_diff); for (j = 0; j < 2; ++j) { for (i = 0; i < l[j]; ++i) fputc("ACGTN"[(int)seq[j][i]], stderr); fputc('\n', stderr); }
+	} else {
+		n_diff = abs(l[0] - l[1]) * L_DIFF_COEF;
+		r_diff = 1.;
+		//fprintf(stderr, "---> (%d,%d) <---\n", l[0], l[1]);
 	}
-	free(mem);
+	if (n_diff < max_n_diff || r_diff < MAX_R_DIFF) {
+		j = avg[0] < avg[1]? 0 : 1;
+		if (aggressive || (avg[j] < max_cov && avg[j] / (avg[j^1] + avg[j]) < max_frac))
+			mag_v_del(g, q[j]);
+	}
+	free(seq[0]); free(seq[1]);
 }
 
 void mag_g_pop_simple(mag_t *g, float max_cov, float max_frac, int aggressive)
