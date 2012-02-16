@@ -234,17 +234,17 @@ static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint6
 			set_bit(a->bend, *end);
 			break;
 		}
-		if ((k = a->nei.a[0].x[0]) == k0) { // a loop like a>>b>>c>>a
+		if ((k = a->nei.a[0].x[0]) == *end) break; // a loop like b>>c>>a><a; keep the link but stop extension
+		if (((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0)) { // backward bifurcation
+			set_bit(a->bend, k);
+			break;
+		}
+		if (k == k0) { // a loop like a>>b>>c>>a
 			*is_loop = 1;
 			break;
 		}
 		if (a->nei.a[0].x[1] == *end) { // a loop like b>>c>>a>>a; cut the last link
 			a->nei.n = 0;
-			break;
-		}
-		if (k == *end) break; // a loop like b>>c>>a><a; keep the link but stop extension
-		if (((a->bend[k>>6]>>(k&0x3f)&1) || check_left(a, beg, rbeg, s) < 0)) { // backward bifurcation
-			set_bit(a->bend, k);
 			break;
 		}
 		*end = a->nei.a[0].x[1];
