@@ -6,13 +6,13 @@ unitigs to represent all the information in raw reads.
 
 Fermi follows the overlap-layout-consensus paradigm and uses the FM-DNA-index
 (FMD-index) as the key data structure. It is inspired by the string graph
-assembler (SGA) by Jared Simpson and has a similar workflow.
+assembler (Simpson and Durbin, 2010 and 2012) and has a similar workflow.
 
 As a typical de novo assembler, fermi tends to produce contigs with slightly
 longer N50. However, the major weakness of fermi is the high misassembly rate.
 Although fermi provides a tool to fix misassemblies by using paired-end reads
-to achieve an accuracy comparable to other assemblers, this problem is still
-worrying.
+to achieve an accuracy comparable to other assemblers, this is not a favorable
+solution.
 
 Fermi is designed to be used on a multi-core Linux machine with large shared
 memory. The easiest way to run fermi is to use the run-fermi.pl script. It
