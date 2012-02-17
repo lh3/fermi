@@ -1,0 +1,31 @@
+Fermi is a de novo assembler with a particular focus on assembling Illumina
+short sequence reads from a mammal-sized genome. In addition to the role of a
+typical assembler, fermi also aims to preserve heterozygotes which are often
+collapsed by other assemblers. Its ultimate goal is to find a minimal set of
+unitigs to represent all the information in raw reads.
+
+Fermi follows the overlap-layout-consensus paradigm and uses the FM-DNA-index
+(FMD-index) as the key data structure. It is inspired by the string graph
+assembler (SGA) by Jared Simpson and has a similar workflow.
+
+As a typical de novo assembler, fermi tends to produce contigs with slightly
+longer N50. However, the major weakness of fermi is the high misassembly rate.
+Although fermi provides a tool to fix misassemblies by using paired-end reads
+to achieve an accuracy comparable to other assemblers, this problem is still
+worrying.
+
+Fermi is designed to be used on a multi-core Linux machine with large shared
+memory. The easiest way to run fermi is to use the run-fermi.pl script. It
+generates a Makefile. The actual assembly is done by invoking make. Premature
+assembly processes can be resumed. Here is an example:
+
+  run-fermi.pl -dAPe -p NA12878 ./fermi -t16 -f18 reads*.fq.gz > NA12878.mak
+  make -f NA12878.mak -j16
+
+This asks fermi to use 16 CPUs to assemble paired-end reads and will produce
+raw unitigs in file "NA12878.ext.mag.gz". Graph cleaning and misassembly fixing
+need to be applied manually. Future version of fermi will integrate these
+steps into the run-fermi.pl script. It takes about a wall-clock week and a peak
+memory of 85GB to assemble 35X human reads with 16 CPUs.
+
+If you have any questions, ask me at <http://lh3.userecho.com/>.
