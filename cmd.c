@@ -526,12 +526,13 @@ int main_clean(int argc, char *argv[])
 	int c;
 	magopt_t *opt;
 	opt = mag_init_opt();
-	while ((c = getopt(argc, argv, "ON:d:CFAl:e:i:o:R:n:a:w:r:")) >= 0) {
+	while ((c = getopt(argc, argv, "ON:d:CFAl:e:i:o:R:n:a:w:r:S")) >= 0) {
 		switch (c) {
 		case 'F': opt->flag |= MOG_F_NO_AMEND; break;
 		case 'C': opt->flag |= MOG_F_CLEAN; break;
 		case 'A': opt->flag |= MOG_F_AGGRESSIVE; break;
 		case 'O': opt->flag |= MOG_F_READ_ORI; break;
+		case 'S': opt->flag |= MOG_F_NO_SIMPL; break;
 		case 'd': opt->min_dratio0 = atof(optarg); break;
 		case 'N': opt->max_arc  = atoi(optarg); break;
 		case 'l': opt->min_elen = atoi(optarg); break;
@@ -559,6 +560,7 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "         -n INT      number of iterations [%d]\n", opt->n_iter);
 		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n\n", opt->a_thres);
 		fprintf(stderr, "         -A          aggressive bubble popping\n");
+		fprintf(stderr, "         -S          skip bubble simplification\n");
 		fprintf(stderr, "         -w FLOAT    minimum coverage to keep a bubble [%.2f]\n", opt->max_bcov);
 		fprintf(stderr, "         -r FLOAT    minimum fraction to keep a bubble [%.2f]\n", opt->max_bfrac);
 		fprintf(stderr, "\n");

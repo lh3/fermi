@@ -11,6 +11,7 @@
 #define MOG_F_CLEAN      0x10
 #define MOG_F_AGGRESSIVE 0x20
 #define MOG_F_NO_AMEND   0x40
+#define MOG_F_NO_SIMPL   0x80
 
 typedef struct {
 	int flag, max_arc, n_iter, min_ovlp, min_elen, min_ensr, min_insr, max_bdist, max_bvtx;

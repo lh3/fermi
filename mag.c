@@ -682,10 +682,12 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] popped open bubbles in %.3f sec.\n", __func__, cputime() - t);
 	}
-	t = cputime();
-	mag_g_simplify_bubble(g, opt->max_bvtx, opt->max_bdist);
-	if (fm_verbose >= 3)
-		fprintf(stderr, "[M::%s] simplified complex bubbles in %.3f sec.\n", __func__, cputime() - t);
+	if (!(opt->flag & MOG_F_NO_SIMPL)) {
+		t = cputime();
+		mag_g_simplify_bubble(g, opt->max_bvtx, opt->max_bdist);
+		if (fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] simplified complex bubbles in %.3f sec.\n", __func__, cputime() - t);
+	}
 	t = cputime();
 	mag_g_pop_simple(g, opt->max_bcov, opt->max_bfrac, opt->flag & MOG_F_AGGRESSIVE);
 	if (fm_verbose >= 3)
