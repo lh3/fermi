@@ -258,6 +258,7 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 			beg = j;
 			for (j = beg + 1, k = 0; j <= l; ++j) {
 				if ((islower(si[j]) || j == l) && isupper(si[j-1])) {
+					out.l = 0;
 					kputc('@', &out); kputs(name[i], &out); kputc('_', &out); kputw(k, &out);
 					kputc('\t', &out); kputw(j - beg, &out); kputc('\t', &out); kputw(r.n_supp, &out);
 					kputc('\n', &out);
