@@ -574,41 +574,48 @@ double mag_cal_rdist(mag_t *g)
 }
 
 void mag_vh_flowflt(mag_t *g, size_t idd, double thres)
-{ // only works for: {p,r}->q, where both p and q are unique and p has a single neighbor q
-	magv_t *p, *q, *t;
-	double A;
-	uint64_t u, v;
+{
+	magv_t *p, *q;
 	ku128_v *r;
-	int i;
+	int j, max, cnt[2], j0, i;
+	double A;
 
-	p = &g->v.a[idd>>1];
-	if (p->len < 0 || p->nei[idd&1].n != 1) return;
-	A = (p->len - p->nei[idd&1].a[0].y) / g->rdist - p->nsr * M_LN2;
-	if (A < thres && p->nsr < A_MIN_SUPP) return; // p not significantly unique
-	if ((int64_t)p->nei[idd&1].a[0].x < 0) return;
-	u = tid2idd(g->h, p->nei[idd&1].a[0].x);
-	q = &g->v.a[u>>1];
-	if (p == q) return;
-	if (q->nei[u&1].n < 2) return; // well, p and q can be merged already
-	assert(q->len >= p->nei[idd&1].a[0].y);
-	A = (q->len - p->nei[idd&1].a[0].y) / g->rdist - q->nsr * M_LN2;
-	if (A < thres) return; // q not significantly unique
-//	fprintf(stderr, "%lld:%lld, %lld:%lld\n", p->k[0], p->k[1], q->k[0], q->k[1]);
-
-	r = &q->nei[u&1];
-	for (i = 0; i < r->n; ++i) {
-		int to_cut = 0;
-		if ((int64_t)r->a[i].x < 0) continue;
-		v = tid2idd(g->h, r->a[i].x);
-		t = &g->v.a[v>>1];
-		if (t->nei[v&1].n == 1) {
-			// Should we also consider to cut in this case? Perhaps does not matter.
-			if (t->nsr <= 2 && t->nei[(v&1)^1].n == 0) to_cut = 1; // a small tip
-		} else to_cut = 1;
-		if (to_cut) {
-			mag_eh_markdel(g, r->a[i].x, q->k[u&1]);
-			edge_mark_del(r->a[i]);
+	q = &g->v.a[idd>>1];
+	if (q->len < 0) return;
+	r = &q->nei[idd&1];
+	// find the max overlap length
+	for (max = 0, j = 0; j < r->n; ++j)
+		max = max > r->a[j].y? max : r->a[j].y;
+	A = (q->len - max) / g->rdist - q->nsr * M_LN2;
+	if (A < thres) return;
+	// check neighbors
+	for (j = cnt[0] = cnt[1] = 0, j0 = -1; j < r->n; ++j) {
+		uint64_t w;
+		if ((int64_t)r->a[j].x < 0) continue;
+		w = tid2idd(g->h, r->a[j].x);
+		p = &g->v.a[w>>1];
+		A = (p->len - r->a[j].y) / g->rdist - p->nsr * M_LN2;
+		if (A >= thres) {
+			if (p->nei[w&1].n > 1) {
+				ku128_v *t = &p->nei[w&1];
+				for (i = 0; i < t->n; ++i) {
+					if ((int64_t)t->a[i].x < 0 || t->a[i].x == q->k[idd&1]) continue;
+					w = tid2idd(g->h, t->a[i].x);
+					p = &g->v.a[w>>1];
+					A = (p->len - r->a[j].y) / g->rdist - p->nsr * M_LN2;
+					if (A >= thres) ++cnt[1];
+				}
+			} else ++cnt[0], j0 = j;
 		}
+	}
+	if (cnt[0] == 1 && cnt[1]) {
+		fprintf(stderr, "here!\n");
+		for (j = 0; j < r->n; ++j) {
+			if (j == j0) continue;
+			mag_eh_markdel(g, r->a[j].x, q->k[idd&1]);
+			edge_mark_del(r->a[j]);
+		}
+		v128_clean(r);
 	}
 }
 
