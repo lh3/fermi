@@ -15,8 +15,6 @@ KSEQ_DECLARE(gzFile)
 extern unsigned char seq_nt6_table[128];
 
 typedef struct {
-	int len;
-	uint8_t *semitig;
 	ku64_v reads;
 } ext1_t;
 
@@ -49,36 +47,30 @@ static int read_unitigs(kseq_t *kseq, int n, ext1_t *buf, int min_dist, int max_
 		end = kseq->seq.l < max_dist? kseq->seq.l : max_dist;
 		for (k = 0; k < reads.n; ++k) {
 			ku128_t *r = &reads.a[k];
-			if ((r->y&1) && r->y<<32>>33 <= end)
+			if ((r->y&1) && r->y<<32>>33 <= end) {
+				kv_push(uint64_t, p->reads, r->x<<1|1);
 				kv_push(uint64_t, p->reads, (r->x^1)<<1);
+			}
 		}
-		if (p->reads.n) { // potentially extensible
-			p->len = end;
-			p->semitig = calloc(p->len + 1, 1);
-			for (k = 0; k < end; ++k)
-				p->semitig[k] = seq_nt6_table[(int)kseq->seq.s[k]];
-		} else --j;
+		if (p->reads.n == 0) --j;
 		// right-end
 		p = &buf[j++];
 		p->reads.n = 0;
 		beg = kseq->seq.l < max_dist? 0 : kseq->seq.l - max_dist;
 		for (k = 0; k < reads.n; ++k) {
 			ku128_t *r = &reads.a[k];
-			if ((r->y&1) == 0 && r->y>>32 >= beg)
+			if ((r->y&1) == 0 && r->y>>32 >= beg) {
+				kv_push(uint64_t, p->reads, r->x<<1);
 				kv_push(uint64_t, p->reads, (r->x^1)<<1|1);
+			}
 		}
-		if (p->reads.n) {
-			p->len = kseq->seq.l - beg;
-			p->semitig = calloc(p->len + 1, 1);
-			for (k = 0; k < p->len; ++k)
-				p->semitig[k] = seq_nt6_table[(int)kseq->seq.s[k + beg]];
-		} else --j;
+		if (p->reads.n == 0) --j;
 		if (j + 1 >= n) break;
 	}
 	return j;
 }
 
-static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, int is_aggressive)
+static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, int min_dist, int is_aggressive)
 {
 	extern void seq_reverse(int l, unsigned char *s);
 	kstring_t rd, seq, out;
@@ -87,10 +79,9 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 	for (i = start; i < n; i += step) {
 		ext1_t *p = &buf[i];
 		mag_t *g;
-		int tmp, max_len = 0;
+		int tmp, max_len = 0, min_match;
 
 		seq.l = 0;
-		kputsn((char*)p->semitig, p->len + 1, &seq); // +1 to include the ending NULL
 		for (j = 0; j < p->reads.n; ++j) {
 			assert(p->reads.a[j] < e->mcnt[1]);
 			fm_retrieve(e, p->reads.a[j], &rd);
@@ -98,22 +89,22 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 			seq_reverse(rd.l, (uint8_t*)rd.s);
 			kputsn(rd.s, rd.l + 1, &seq); // +1 to include NULL
 		}
-		if (max_len >= p->len) continue; // a read is longer than the semitig? stop; FIXME: this can be improved
 		// de novo assembly
+		min_match = max_len * .2 > 16? max_len * .2 : 16;
 		fm6_api_correct(16, seq.l, seq.s, 0);
-		g = fm6_api_unitig(-1, seq.l, seq.s);
-		mag_g_rm_vext(g, max_len + 1, 2); // very mild tip removal; note that max_len+1 <= p->len
+		g = fm6_api_unitig(min_match, seq.l, seq.s);
+		mag_g_rm_vext(g, max_len + 1, 2); // very mild tip removal
 		mag_g_merge(g, 1);
-		mag_g_simplify_bubble(g, 25, max_len * 2);
+		mag_g_simplify_bubble(g, 64, max_len * 2);
 		mag_g_pop_simple(g, 10., 0.15, is_aggressive);
 		// decide if keep the longest contig
 		for (j = 0, max_len = 0, tmp = -1; j < g->v.n; ++j)
 			if (g->v.a[j].len >= max_len)
 				max_len = g->v.a[j].len, tmp = j;
-		if (max_len > p->len) { // the semitig is extensible
+		if (max_len >= min_dist) { // the semitig is extensible
 			magv_t *q = &g->v.a[tmp];
 			out.l = 0;
-			kputc('>', &out); kputw(i, &out); kputc(' ', &out); kputw(max_len - p->len, &out); kputc('\n', &out);
+			kputc('>', &out); kputw(i, &out); kputc('\n', &out);
 			for (j = 0; j < q->len; ++j)
 				kputc("$ACGTN"[(int)q->seq[j]], &out);
 			puts(out.s);
@@ -126,13 +117,13 @@ static void pext_core(const rld_t *e, int n, ext1_t *buf, int start, int step, i
 typedef struct {
 	const rld_t *e;
 	ext1_t *buf;
-	int n, start, step, is_aggressive;
+	int n, start, step, min_dist, is_aggressive;
 } worker_t;
 
 static void *worker(void *_w)
 {
 	worker_t *w = (worker_t*)_w;
-	pext_core(w->e, w->n, w->buf, w->start, w->step, w->is_aggressive);
+	pext_core(w->e, w->n, w->buf, w->start, w->step, w->min_dist, w->is_aggressive);
 	return 0;
 }
 
@@ -164,6 +155,7 @@ int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, doub
 		w[i].buf = buf;
 		w[i].start = i;
 		w[i].step = n_threads;
+		w[i].min_dist = min_dist;
 		w[i].is_aggressive = is_aggressive;
 	}
 	old_verbose = fm_verbose; fm_verbose = 1; // to suppress messages and warnings
@@ -174,10 +166,8 @@ int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, doub
 	}
 	fm_verbose = old_verbose;
 
-	for (i = 0; i < BUF_SIZE; ++i) {
-		free(buf[i].semitig);
+	for (i = 0; i < BUF_SIZE; ++i)
 		free(buf[i].reads.a);
-	}
 	free(buf);
 	free(tid); free(w);
 	kseq_destroy(kseq);

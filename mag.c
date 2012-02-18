@@ -648,7 +648,7 @@ magopt_t *mag_init_opt()
 	o->min_ensr = 4;
 	o->min_insr = 3;
 	o->min_dratio1 = 0.8;
-	o->a_thres = 100.;
+	o->a_thres = 10000.;
 
 	o->max_bcov = 10.;
 	o->max_bfrac = 0.15;
