@@ -132,7 +132,11 @@ typedef struct {
 	ku128_v unpaired;
 } pcov_t;
 
-static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const uint64_t *sorted, hash64_t *h, uint64_t rec[3])
+typedef struct {
+	int skip, min_pcv, min_dist, max_dist;
+} pcovopt_t;
+
+static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, int max_dist, const uint64_t *sorted, hash64_t *h, uint64_t rec[3])
 {
 	const uint64_t mask = (uint64_t)FM_MASK30<<32 | FM_MASK30;
 	fmsmem_i *iter;
@@ -164,7 +168,7 @@ static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, const
 						if (kk != kh_end(h)) { // mate found on the forward strand
 							beg = kh_val(h, kk)>>32;
 							end = p->info&FM_MASK30;
-							if (end - beg < FM6_MAX_ISIZE) { // a proper pair
+							if (end - beg < max_dist) { // a proper pair
 								++rec[0];
 								rec[1] += end - beg;
 								rec[2] += (end - beg) * (end - beg);
@@ -228,7 +232,7 @@ static void mask_pcv(int l, char *seq, const uint8_t *pcv, int skip, int min_pcv
 }
 
 // if unpaired, skip<=0 or sorted==0
-static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n, int *len, char **s, int start, int step, int min_pcv, char *const* name,
+static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int max_dist, int n, int *len, char **s, int start, int step, int min_pcv, char *const* name,
 						char *const* comment, uint64_t rec[3])
 {
 	int i, j;
@@ -248,7 +252,7 @@ static void paircov_all(const rld_t *e, const uint64_t *sorted, int skip, int n,
 			kh_destroy(64, h);
 			h = kh_init(64);
 		}
-		r = paircov(e, l, si, skip, sorted, h, rec);
+		r = paircov(e, l, si, skip, max_dist, sorted, h, rec);
 		for (j = 0; j < l; ++j)
 			r.cov[j] = r.cov[j] + 33 < 126? r.cov[j] + 33 : 126;
 		if (min_pcv > 0) { // we want to break the sequence
@@ -337,7 +341,7 @@ static int fill_seqbuf(kseq_t *kseq, seqbuf_t *buf, int64_t max_len)
 typedef struct {
 	const rld_t *e;
 	const uint64_t *sorted;
-	int start, step, skip, min_pcv;
+	int start, step, skip, min_pcv, max_dist;
 	seqbuf_t *buf;
 	uint64_t rec[3];
 } worker_t;
@@ -345,11 +349,11 @@ typedef struct {
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	paircov_all(w->e, w->sorted, w->skip, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->min_pcv, w->buf->name, w->buf->comment, w->rec);
+	paircov_all(w->e, w->sorted, w->skip, w->max_dist, w->buf->n, w->buf->l, w->buf->s, w->start, w->step, w->min_pcv, w->buf->name, w->buf->comment, w->rec);
 	return 0;
 }
 
-int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int n_threads)
+int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int max_dist, int n_threads)
 {
 	int i;
 	kseq_t *seq;
@@ -368,7 +372,7 @@ int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int mi
 	buf = calloc(1, sizeof(seqbuf_t));
 	for (i = 0; i < n_threads; ++i) {
 		w[i].e = e, w[i].sorted = sorted, w[i].step = n_threads, w[i].start = i, w[i].buf = buf;
-		w[i].skip = skip, w[i].min_pcv = min_pcv;
+		w[i].skip = skip, w[i].min_pcv = min_pcv, w[i].max_dist = max_dist;
 	}
 	
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");

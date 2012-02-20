@@ -6,8 +6,6 @@
 #include "mag.h"
 #include "utils.h"
 
-#define FM6_MAX_ISIZE 1000
-
 int ksa_sa(const unsigned char *T, int *SA, int n, int k);
 int ksa_bwt(unsigned char *T, int n, int k);
 int ksa_bwt64(unsigned char *T, int64_t n, int k);
@@ -30,7 +28,7 @@ uint64_t *fm6_seqsort(const rld_t *e, int n_threads);
 int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads, const uint64_t *sorted);
 int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads);
 int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, double std, int aggressive);
-int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int n_threads);
+int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int max_dist, int n_threads);
 
 void fm_reverse_fmivec(fmintv_v *p);
 
