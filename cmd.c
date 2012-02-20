@@ -558,7 +558,7 @@ int main_clean(int argc, char *argv[])
 		fprintf(stderr, "         -o INT      minimum overlap [%d]\n", opt->min_ovlp);
 		fprintf(stderr, "         -R FLOAT    minimum relative overlap ratio [%.2f]\n", opt->min_dratio1);
 		fprintf(stderr, "         -n INT      number of iterations [%d]\n", opt->n_iter);
-		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n\n", opt->a_thres);
+//		fprintf(stderr, "         -a FLOAT    A-statistic threshold for determine the unitig uniqness [%.1f]\n\n", opt->a_thres);
 		fprintf(stderr, "         -A          aggressive bubble popping\n");
 		fprintf(stderr, "         -S          skip bubble simplification\n");
 		fprintf(stderr, "         -w FLOAT    minimum coverage to keep a bubble [%.2f]\n", opt->max_bcov);

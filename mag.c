@@ -648,7 +648,7 @@ magopt_t *mag_init_opt()
 	o->min_ensr = 4;
 	o->min_insr = 3;
 	o->min_dratio1 = 0.8;
-	o->a_thres = 100.;
+	o->a_thres = 0.;
 
 	o->max_bcov = 10.;
 	o->max_bfrac = 0.15;
@@ -659,7 +659,7 @@ magopt_t *mag_init_opt()
 
 void mag_g_clean(mag_t *g, const magopt_t *opt)
 {
-	double t, a_thres = opt->a_thres > 20.? opt->a_thres : 20.;
+	double t;
 	int j;
 
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
@@ -709,7 +709,7 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);
 	}
 	t = cputime();
-	mag_g_flowflt(g, a_thres);
+	if (opt->a_thres >= 20.) mag_g_flowflt(g, opt->a_thres);
 	if (opt->flag & MOG_F_AGGRESSIVE) mag_g_pop_open(g, opt->min_elen);
 	else {
 		mag_g_rm_vext(g, opt->min_elen, opt->min_ensr);
