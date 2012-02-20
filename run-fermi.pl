@@ -78,7 +78,7 @@ Options: -P        the input is paired
 		push(@lines, "\t\$(FERMI) clean \$< 2> \$@.log | gzip -1 > \$@");
 		push(@lines, "$opts{p}.c0r.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd $opts{p}.c0.mag.gz");
 		push(@lines, "\t\$(FERMI) remap -t $opts{t} -r \$^ 2> \$@.log | gzip -1 > \$@");
-		push(@lines, "$opts{p}.c1.mag.gz:$opts{p}.c0.mag.gz");
+		push(@lines, "$opts{p}.c1.mag.gz:$opts{p}.c0r.mag.gz");
 		push(@lines, "\t\$(FERMI) clean -CAOF \$< 2> \$@.log | gzip -1 > \$@");
 		push(@lines, "$opts{p}.c1r.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd $opts{p}.c1.mag.gz");
 		push(@lines, "\t\$(FERMI) remap -t $opts{t} -r \$^ 2> \$@.log | gzip -1 > \$@");
@@ -96,6 +96,8 @@ Options: -P        the input is paired
 		push(@lines, "\t\$(FERMI) merge -t $opts{t} -fo $opts{p}.final.fmd \$^ 2> \$@");
 		push(@lines, "$opts{p}.ext.mag.gz:$opts{p}.final.fmd.log");
 		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) $opts{p}.final.fmd 2> \$@.log | gzip -1 > \$@\n");
+		push(@lines, "$opts{p}.extr.mag.gz:$opts{p}.ec.fmd $opts{p}.ext.mag.gz");
+		push(@lines, "\t\$(FERMI) remap -t $opts{t} \$^ 2> \$@.log | gzip -1 > \$@\n");
 	} else {
 		push(@lines, "# Generate unitigs");
 		push(@lines, "$opts{p}.mag.gz:$opts{p}.ec.fmd");

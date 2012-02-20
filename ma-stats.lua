@@ -85,27 +85,28 @@ end
 
 local bit = require('bit')
 
-function count_break(stack, opt)
-	local b = {#stack, 0, 0, 0, 0}
-	for _, v in ipairs(stack) do
-		if v[5] >= opt.min_q then
-			local l = v[9] - v[8]
-			b[2] = b[2] + 1
-			if l >= 100 then
-				b[3] = b[3] + 1
-				if l >= 200 then
-					b[4] = b[4] + 1
-					if l >= 500 then
-						b[5] = b[5] + 1
+function analyze(stack, stats, opt)
+
+	function count_break(stack, opt)
+		local b = {#stack, 0, 0, 0, 0}
+		for _, v in ipairs(stack) do
+			if v[5] >= opt.min_q then
+				local l = v[9] - v[8]
+				b[2] = b[2] + 1
+				if l >= 100 then
+					b[3] = b[3] + 1
+					if l >= 200 then
+						b[4] = b[4] + 1
+						if l >= 500 then
+							b[5] = b[5] + 1
+						end
 					end
 				end
 			end
 		end
+		return b
 	end
-	return b
-end
 
-function analyze(stack, stats, opt)
 	-- special treatment of unmapped reads
 	if #stack == 1 and bit.band(stack[1][2], 4) == 4 then
 		stats.n_un, stats.l_un = stats.n_un + 1, stats.l_un + stack[1][7]
@@ -208,12 +209,13 @@ end
 
 function main(arg)
 	-- parse the command line
-	local opt = {mask_level=0.5, is_print=false, min_q=10, max_gap=500}
+	local opt = {mask_level=0.5, is_print=false, min_q=10, max_gap=500, min_len=200}
 	for o, a in os.getopt(arg, 'pq:m:g:') do
 		if o == 'p' then opt.is_print = true
 		elseif o == 'q' then opt.min_q = tonumber(a)
 		elseif o == 'm' then opt.mask_level = tonumber(a)
 		elseif o == 'g' then opt.max_gap = tonumber(a)
+		elseif o == 'l' then opt.min_len = tonumber(a)
 		end
 	end
 	-- the main part
@@ -224,15 +226,17 @@ function main(arg)
 			local t = l:split('\t', 10)
 			table.remove(t)
 			local len = #t[#t] -- sequence length
-			for i = 1, 4 do table.remove(t) end
-			t.l = l
-			t[#t+1] = len
-			t[2], t[4], t[5] = tonumber(t[2]), tonumber(t[4]) - 1, tonumber(t[5]) -- convert to numbers
-			if t[1] ~= last then -- change of the query
-				analyze(stack, stats, opt)
-				stack = {}
-				stack[1], last = t, t[1]
-			else stack[#stack+1] = t end
+			if len >= opt.min_len then
+				for i = 1, 4 do table.remove(t) end
+				t.l = l
+				t[#t+1] = len
+				t[2], t[4], t[5] = tonumber(t[2]), tonumber(t[4]) - 1, tonumber(t[5]) -- convert to numbers
+				if t[1] ~= last then -- change of the query
+					analyze(stack, stats, opt)
+					stack = {}
+					stack[1], last = t, t[1]
+				else stack[#stack+1] = t end
+			end
 		elseif opt.is_print then print(l) end
 	end
 	analyze(stack, stats, opt)
