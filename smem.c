@@ -179,7 +179,6 @@ static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, int m
 							q->x = k^1, q->y = p->info&mask;
 							continue;
 						}
-						fprintf(stderr, "Y\t%d\t%d\t%d\n", beg, end, end - beg);
 						beg += skip; end -= skip;
 						if (beg > end) tmp = beg, beg = end, end = tmp;
 						if (beg < 0) beg = 0;
