@@ -162,9 +162,8 @@ static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, int m
 				for (l = 0; l < p->x[2]; ++l) {
 					k = sorted[p->x[1] + l] >> 2; // NB: ->x[1] corresponds to the interval of the reverse
 					if ((k&1) == 0) { // reverse stand; check
-						int beg, end, to_add = 0, ibeg, iend;
+						int beg, end, to_add = 0;
 						kk = kh_get(64, h, k);
-						//printf("X %lld get %d\n", k, (int)(p->info&FM_MASK30) - skip);
 						if (kk != kh_end(h)) { // mate found on the forward strand
 							beg = kh_val(h, kk)>>32;
 							end = p->info&FM_MASK30;
@@ -180,20 +179,17 @@ static pcov_t paircov(const rld_t *e, int len, const uint8_t *q, int skip, int m
 							q->x = k^1, q->y = p->info&mask;
 							continue;
 						}
-						ibeg = kh_val(h, kk)&FM_MASK30; iend = p->info>>32&FM_MASK30;
-						if (ibeg > iend) tmp = ibeg, ibeg = iend, iend = tmp; // overlapping end
-						//printf("%d\t%d\n", beg, end);
+						fprintf(stderr, "Y\t%d\t%d\t%d\n", beg, end, end - beg);
 						beg += skip; end -= skip;
-						if (ibeg < beg) beg = ibeg;
-						if (iend > end) end = iend;
-						assert(beg <= end && beg >= 0 && end <= len);
+						if (beg > end) tmp = beg, beg = end, end = tmp;
+						if (beg < 0) beg = 0;
+						if (end > len) end = len;
 						for (j = beg; j < end; ++j)
 							if (r.pcv[j] < 255) ++r.pcv[j]; // update paired coverage
 						kh_del(64, h, kk);
 					} else { // forward strand; add
 						kk = kh_put(64, h, k^3, &ret);
 						kh_val(h, kk) = p->info & mask;
-						//printf("X %lld put %lld, %d<%d\n", k, k^3, tmp, len);
 					}
 				}
 			}
