@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <pthread.h>
 #include "priv.h"
 #include "kstring.h"
 #include "kvec.h"
@@ -359,11 +360,10 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 {
 	mag_t *g;
 	magv_t *p;
-	int j, max_j, old_verbose = fm_verbose;
+	int j, max_j;
 	char *q, *r;
 	ext_t e;
 
-	fm_verbose = 1;
 	memset(&e, 0, sizeof(ext_t));
 	g = fm6_api_unitig(max_len/3. < 17? max_len/3. : 17, l, s);
 	mag_g_rm_vext(g, max_len + 1, 100);
@@ -392,7 +392,6 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 		}
 	}
 	mag_g_destroy(g);
-	fm_verbose = old_verbose;
 	return e;
 }
 
@@ -433,25 +432,80 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	free(str.s); free(rd.s);
 }
 
+/*********************************
+ * Multithreading local assembly *
+ *********************************/
+
+typedef struct {
+	int start, step, max_dist;
+	double avg;
+	const rld_t *e;
+	const hash64_t *h;
+	utig_v *v;
+} worker_t;
+
+static void *worker(void *data)
+{
+	worker_t *w = (worker_t*)data;
+	int64_t i;
+	for (i = w->start; i < w->v->n; i += w->step) {
+		patch_gap(w->e, w->h, w->v, i<<1|0, w->max_dist, w->avg);
+		patch_gap(w->e, w->h, w->v, i<<1|1, w->max_dist, w->avg);
+	}
+	return 0;
+}
+
 /**********
  * Portal *
  **********/
 
-void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int min_supp)
+void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int min_supp, int n_threads)
 {
+	pthread_t *tid;
+	pthread_attr_t attr;
+	worker_t *w;
 	utig_v *v;
-	double rdist;
+	double rdist, t, treal;
 	hash64_t *h;
-	int i, max_dist;
+	int i, max_dist, old_verbose;
 
 	max_dist = (int)(avg + 2. * std + .499);
+	t = cputime();
 	v = read_utig(fn, min_supp);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] read unitigs in %.3f sec\n", __func__, cputime() - t);
+	t = cputime();
 	rdist = cal_rdist(v);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] rdist = %.3f, computed in %.3f sec\n", __func__, rdist, cputime() - t);
+	t = cputime();
 	h = collect_nei(v, max_dist);
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
+
+	old_verbose = fm_verbose;
+	fm_verbose = 1; // disable all messages and warnings
+	t = cputime();
+	treal = realtime();
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	w = (worker_t*)calloc(n_threads, sizeof(worker_t));
+	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
+	for (i = 0; i < n_threads; ++i) {
+		w[i].start = i, w[i].step = n_threads;
+		w[i].max_dist = max_dist, w[i].avg = avg;
+		w[i].e = e, w[i].h = h;
+		w[i].v = v;
+	}
+	for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], &attr, worker, w + i);
+	for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
+	free(w); free(tid);
+	fm_verbose = old_verbose;
+	if (fm_verbose >= 3)
+		fprintf(stderr, "[M::%s] patched gaps in %.3f sec (%.3f wall-clock sec)\n", __func__, cputime() - t, realtime() - treal);
+
 //	patch_gap(e, h, v, 64, max_dist); debug_utig(v, 64, rdist); return;
 	for (i = 0; i < v->n; ++i) {
-		patch_gap(e, h, v, i<<1|0, max_dist, avg);
-		patch_gap(e, h, v, i<<1|1, max_dist, avg);
 		debug_utig(v, i<<1|0, rdist);
 		debug_utig(v, i<<1|1, rdist);
 	}

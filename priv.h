@@ -34,6 +34,6 @@ void fm_reverse_fmivec(fmintv_v *p);
 
 uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, int *contained);
 
-void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int min_supp);
+void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int min_supp, int n_threads);
 
 #endif
