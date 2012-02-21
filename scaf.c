@@ -19,6 +19,7 @@ extern unsigned char seq_nt6_table[128];
 
 typedef struct {
 	int l, patched;
+	double t;
 	char *s;
 } ext_t;
 
@@ -219,13 +220,64 @@ static void debug_utig(utig_v *v, uint32_t idd, double rdist)
 	int a = idd&1;
 	utig_t *p = &v->a[idd>>1];
 	if (p->nei[a] >= 0) {
-		fprintf(stderr, "%d[%ld:%ld]\t%d:%d:%f\t%ld\t%d:%ld\t%ld\t%d:%ld\t%d\t%d\n", idd, (long)p->k[0], (long)p->k[1], p->len, p->nsr, (p->len - p->maxo)/rdist - M_LN2 * p->nsr,
+		fprintf(stderr, "%d[%ld:%ld]\t%d:%d:%f\t%ld\t%d:%ld\t%ld\t%d:%ld\t%d\t%d\t%g\n", idd, (long)p->k[0], (long)p->k[1], p->len, p->nsr, (p->len - p->maxo)/rdist - M_LN2 * p->nsr,
 				(long)p->nei[a], (int)(p->dist[a]>>40), (long)((double)(p->dist[a]<<24>>24)/(p->dist[a]>>40) + .499),
 				(long)p->nei2[a], (int)(p->dist2[a]>>40), (long)((double)(p->dist2[a]<<24>>24)/(p->dist2[a]>>40) + .499),
-				p->ext[a].patched, p->ext[a].l);
+				p->ext[a].patched, p->ext[a].l, p->ext[a].t);
 	}
 }
 #endif
+
+/***************************************
+ * Gamma and incomplete Beta functions *
+ ***************************************/
+
+#define KF_GAMMA_EPS 1e-14
+#define KF_TINY 1e-290
+
+double kf_lgamma(double z)
+{
+	double x = 0;
+	x += 0.1659470187408462e-06 / (z+7);
+	x += 0.9934937113930748e-05 / (z+6);
+	x -= 0.1385710331296526     / (z+5);
+	x += 12.50734324009056      / (z+4);
+	x -= 176.6150291498386      / (z+3);
+	x += 771.3234287757674      / (z+2);
+	x -= 1259.139216722289      / (z+1);
+	x += 676.5203681218835      / z;
+	x += 0.9999999999995183;
+	return log(x) - 5.58106146679532777 - z + (z-0.5) * log(z+6.5);
+}
+
+static double kf_betai_aux(double a, double b, double x)
+{
+	double C, D, f;
+	int j;
+	if (x == 0.) return 0.;
+	if (x == 1.) return 1.;
+	f = 1.; C = f; D = 0.;
+	// Modified Lentz's algorithm for computing continued fraction
+	for (j = 1; j < 200; ++j) {
+		double aa, d;
+		int m = j>>1;
+		aa = (j&1)? -(a + m) * (a + b + m) * x / ((a + 2*m) * (a + 2*m + 1))
+			: m * (b - m) * x / ((a + 2*m - 1) * (a + 2*m));
+		D = 1. + aa * D;
+		if (D < KF_TINY) D = KF_TINY;
+		C = 1. + aa / C;
+		if (C < KF_TINY) C = KF_TINY;
+		D = 1. / D;
+		d = C * D;
+		f *= d;
+		if (fabs(d - 1.) < KF_GAMMA_EPS) break;
+	}
+	return exp(kf_lgamma(a+b) - kf_lgamma(a) - kf_lgamma(b) + a * log(x) + b * log(1.-x)) / a / f;
+}
+double kf_betai(double a, double b, double x)
+{
+	return x < (a + 1.) / (a + b + 2.)? kf_betai_aux(a, b, x) : 1. - kf_betai_aux(b, a, 1. - x);
+}
 
 /***************
  * Gap closure *
@@ -245,7 +297,6 @@ static inline void end_seq(kstring_t *str, const utig_t *p, int is3, int is_2nd,
 static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, int64_t idd, kstring_t *str, kstring_t *tmp)
 {
 	int j, max_len;
-
 	for (j = max_len = 0; j < p->reads.n; ++j) {
 		khint_t k = kh_get(64, h, p->reads.a[j].x>>1^1);
 		if (k != kh_end(h) && (idd < 0 || kh_val(h, k)>>32 == idd)) {
@@ -265,6 +316,33 @@ static void print_seq(char *s)
 	putchar('\n');
 }
 
+static double compute_t(const hash64_t *h, const utig_v *v, uint32_t idd, int l, double mu)
+{
+	utig_t *p = &v->a[idd>>1];
+	int j, n, dist;
+	int64_t sum, sum2;
+	double t, avg;
+	if (p->nei[idd&1] < 0) return 0.0;
+	sum = sum2 = 0; n = 0;
+	for (j = 0; j < p->reads.n; ++j) {
+		khint_t k = kh_get(64, h, p->reads.a[j].x>>1);
+		if (k == kh_end(h)) continue;
+		dist = kh_val(h, k)<<32>>32;
+		k = kh_get(64, h, p->reads.a[j].x>>1^1);
+		if (k == kh_end(h) || kh_val(h, k)>>32 != p->nei[idd&1]) continue;
+		dist += kh_val(h, k)<<32>>32;
+		dist += l;
+		++n; sum += dist; sum2 += dist * dist;
+	}
+	assert(n >= 2);
+	avg = (double)sum / n;
+	t = sqrt(((double)sum2 / n - avg * avg) / (n - 1)); // std.dev. / sqrt(n)
+	t = (avg - mu) / t; // student's t
+	--n; // n is now the degree of freedom
+	if (n > 50) n = 50; // avoid a too stringent P-value
+	return kf_betai(.5*n, .5, n/(n+t*t));
+}
+
 static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 {
 	mag_t *g;
@@ -273,9 +351,9 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	char *q, *r;
 	ext_t e;
 
-	fm_verbose = 3;
+	fm_verbose = 1;
 	memset(&e, 0, sizeof(ext_t));
-	g = fm6_api_unitig(max_len/3. < 17? max_len/3. : 17, l, s); mag_g_print(g);
+	g = fm6_api_unitig(max_len/3. < 17? max_len/3. : 17, l, s);
 	mag_g_rm_vext(g, max_len + 1, 100);
 	mag_g_merge(g, 0);
 	mag_g_simplify_bubble(g, 25, max_len * 2);
@@ -284,7 +362,7 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 		if (g->v.a[j].len > max_len)
 			max_len = g->v.a[j].len, max_j = j;
 	p = &g->v.a[max_j];
-	print_seq(t[0]); print_seq(t[1]);
+//	print_seq(t[0]); print_seq(t[1]); mag_g_print(g);
 	q = strstr(p->seq, t[0]);
 	if (q == 0) {
 		seq_revcomp6(p->len, (uint8_t*)p->seq);
@@ -306,13 +384,14 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	return e;
 }
 
-static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int max_dist)
+static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int max_dist, double avg)
 {
 	uint32_t iddq;
 	utig_t *p, *q;
 	kstring_t str, rd;
-	int max_len, pl;
+	int max_len, pl, i;
 	char *t[2];
+	ext_t ext;
 
 	p = &v->a[iddp>>1];
 	if (p->nei[iddp&1] < 0) return; // no neighbor
@@ -320,14 +399,24 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	if (iddp > iddq) return; // avoid doing local assembly twice
 	q = &v->a[iddq>>1];
 	if (q->nei[iddq&1] != iddp) return; // not reciprocal best
-	
-	str.l = str.m = rd.l = rd.m = 0; str.s = rd.s = 0;
-	end_seq(&str, p, iddp&1, 0, max_dist); pl = str.l;
-	end_seq(&str, q, iddq&1, 1, max_dist);
-	max_len = add_seq(e, h, p, -1, &str, &rd);
-	add_seq(e, h, q, -1, &str, &rd);
-	t[0] = str.s; t[1] = str.s + pl;
-	p->ext[iddp&1] = q->ext[iddq&1] = assemble(str.l, str.s, max_len, t);
+
+	str.s = rd.s = 0; str.m = rd.m = 0;
+	for (i = 0; i < 2; ++i) {
+		str.l = rd.l = 0;
+		end_seq(&str, p, iddp&1, 0, max_dist); pl = str.l;
+		end_seq(&str, q, iddq&1, 1, max_dist);
+		max_len = add_seq(e, h, p, i? -1 : iddq, &str, &rd); // the first round, using reads from unitigs only
+		add_seq(e, h, q, i? -1 : iddp, &str, &rd); // the second round, using all unpaired reads
+		t[0] = str.s; t[1] = str.s + pl;
+		ext = assemble(str.l, str.s, max_len, t);
+		if (ext.patched) {
+			ext.t = compute_t(h, v, iddp, ext.l, avg);
+			if (ext.t > 1e-6) {
+				p->ext[iddp&1] = q->ext[iddq&1] = ext;
+				break;
+			}
+		}
+	}
 
 	free(str.s); free(rd.s);
 }
@@ -347,10 +436,10 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	v = read_utig(fn, min_supp);
 	rdist = cal_rdist(v);
 	h = collect_nei(v, max_dist);
-	patch_gap(e, h, v, 64, max_dist); debug_utig(v, 64, rdist); return;
+//	patch_gap(e, h, v, 64, max_dist); debug_utig(v, 64, rdist); return;
 	for (i = 0; i < v->n; ++i) {
-		patch_gap(e, h, v, i<<1|0, max_dist);
-		patch_gap(e, h, v, i<<1|1, max_dist);
+		patch_gap(e, h, v, i<<1|0, max_dist, avg);
+		patch_gap(e, h, v, i<<1|1, max_dist, avg);
 	}
 	for (i = 0; i < v->n; ++i) {
 		debug_utig(v, i<<1|0, rdist);
