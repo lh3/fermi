@@ -579,15 +579,18 @@ int main_clean(int argc, char *argv[])
 int main_scaf(int argc, char *argv[])
 {
 	int c, min_supp = 5;
+	rld_t *e;
 	while ((c = getopt(argc, argv, "m:")) >= 0) {
 		switch (c) {
 			case 'm': min_supp = atoi(optarg); break;
 		}
 	}
-	if (optind + 3 > argc) {
-		fprintf(stderr, "Usage: fermi scaf [-m minPairs=%d] <in.remapped.mag> <avg> <std>\n", min_supp);
+	if (optind + 4 > argc) {
+		fprintf(stderr, "Usage: fermi scaf [-m minPairs=%d] <in.fmd> <in.remapped.mag> <avg> <std>\n", min_supp);
 		return 1;
 	}
-	mag_scaf_core(argv[optind], atof(argv[optind+1]), atof(argv[optind+2]), min_supp);
+	e = rld_restore(argv[optind]);
+	mag_scaf_core(e, argv[optind+1], atof(argv[optind+2]), atof(argv[optind+3]), min_supp);
+	rld_destroy(e);
 	return 0;
 }

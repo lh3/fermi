@@ -18,7 +18,13 @@ KHASH_DECLARE(64, uint64_t, uint64_t)
 extern unsigned char seq_nt6_table[128];
 
 typedef struct {
+	int l, patched;
+	char *s;
+} ext_t;
+
+typedef struct {
 	uint64_t k[2];
+	ext_t ext[2];
 	int len, nsr, maxo;
 	uint8_t *seq;
 	ku128_v reads;
@@ -42,6 +48,7 @@ static utig_v *read_utig(const char *fn, int min_supp)
 	while (kseq_read(kseq) >= 0) {
 		char *q, *qq;
 		long k[2];
+		int beg, end;
 		utig_t *p;
 
 		if (kseq->comment.l == 0) continue; // no comments
@@ -57,8 +64,17 @@ static utig_v *read_utig(const char *fn, int min_supp)
 		sscanf(kseq->name.s, "%ld:%ld", &k[0], &k[1]);
 		p->nsr = nsr;
 		p->k[0] = k[0]; p->k[1] = k[1];
-		p->len = kseq->seq.l;
-		p->seq = (uint8_t*)strdup(kseq->seq.s);
+		beg = 0; end = kseq->seq.l;
+		if (kseq->qual.l) { // trim unitigs covered by a single read
+			for (i = 0; i < kseq->qual.l && kseq->qual.s[i] == 34; ++i);
+			beg = i;
+			for (i = kseq->qual.l - 1; i >= 0 && kseq->qual.s[i] == 34; --i);
+			end = i + 1;
+			if (beg >= end) beg = 0, end = kseq->seq.l;
+		}
+		p->len = end - beg;
+		p->seq = calloc(1, end - beg + 1);
+		strncpy((char*)p->seq, kseq->seq.s + beg, end - beg);
 		for (i = 0; i < p->len; ++i)
 			p->seq[i] = seq_nt6_table[(int)p->seq[i]];
 
@@ -116,13 +132,12 @@ static double cal_rdist(const utig_v *v)
 	return rdist;
 }
 
-static void collect_nei(utig_v *v, double avg, double std, double rdist)
+static hash64_t *collect_nei(utig_v *v, int max_dist)
 {
-	int i, j, a, is_absent, max_dist;
+	int i, j, a, is_absent;
 	hash64_t *h, *t;
 	khint_t k;
 
-	max_dist = (int)(avg + 2. * std + .499);
 	h = kh_init(64);
 	for (i = 0; i < v->n; ++i) {
 		utig_t *p = &v->a[i];
@@ -171,7 +186,6 @@ static void collect_nei(utig_v *v, double avg, double std, double rdist)
 		}
 	}
 	kh_destroy(64, t);
-	kh_destroy(64, h);
 
 	for (i = 0; i < v->n; ++i) { // test reciprocal best
 		utig_t *q, *p = &v->a[i];
@@ -196,24 +210,151 @@ static void collect_nei(utig_v *v, double avg, double std, double rdist)
 			}
 		}
 	}
-#if 1
-	for (i = 0; i < v->n; ++i) {
-		utig_t *p = &v->a[i];
-		for (a = 0; a < 2; ++a)
-			if (p->nei[a] >= 0)
-				fprintf(stderr, "%d[%ld:%ld]\t%d:%d:%f\t%ld\t%d:%ld\t%ld\t%d:%ld\n", i<<1|a, (long)p->k[0], (long)p->k[1], p->len, p->nsr, (p->len - p->maxo)/rdist - M_LN2 * p->nsr,
-						(long)p->nei[a], (int)(p->dist[a]>>40), (long)((double)(p->dist[a]<<24>>24)/(p->dist[a]>>40) + .499),
-						(long)p->nei2[a], (int)(p->dist2[a]>>40), (long)((double)(p->dist2[a]<<24>>24)/(p->dist2[a]>>40) + .499));
-	}
-#endif
+	return h;
 }
 
-void mag_scaf_core(const char *fn, double avg, double std, int min_supp)
+#if 1
+static void debug_utig(utig_v *v, uint32_t idd, double rdist)
+{
+	int a = idd&1;
+	utig_t *p = &v->a[idd>>1];
+	if (p->nei[a] >= 0) {
+		fprintf(stderr, "%d[%ld:%ld]\t%d:%d:%f\t%ld\t%d:%ld\t%ld\t%d:%ld\t%d\t%d\n", idd, (long)p->k[0], (long)p->k[1], p->len, p->nsr, (p->len - p->maxo)/rdist - M_LN2 * p->nsr,
+				(long)p->nei[a], (int)(p->dist[a]>>40), (long)((double)(p->dist[a]<<24>>24)/(p->dist[a]>>40) + .499),
+				(long)p->nei2[a], (int)(p->dist2[a]>>40), (long)((double)(p->dist2[a]<<24>>24)/(p->dist2[a]>>40) + .499),
+				p->ext[a].patched, p->ext[a].l);
+	}
+}
+#endif
+
+/***************
+ * Gap closure *
+ ***************/
+
+static inline void end_seq(kstring_t *str, const utig_t *p, int is3, int is_2nd, int max_dist)
+{
+	int ori_l = str->l;
+	if (p->len > max_dist) {
+		if (is3) kputsn((char*)p->seq + (p->len - max_dist), max_dist, str);
+		else kputsn((char*)p->seq, max_dist, str);
+	} else kputsn((char*)p->seq, p->len, str);
+	if ((!is3) ^ (!!is_2nd)) seq_revcomp6(str->l - ori_l, (uint8_t*)str->s + ori_l);
+	kputc(0, str);
+}
+
+static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, int64_t idd, kstring_t *str, kstring_t *tmp)
+{
+	int j, max_len;
+
+	for (j = max_len = 0; j < p->reads.n; ++j) {
+		khint_t k = kh_get(64, h, p->reads.a[j].x>>1^1);
+		if (k != kh_end(h) && (idd < 0 || kh_val(h, k)>>32 == idd)) {
+			assert(p->reads.a[j].x < e->mcnt[1]);
+			fm_retrieve(e, p->reads.a[j].x, tmp);
+			if (tmp->l > max_len) max_len = tmp->l;
+			seq_reverse(tmp->l, (uint8_t*)tmp->s);
+			kputsn(tmp->s, tmp->l + 1, str);
+		}
+	}
+	return max_len;
+}
+
+static void print_seq(char *s)
+{
+	for (; *s; ++s) putchar("$ACGTN"[(int)*s]);
+	putchar('\n');
+}
+
+static ext_t assemble(int l, char *s, int max_len, char *const t[2])
+{
+	mag_t *g;
+	magv_t *p;
+	int j, max_j, old_verbose = fm_verbose;
+	char *q, *r;
+	ext_t e;
+
+	fm_verbose = 3;
+	memset(&e, 0, sizeof(ext_t));
+	g = fm6_api_unitig(max_len/3. < 17? max_len/3. : 17, l, s); mag_g_print(g);
+	mag_g_rm_vext(g, max_len + 1, 100);
+	mag_g_merge(g, 0);
+	mag_g_simplify_bubble(g, 25, max_len * 2);
+	mag_g_pop_simple(g, 10., 0.15, 1); // FIXME: always agressive?
+	for (j = max_len = 0; j < g->v.n; ++j)
+		if (g->v.a[j].len > max_len)
+			max_len = g->v.a[j].len, max_j = j;
+	p = &g->v.a[max_j];
+	print_seq(t[0]); print_seq(t[1]);
+	q = strstr(p->seq, t[0]);
+	if (q == 0) {
+		seq_revcomp6(p->len, (uint8_t*)p->seq);
+		q = strstr(p->seq, t[0]);
+	}
+	if (q) {
+		if ((r = strstr(p->seq, t[1])) > q) { // gap patched
+			int tmp = strlen(t[0]);
+			e.patched = 1;
+			e.l = r - (q + tmp);
+			if (e.l > 0) {
+				e.s = calloc(1, e.l + 1);
+				strncpy(e.s, p->seq + tmp, e.l);
+			}
+		}
+	}
+	mag_g_destroy(g);
+	fm_verbose = old_verbose;
+	return e;
+}
+
+static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int max_dist)
+{
+	uint32_t iddq;
+	utig_t *p, *q;
+	kstring_t str, rd;
+	int max_len, pl;
+	char *t[2];
+
+	p = &v->a[iddp>>1];
+	if (p->nei[iddp&1] < 0) return; // no neighbor
+	iddq = p->nei[iddp&1];
+	if (iddp > iddq) return; // avoid doing local assembly twice
+	q = &v->a[iddq>>1];
+	if (q->nei[iddq&1] != iddp) return; // not reciprocal best
+	
+	str.l = str.m = rd.l = rd.m = 0; str.s = rd.s = 0;
+	end_seq(&str, p, iddp&1, 0, max_dist); pl = str.l;
+	end_seq(&str, q, iddq&1, 1, max_dist);
+	max_len = add_seq(e, h, p, -1, &str, &rd);
+	add_seq(e, h, q, -1, &str, &rd);
+	t[0] = str.s; t[1] = str.s + pl;
+	p->ext[iddp&1] = q->ext[iddq&1] = assemble(str.l, str.s, max_len, t);
+
+	free(str.s); free(rd.s);
+}
+
+/**********
+ * Portal *
+ **********/
+
+void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int min_supp)
 {
 	utig_v *v;
 	double rdist;
+	hash64_t *h;
+	int i, max_dist;
+
+	max_dist = (int)(avg + 2. * std + .499);
 	v = read_utig(fn, min_supp);
 	rdist = cal_rdist(v);
-	collect_nei(v, avg, std, rdist);
-	printf("%f\n", rdist);
+	h = collect_nei(v, max_dist);
+	patch_gap(e, h, v, 64, max_dist); debug_utig(v, 64, rdist); return;
+	for (i = 0; i < v->n; ++i) {
+		patch_gap(e, h, v, i<<1|0, max_dist);
+		patch_gap(e, h, v, i<<1|1, max_dist);
+	}
+	for (i = 0; i < v->n; ++i) {
+		debug_utig(v, i<<1|0, rdist);
+		debug_utig(v, i<<1|1, rdist);
+	}
+	kh_destroy(64, h);
 }
