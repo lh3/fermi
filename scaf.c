@@ -53,6 +53,7 @@ static utig_v *read_utig(const char *fn, int min_supp)
 
 		kv_pushp(utig_t, *u, &p);
 		memset(p, 0, sizeof(utig_t));
+		p->nei[0] = p->nei[1] = -1;
 		sscanf(kseq->name.s, "%ld:%ld", &k[0], &k[1]);
 		p->nsr = nsr;
 		p->k[0] = k[0]; p->k[1] = k[1];
@@ -175,8 +176,9 @@ static void collect_nei(utig_v *v, double avg, double std)
 	for (i = 0; i < v->n; ++i) {
 		utig_t *p = &v->a[i];
 		for (a = 0; a < 2; ++a)
-			fprintf(stderr, "%d[%ld:%ld]\t%ld\t%d:%ld\t%d:%ld\n", i<<1|a, (long)p->k[0], (long)p->k[1], (long)p->nei[a],
-					(int)(p->dist[a][0]>>40), (long)(p->dist[a][0]<<24>>24), (int)(p->dist[a][1]>>40), (long)(p->dist[a][1]<<24>>24));
+			if (p->nei[a] >= 0)
+				fprintf(stderr, "%d[%ld:%ld]\t%ld\t%d:%ld\t%d:%ld\n", i<<1|a, (long)p->k[0], (long)p->k[1], (long)p->nei[a],
+						(int)(p->dist[a][0]>>40), (long)(p->dist[a][0]<<24>>24), (int)(p->dist[a][1]>>40), (long)(p->dist[a][1]<<24>>24));
 	}
 #endif
 }
