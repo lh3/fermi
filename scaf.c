@@ -22,8 +22,8 @@ typedef struct {
 	int len, nsr, maxo;
 	uint8_t *seq;
 	ku128_v reads;
-	uint64_t dist[2][2];
-	int64_t nei[2];
+	uint64_t dist[2], dist2[2];
+	int64_t nei[2], nei2[2];
 } utig_t;
 
 typedef kvec_t(utig_t) utig_v;
@@ -116,7 +116,7 @@ static double cal_rdist(const utig_v *v)
 	return rdist;
 }
 
-static void collect_nei(utig_v *v, double avg, double std)
+static void collect_nei(utig_v *v, double avg, double std, double rdist)
 {
 	int i, j, a, is_absent, max_dist;
 	hash64_t *h, *t;
@@ -164,21 +164,46 @@ static void collect_nei(utig_v *v, double avg, double std)
 			}
 			for (k = 0; k != kh_end(t); ++k) { // write p->dist[a] and p->nei[a]
 				if (!kh_exist(t, k) || kh_val(t, k)>>40 < 2) continue;
-				if (kh_val(t, k) >= p->dist[a][0])
-					p->dist[a][1] = p->dist[a][0], p->dist[a][0] = kh_val(t, k), p->nei[a] = kh_key(t, k);
-				else if (kh_val(t, k) >= p->dist[a][1]) p->dist[a][1] = kh_val(t, k);
+				if (kh_val(t, k) >= p->dist[a])
+					p->dist2[a] = p->dist[a], p->nei2[a] = p->nei[a], p->dist[a] = kh_val(t, k), p->nei[a] = kh_key(t, k);
+				else if (kh_val(t, k) >= p->dist2[a]) p->dist2[a] = kh_val(t, k), p->nei2[a] = kh_key(t, k);
 			}
 		}
 	}
 	kh_destroy(64, t);
 	kh_destroy(64, h);
+
+	for (i = 0; i < v->n; ++i) { // test reciprocal best
+		utig_t *q, *p = &v->a[i];
+		for (a = 0; a < 2; ++a) {
+			if (p->nei[a] < 0) continue;
+			q = &v->a[p->nei[a]>>1];
+			if (q->nei[p->nei[a]&1] != (i<<1|a))
+				p->dist[a] = 0; // we should not set p->nei[a]=-1 at this time, as it may interfere with others
+		}
+	}
+	for (i = 0; i < v->n; ++i) {
+		utig_t *p = &v->a[i];
+		if (p->dist[0] == 0) p->nei[0] = -2;
+		if (p->dist[1] == 0) p->nei[1] = -2;
+	}
+	for (i = 0; i < v->n; ++i) { // update nei2[] as nei[] is now changed
+		utig_t *p = &v->a[i];
+		for (a = 0; a < 2; ++a) {
+			if (p->nei[a] >= 0 && p->nei2[a] >= 0) {
+				utig_t *q = &v->a[p->nei2[a]>>1];
+				if (q->nei[p->nei2[a]&1] < 0) p->nei2[a] = -3;
+			}
+		}
+	}
 #if 1
 	for (i = 0; i < v->n; ++i) {
 		utig_t *p = &v->a[i];
 		for (a = 0; a < 2; ++a)
 			if (p->nei[a] >= 0)
-				fprintf(stderr, "%d[%ld:%ld]\t%ld\t%d:%ld\t%d:%ld\n", i<<1|a, (long)p->k[0], (long)p->k[1], (long)p->nei[a],
-						(int)(p->dist[a][0]>>40), (long)(p->dist[a][0]<<24>>24), (int)(p->dist[a][1]>>40), (long)(p->dist[a][1]<<24>>24));
+				fprintf(stderr, "%d[%ld:%ld]\t%d:%d:%f\t%ld\t%d:%ld\t%ld\t%d:%ld\n", i<<1|a, (long)p->k[0], (long)p->k[1], p->len, p->nsr, (p->len - p->maxo)/rdist - M_LN2 * p->nsr,
+						(long)p->nei[a], (int)(p->dist[a]>>40), (long)((double)(p->dist[a]<<24>>24)/(p->dist[a]>>40) + .499),
+						(long)p->nei2[a], (int)(p->dist2[a]>>40), (long)((double)(p->dist2[a]<<24>>24)/(p->dist2[a]>>40) + .499));
 	}
 #endif
 }
@@ -188,7 +213,7 @@ void mag_scaf_core(const char *fn, double avg, double std, int min_supp)
 	utig_v *v;
 	double rdist;
 	v = read_utig(fn, min_supp);
-	collect_nei(v, avg, std);
 	rdist = cal_rdist(v);
+	collect_nei(v, avg, std, rdist);
 	printf("%f\n", rdist);
 }
