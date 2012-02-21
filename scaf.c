@@ -9,7 +9,11 @@
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
 
+#include "khash.h"
+KHASH_DECLARE(64, uint64_t, uint64_t)
+
 #define A_THRES 20.
+#define MIN_ISIZE 50
 
 extern unsigned char seq_nt6_table[128];
 
@@ -18,9 +22,12 @@ typedef struct {
 	int len, nsr, maxo;
 	uint8_t *seq;
 	ku128_v reads;
+	uint64_t dist[2][2];
+	int64_t nei[2];
 } utig_t;
 
 typedef kvec_t(utig_t) utig_v;
+typedef khash_t(64) hash64_t;
 
 static utig_v *read_utig(const char *fn, int min_supp)
 {
@@ -45,6 +52,7 @@ static utig_v *read_utig(const char *fn, int min_supp)
 		if (nsr < min_supp) continue; // too few reads
 
 		kv_pushp(utig_t, *u, &p);
+		memset(p, 0, sizeof(utig_t));
 		sscanf(kseq->name.s, "%ld:%ld", &k[0], &k[1]);
 		p->nsr = nsr;
 		p->k[0] = k[0]; p->k[1] = k[1];
@@ -65,13 +73,11 @@ static utig_v *read_utig(const char *fn, int min_supp)
 			} else qq += 2;
 		}
 
-		kv_init(p->reads);
 		while (isdigit(*q)) { // read mapping
 			ku128_t x;
 			x.x = strtol(q, &q, 10); ++q;
-			x.y = x.x&1; x.x >>= 1; // to fit the msg format; FIXME: better make this cleaner...
-			x.y |= (uint64_t)strtol(q, &q, 10)<<32; ++q;
-			x.y |= strtol(q, &q, 10)<<1;
+			x.y = (uint64_t)strtol(q, &q, 10)<<32; ++q;
+			x.y |= strtol(q, &q, 10);
 			kv_push(ku128_t, p->reads, x);
 			if (*q++ == 0) break;
 		}
@@ -109,11 +115,78 @@ static double cal_rdist(const utig_v *v)
 	return rdist;
 }
 
+static void collect_nei(utig_v *v, double avg, double std)
+{
+	int i, j, a, is_absent, max_dist;
+	hash64_t *h, *t;
+	khint_t k;
+
+	max_dist = (int)(avg + 2. * std + .499);
+	h = kh_init(64);
+	for (i = 0; i < v->n; ++i) {
+		utig_t *p = &v->a[i];
+		int dist;
+		for (j = 0; j < p->reads.n; ++j) {
+			uint64_t idd = i<<1 | ((p->reads.a[j].x&1)^1);
+			if (p->reads.a[j].x&1) dist = p->reads.a[j].y<<32>>32;
+			else dist = p->len - (p->reads.a[j].y>>32);
+			if (dist > max_dist) continue; // skip this read
+			k = kh_put(64, h, p->reads.a[j].x>>1, &is_absent);
+			if (is_absent) kh_val(h, k) = idd<<32 | dist;
+			else kh_val(h, k) = 0; // mark delete
+		}
+	}
+	for (k = 0; k != kh_end(h); ++k)
+		if (kh_exist(h, k) && kh_val(h, k) == 0) kh_del(64, h, k); // now delete those that are marked "delete"
+
+	t = kh_init(64);
+	for (i = 0; i < v->n; ++i) {
+		utig_t *q, *p = &v->a[i];
+		for (a = 0; a < 2; ++a) {
+			if (kh_n_buckets(t) >= 32) { // if t is too large, reallocate it
+				kh_destroy(64, t);
+				t = kh_init(64);
+			} else kh_clear(64, t);
+			for (j = 0; j < p->reads.n; ++j) {
+				int dist;
+				k = kh_get(64, h, p->reads.a[j].x>>1); // lookup the read
+				if (k == kh_end(h) || (kh_val(h, k)>>32&1) != a) continue; // deleted or not in the right direction
+				dist = (int32_t)kh_val(h, k);
+				k = kh_get(64, h, p->reads.a[j].x>>1^1); // lookup the mate
+				if (k == kh_end(h)) continue; // mate absent or deleted
+				q = &v->a[kh_val(h, k)>>33];
+				if (p == q) continue; // don't know how to deal with this case
+				dist += (int32_t)kh_val(h, k);
+				k = kh_put(64, t, kh_val(h, k)>>32, &is_absent);
+				if (is_absent) kh_val(t, k) = 1ULL<<40 | dist;
+				else kh_val(t, k) += 1ULL<<40 | dist;
+			}
+			for (k = 0; k != kh_end(t); ++k) { // write p->dist[a] and p->nei[a]
+				if (!kh_exist(t, k) || kh_val(t, k)>>40 < 2) continue;
+				if (kh_val(t, k) >= p->dist[a][0])
+					p->dist[a][1] = p->dist[a][0], p->dist[a][0] = kh_val(t, k), p->nei[a] = kh_key(t, k);
+				else if (kh_val(t, k) >= p->dist[a][1]) p->dist[a][1] = kh_val(t, k);
+			}
+		}
+	}
+	kh_destroy(64, t);
+	kh_destroy(64, h);
+#if 1
+	for (i = 0; i < v->n; ++i) {
+		utig_t *p = &v->a[i];
+		for (a = 0; a < 2; ++a)
+			fprintf(stderr, "%d[%ld:%ld]\t%ld\t%d:%ld\t%d:%ld\n", i<<1|a, (long)p->k[0], (long)p->k[1], (long)p->nei[a],
+					(int)(p->dist[a][0]>>40), (long)(p->dist[a][0]<<24>>24), (int)(p->dist[a][1]>>40), (long)(p->dist[a][1]<<24>>24));
+	}
+#endif
+}
+
 void mag_scaf_core(const char *fn, double avg, double std, int min_supp)
 {
 	utig_v *v;
 	double rdist;
 	v = read_utig(fn, min_supp);
+	collect_nei(v, avg, std);
 	rdist = cal_rdist(v);
 	printf("%f\n", rdist);
 }
