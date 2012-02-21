@@ -307,7 +307,7 @@ static inline void end_seq(kstring_t *str, const utig_t *p, int is3, int is_2nd,
 	kputc(0, str);
 }
 
-static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, int64_t idd, kstring_t *str, kstring_t *tmp)
+static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, long idd, kstring_t *str, kstring_t *tmp)
 {
 	int j, max_len;
 	for (j = max_len = 0; j < p->reads.n; ++j) {
@@ -416,15 +416,15 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		str.l = rd.l = 0;
 		end_seq(&str, p, iddp&1, 0, max_dist); pl = str.l;
 		end_seq(&str, q, iddq&1, 1, max_dist);
-		max_len = add_seq(e, h, p, i? -1 : iddq, &str, &rd); // the first round, using reads from unitigs only
-		add_seq(e, h, q, i? -1 : iddp, &str, &rd); // the second round, using all unpaired reads
+		max_len = add_seq(e, h, p, i? -1L : (long)iddq, &str, &rd); // the first round, using reads from unitigs only
+		add_seq(e, h, q, i? -1L : (long)iddp, &str, &rd); // the second round, using all unpaired reads
 		t[0] = str.s; t[1] = str.s + pl;
 		ext = assemble(str.l, str.s, max_len, t);
 		if (ext.patched) {
 			ext.t = compute_t(h, v, iddp, ext.l, avg);
 			if (i == 0 && ext.t > 1e-6) {
 				p->ext[iddp&1] = q->ext[iddq&1] = ext;
-				break;
+				//break;
 			} else p->ext[iddp&1] = q->ext[iddq&1] = ext;
 		}
 	}
@@ -484,7 +484,7 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
 
 	old_verbose = fm_verbose;
-	fm_verbose = 1; // disable all messages and warnings
+	fm_verbose = 5; // disable all messages and warnings
 	t = cputime();
 	treal = realtime();
 	pthread_attr_init(&attr);
