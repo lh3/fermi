@@ -105,6 +105,18 @@ static utig_v *read_utig(const char *fn, int min_supp)
 	return u;
 }
 
+static void utig_destroy(utig_v *v)
+{
+	int i, a;
+	for (i = 0; i < v->n; ++i) {
+		utig_t *p = &v->a[i];
+		free(p->seq); free(p->reads.a);
+		for (a = 0; a < 2; ++a)
+			if (i<<1 < p->nei[a]) free(p->ext[a].s);
+	}
+	free(v->a); free(v);
+}
+
 static double cal_rdist(const utig_v *v)
 {
 	int j;
@@ -358,7 +370,7 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	mag_g_merge(g, 0);
 	mag_g_simplify_bubble(g, 25, max_len * 2);
 	mag_g_pop_simple(g, 10., 0.15, 1); // FIXME: always agressive?
-	for (j = max_len = 0; j < g->v.n; ++j)
+	for (j = max_len = 0, max_j = -1; j < g->v.n; ++j)
 		if (g->v.a[j].len > max_len)
 			max_len = g->v.a[j].len, max_j = j;
 	p = &g->v.a[max_j];
@@ -411,10 +423,10 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		ext = assemble(str.l, str.s, max_len, t);
 		if (ext.patched) {
 			ext.t = compute_t(h, v, iddp, ext.l, avg);
-			if (ext.t > 1e-6) {
+			if (i == 0 && ext.t > 1e-6) {
 				p->ext[iddp&1] = q->ext[iddq&1] = ext;
 				break;
-			}
+			} else p->ext[iddp&1] = q->ext[iddq&1] = ext;
 		}
 	}
 
@@ -440,10 +452,9 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	for (i = 0; i < v->n; ++i) {
 		patch_gap(e, h, v, i<<1|0, max_dist, avg);
 		patch_gap(e, h, v, i<<1|1, max_dist, avg);
-	}
-	for (i = 0; i < v->n; ++i) {
 		debug_utig(v, i<<1|0, rdist);
 		debug_utig(v, i<<1|1, rdist);
 	}
 	kh_destroy(64, h);
+	utig_destroy(v);
 }
