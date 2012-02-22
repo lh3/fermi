@@ -28,7 +28,7 @@ typedef struct {
 } fmecopt_t;
 
 typedef struct {
-	int pr_links, min_supp;
+	int pr_links, pre_excl, min_supp;
 	double avg, std, a_thres, p_thres;
 } fmscafopt_t;
 

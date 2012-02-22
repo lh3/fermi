@@ -28,7 +28,8 @@ typedef struct {
 	uint64_t k[2];
 	ext_t ext[2];
 	double A;
-	int len, nsr, maxo, deleted;
+	int len, nsr, maxo;
+	uint16_t deleted, excluded;
 	uint8_t *seq;
 	ku128_v reads;
 	uint64_t dist[2], dist2[2];
@@ -118,12 +119,12 @@ static void utig_destroy(utig_v *v)
 	free(v->a); free(v);
 }
 
-static double cal_rdist(const utig_v *v)
+static double cal_rdist(utig_v *v)
 {
-	int j;
+	int j, n_ovlp, avg_ovlp;
 	uint64_t *srt;
 	double rdist = -1.;
-	int64_t i, sum_n_all, sum_n, sum_l;
+	int64_t i, sum_n_all, sum_n, sum_l, sum_ovlp;
 
 	srt = calloc(v->n, 8);
 	for (i = 0, sum_n_all = 0; i < v->n; ++i) {
@@ -143,6 +144,15 @@ static double cal_rdist(const utig_v *v)
 		rdist = (double)sum_l / sum_n;
 	}
 	free(srt);
+
+	sum_ovlp = 0; n_ovlp = 0;
+	for (i = 0; i < v->n; ++i)
+		if (v->a[i].maxo) ++n_ovlp, sum_ovlp += v->a[i].maxo;
+	avg_ovlp = (int)((double)sum_ovlp / n_ovlp + .499);
+	for (i = 0; i < v->n; ++i) {
+		utig_t *p = &v->a[i];
+		p->A = (p->len - (p->maxo? p->maxo : avg_ovlp)) / rdist - p->nsr * M_LN2;
+	}
 	return rdist;
 }
 
@@ -156,6 +166,7 @@ static hash64_t *collect_nei(utig_v *v, int max_dist, int min_supp)
 	for (i = 0; i < v->n; ++i) {
 		utig_t *p = &v->a[i];
 		int dist;
+		if (p->excluded) continue;
 		for (j = 0; j < p->reads.n; ++j) {
 			uint64_t idd = i<<1 | ((p->reads.a[j].x&1)^1);
 			if (p->reads.a[j].x&1) dist = p->reads.a[j].y<<32>>32;
@@ -541,8 +552,7 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 	utig_v *v;
 	double rdist, t, treal;
 	hash64_t *h;
-	uint64_t sum_ovlp = 0, n_ovlp = 0;
-	int i, max_dist, old_verbose, avg_ovlp;
+	int i, max_dist, old_verbose;
 
 	max_dist = (int)(opt->avg + 2. * opt->std + .499);
 	t = cputime();
@@ -551,16 +561,12 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 		fprintf(stderr, "[M::%s] read unitigs in %.3f sec\n", __func__, cputime() - t);
 	t = cputime();
 	rdist = cal_rdist(v);
-	for (i = 0; i < v->n; ++i)
-		if (v->a[i].maxo) ++n_ovlp, sum_ovlp += v->a[i].maxo;
-	avg_ovlp = (int)((double)sum_ovlp / n_ovlp + .499);
-	for (i = 0; i < v->n; ++i) {
-		utig_t *p = &v->a[i];
-		p->A = (p->len - (p->maxo? p->maxo : avg_ovlp)) / rdist - p->nsr * M_LN2;
-	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] rdist = %.3f, computed in %.3f sec\n", __func__, rdist, cputime() - t);
 	t = cputime();
+	if (opt->pre_excl)
+		for (i = 0; i < v->n; ++i)
+			if (v->a[i].A < opt->a_thres) v->a[i].excluded = 1;
 	h = collect_nei(v, max_dist, opt->min_supp);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
