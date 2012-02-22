@@ -405,7 +405,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	uint32_t iddq;
 	utig_t *p, *q;
 	kstring_t str, rd;
-	int max_len, pl, i;
+	int max_len, pl, i, dist1, dist2;
 	char *t[2];
 	ext_t ext;
 
@@ -415,6 +415,11 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	if (iddp >= iddq) return; // avoid doing local assembly twice
 	q = &v->a[iddq>>1];
 	if (q->nei[iddq&1] != iddp) return; // not reciprocal best
+
+	dist1 = p->dist[iddp&1]>>40; dist2 = 0;
+	if (p->nei2[iddp&1] >= 0) dist2 = p->dist2[iddp&1]>>40;
+	if (q->nei2[iddq&1] >= 0) dist2 = dist2 > q->dist2[iddq&1]>>40? dist2 : q->dist2[iddq&1]>>40;
+	if (dist2 >= min_supp || (double)dist2 / dist1 >= 1./min_supp) return;
 
 	str.s = rd.s = 0; str.m = rd.m = 0;
 	for (i = 0; i < 2; ++i) {
