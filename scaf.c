@@ -332,14 +332,24 @@ static void print_seq(char *s)
 	putchar('\n');
 }
 
-static double compute_t(const hash64_t *h, const utig_v *v, uint32_t idd, int l, double mu)
+static double correct_mean(double l, double mu, double sigma)
+{
+	double x, y, z;
+	x = (l - mu) / sigma;
+	y = M_SQRT2 / M_2_SQRTPI * erfc(x * M_SQRT1_2);
+	z = exp(-.5 * x * x);
+	return mu + sigma * y / (z - x * y);
+}
+
+static double compute_t(const hash64_t *h, const utig_v *v, uint32_t idd, int l, double mu, double sigma, int max_len)
 {
 	utig_t *p = &v->a[idd>>1];
 	int j, n, dist;
 	int64_t sum, sum2;
-	double t, avg;
+	double t, avg, mu_;
 	if (p->nei[idd&1] < 0) return 0.0;
 	sum = sum2 = 0; n = 0;
+	mu_ = correct_mean(2 * max_len + l, mu, sigma);
 	for (j = 0; j < p->reads.n; ++j) {
 		khint_t k = kh_get(64, h, p->reads.a[j].x>>1);
 		if (k == kh_end(h)) continue;
@@ -353,7 +363,7 @@ static double compute_t(const hash64_t *h, const utig_v *v, uint32_t idd, int l,
 	assert(n >= 2);
 	avg = (double)sum / n;
 	t = sqrt(((double)sum2 / n - avg * avg) / (n - 1)); // std.dev. / sqrt(n)
-	t = (avg - mu) / t; // student's t
+	t = (avg - mu_) / t; // student's t
 	--n; // n is now the degree of freedom
 	if (n > 50) n = 50; // avoid a too stringent P-value
 	return kf_betai(.5*n, .5, n/(n+t*t));
@@ -398,7 +408,7 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	return e;
 }
 
-static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int max_dist, double avg)
+static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int max_dist, double avg, double std)
 {
 	uint32_t iddq;
 	utig_t *p, *q;
@@ -424,7 +434,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		t[0] = str.s; t[1] = str.s + pl;
 		ext = assemble(str.l, str.s, max_len, t);
 		if (ext.patched) {
-			ext.t = compute_t(h, v, iddp, ext.l, avg);
+			ext.t = compute_t(h, v, iddp, ext.l, avg, std, max_len);
 			if (i == 0 && ext.t > 1e-5) {
 				p->ext[iddp&1] = q->ext[iddq&1] = ext;
 				break;
@@ -441,7 +451,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 
 typedef struct {
 	int start, step, max_dist;
-	double avg;
+	double avg, std;
 	const rld_t *e;
 	const hash64_t *h;
 	utig_v *v;
@@ -452,8 +462,8 @@ static void *worker(void *data)
 	worker_t *w = (worker_t*)data;
 	int64_t i;
 	for (i = w->start; i < w->v->n; i += w->step) {
-		patch_gap(w->e, w->h, w->v, i<<1|0, w->max_dist, w->avg);
-		patch_gap(w->e, w->h, w->v, i<<1|1, w->max_dist, w->avg);
+		patch_gap(w->e, w->h, w->v, i<<1|0, w->max_dist, w->avg, w->std);
+		patch_gap(w->e, w->h, w->v, i<<1|1, w->max_dist, w->avg, w->std);
 	}
 	return 0;
 }
@@ -498,7 +508,7 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
 	for (i = 0; i < n_threads; ++i) {
 		w[i].start = i, w[i].step = n_threads;
-		w[i].max_dist = max_dist, w[i].avg = avg;
+		w[i].max_dist = max_dist, w[i].avg = avg, w[i].std = std;
 		w[i].e = e, w[i].h = h;
 		w[i].v = v;
 	}
