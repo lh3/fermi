@@ -44,6 +44,7 @@ static utig_v *read_utig(const char *fn, int min_supp)
 	gzFile fp;
 	kseq_t *kseq;
 	utig_v *u;
+	uint64_t sum_ovlp;
 
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	kseq = kseq_init(fp);
@@ -59,7 +60,6 @@ static utig_v *read_utig(const char *fn, int min_supp)
 		q += 5; // skip "UR:Z:"; jump to the first unmapped read (UR)
 		qq = kseq->comment.s;
 		nsr = strtol(qq, &qq, 10);
-		if (nsr < min_supp) continue; // too few reads
 
 		kv_pushp(utig_t, *u, &p);
 		memset(p, 0, sizeof(utig_t));
@@ -478,12 +478,15 @@ static void make_scaftigs(utig_v *v, double a_thres, double p_thres)
 	for (i = 0; i < v->n; ++i) {
 		find_path(v, i, &path, a_thres, p_thres);
 		if (path.n) {
+			int nsr = 0;
+			utig_t *beg, *end;
 			ctg.l = 0;
 			assert(path.n % 2 == 0);
 			for (j = 0; j < path.n; j += 2) {
 				uint32_t idd = path.a[j], ndir = (idd&1)^1;
-				utig_t *p = &v->a[idd>>1];
 				int ori_l = ctg.l;
+				utig_t *p = &v->a[idd>>1];
+				nsr += p->nsr;
 				kputsn((char*)p->seq, p->len, &ctg);
 				if (idd&1) seq_revcomp6(ctg.l - ori_l, (uint8_t*)ctg.s + ori_l);
 				if (j == path.n - 2) break;
@@ -497,7 +500,8 @@ static void make_scaftigs(utig_v *v, double a_thres, double p_thres)
 			}
 			for (j = 0; j < ctg.l; ++j)
 				ctg.s[j] = "$ACGTN"[(int)ctg.s[j]];
-			printf(">%d\n", i);
+			beg = &v->a[path.a[0]>>1]; end = &v->a[path.a[path.n-1]>>1];
+			printf(">%ld:%ld\t%ld\t%d\t%.2f\n", (long)beg->k[path.a[0]&1], (long)end->k[path.a[path.n-1]&1], path.n/2, nsr, path.n > 2? 100.0 : beg->A);
 			puts(ctg.s);
 		}
 	}
@@ -538,7 +542,8 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 	utig_v *v;
 	double rdist, t, treal;
 	hash64_t *h;
-	int i, max_dist, old_verbose;
+	uint64_t sum_ovlp = 0, n_ovlp = 0;
+	int i, max_dist, old_verbose, avg_ovlp;
 
 	max_dist = (int)(opt->avg + 2. * opt->std + .499);
 	t = cputime();
@@ -547,9 +552,12 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 		fprintf(stderr, "[M::%s] read unitigs in %.3f sec\n", __func__, cputime() - t);
 	t = cputime();
 	rdist = cal_rdist(v);
+	for (i = 0; i < v->n; ++i)
+		if (v->a[i].maxo) ++n_ovlp, sum_ovlp += v->a[i].maxo;
+	avg_ovlp = (int)((double)sum_ovlp / n_ovlp + .499);
 	for (i = 0; i < v->n; ++i) {
 		utig_t *p = &v->a[i];
-		p->A = (p->len - p->maxo) / rdist - p->nsr * M_LN2;
+		p->A = (p->len - (p->maxo? p->maxo : avg_ovlp)) / rdist - p->nsr * M_LN2;
 	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] rdist = %.3f, computed in %.3f sec\n", __func__, rdist, cputime() - t);
