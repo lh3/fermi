@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-r608"
+#define FERMI_VERSION "0.0-r625-scaf"
 
 #define FM_MASK30 0x3fffffff
 
@@ -26,6 +26,11 @@ typedef struct {
 	int w, min_occ, keep_bad, is_paired;
 	float max_corr;
 } fmecopt_t;
+
+typedef struct {
+	int pr_links, min_supp;
+	double avg, std, a_thres, p_thres;
+} fmscafopt_t;
 
 #ifndef KINT_DEF
 #define KINT_DEF

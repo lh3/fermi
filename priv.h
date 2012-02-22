@@ -29,11 +29,10 @@ int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads, const uint
 int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads);
 int fm6_pairext(const rld_t *e, const char *fng, int n_threads, double avg, double std, int aggressive);
 int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int max_dist, int n_threads);
+void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n_threads);
 
 void fm_reverse_fmivec(fmintv_v *p);
 
 uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, int *contained);
-
-void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int min_supp, int n_threads);
 
 #endif

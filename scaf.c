@@ -201,31 +201,6 @@ static hash64_t *collect_nei(utig_v *v, int max_dist, int min_supp)
 		}
 	}
 	kh_destroy(64, t);
-/*
-	for (i = 0; i < v->n; ++i) { // test reciprocal best
-		utig_t *q, *p = &v->a[i];
-		for (a = 0; a < 2; ++a) {
-			if (p->nei[a] < 0) continue;
-			q = &v->a[p->nei[a]>>1];
-			if (q->nei[p->nei[a]&1] != (i<<1|a))
-				p->dist[a] = 0; // we should not set p->nei[a]=-1 at this time, as it may interfere with others
-		}
-	}
-	for (i = 0; i < v->n; ++i) {
-		utig_t *p = &v->a[i];
-		if (p->dist[0] == 0) p->nei[0] = -2;
-		if (p->dist[1] == 0) p->nei[1] = -2;
-	}
-	for (i = 0; i < v->n; ++i) { // update nei2[] as nei[] is now changed
-		utig_t *p = &v->a[i];
-		for (a = 0; a < 2; ++a) {
-			if (p->nei[a] >= 0 && p->nei2[a] >= 0) {
-				utig_t *q = &v->a[p->nei2[a]>>1];
-				if (q->nei[p->nei2[a]&1] < 0) p->nei2[a] = -3;
-			}
-		}
-	}
-*/
 	return h;
 }
 
@@ -333,12 +308,6 @@ static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, kstring_t
 	return max_len;
 }
 
-static void print_seq(char *s)
-{
-	for (; *s; ++s) putchar("$ACGTN"[(int)*s]);
-	putchar('\n');
-}
-
 static double correct_mean(double l, double mu, double sigma)
 {
 	double x, y, z;
@@ -399,7 +368,7 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 			max_len = g->v.a[j].len, max_j = j;
 	if (max_j >= 0) { // sometimes the whole graph can be empty
 		p = &g->v.a[max_j];
-		// print_seq(t[0]); print_seq(t[1]); mag_g_print(g);
+		// mag_g_print(g);
 		q = strstr(p->seq, t[0]);
 		if (q == 0) {
 			seq_revcomp6(p->len, (uint8_t*)p->seq);
@@ -462,23 +431,23 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
  * Join unitigs *
  ****************/
 
-static void find_path1(utig_v *v, ku64_v *path)
+static void find_path1(utig_v *v, ku64_v *path, double a_thres, double p_thres)
 {
 	if (path->n == 0) return;
 	for (;;) {
 		uint32_t iddq, idd = path->a[path->n - 1]; // the last idd
 		utig_t *q, *p = &v->a[idd>>1];
-		if (p->nei[idd&1] < 0 || p->ext[idd&1].patched == 0) break;
+		if (p->nei[idd&1] < 0 || p->ext[idd&1].patched == 0 || p->ext[idd&1].t < p_thres) break;
 		iddq = p->nei[idd&1];
 		q = &v->a[iddq>>1];
-		if (q->deleted || q->A < A_THRES) break;
+		if (q->deleted || q->A < a_thres) break;
 		kv_push(uint64_t, *path, iddq);
 		kv_push(uint64_t, *path, iddq^1);
 		q->deleted = 1;
 	}
 }
 
-static void find_path(utig_v *v, uint32_t id, ku64_v *path)
+static void find_path(utig_v *v, uint32_t id, ku64_v *path, double a_thres, double p_thres)
 {
 	utig_t *p = &v->a[id];
 	path->n = 0;
@@ -486,20 +455,20 @@ static void find_path(utig_v *v, uint32_t id, ku64_v *path)
 	kv_push(uint64_t, *path, id<<1|0);
 	kv_push(uint64_t, *path, id<<1|1);
 	p->deleted = 1;
-	if (p->A >= A_THRES) {
+	if (p->A >= a_thres) {
 		int i;
-		find_path1(v, path);
+		find_path1(v, path, a_thres, p_thres);
 		for (i = 0; i < path->n>>1; ++i) {
 			uint64_t tmp;
 			tmp = path->a[i];
 			path->a[i] = path->a[path->n - 1 - i];
 			path->a[path->n - 1 - i] = tmp;
 		}
-		find_path1(v, path);
+		find_path1(v, path, a_thres, p_thres);
 	}
 }
 
-static void make_scaftigs(utig_v *v)
+static void make_scaftigs(utig_v *v, double a_thres, double p_thres)
 {
 	int i, j;
 	ku64_v path;
@@ -507,7 +476,7 @@ static void make_scaftigs(utig_v *v)
 	kv_init(path);
 	ctg.l = ctg.m = 0; ctg.s = 0;
 	for (i = 0; i < v->n; ++i) {
-		find_path(v, i, &path);
+		find_path(v, i, &path, a_thres, p_thres);
 		if (path.n) {
 			ctg.l = 0;
 			assert(path.n % 2 == 0);
@@ -540,9 +509,9 @@ static void make_scaftigs(utig_v *v)
 
 typedef struct {
 	int start, step, max_dist;
-	double avg, std;
 	const rld_t *e;
 	const hash64_t *h;
+	const fmscafopt_t *opt;
 	utig_v *v;
 } worker_t;
 
@@ -551,8 +520,8 @@ static void *worker(void *data)
 	worker_t *w = (worker_t*)data;
 	int64_t i;
 	for (i = w->start; i < w->v->n; i += w->step) {
-		patch_gap(w->e, w->h, w->v, i<<1|0, w->max_dist, w->avg, w->std);
-		patch_gap(w->e, w->h, w->v, i<<1|1, w->max_dist, w->avg, w->std);
+		patch_gap(w->e, w->h, w->v, i<<1|0, w->max_dist, w->opt->avg, w->opt->std);
+		patch_gap(w->e, w->h, w->v, i<<1|1, w->max_dist, w->opt->avg, w->opt->std);
 	}
 	return 0;
 }
@@ -561,7 +530,7 @@ static void *worker(void *data)
  * Portal *
  **********/
 
-void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int min_supp, int n_threads)
+void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n_threads)
 {
 	pthread_t *tid;
 	pthread_attr_t attr;
@@ -571,9 +540,9 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	hash64_t *h;
 	int i, max_dist, old_verbose;
 
-	max_dist = (int)(avg + 2. * std + .499);
+	max_dist = (int)(opt->avg + 2. * opt->std + .499);
 	t = cputime();
-	v = read_utig(fn, min_supp);
+	v = read_utig(fn, opt->min_supp);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] read unitigs in %.3f sec\n", __func__, cputime() - t);
 	t = cputime();
@@ -585,12 +554,11 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] rdist = %.3f, computed in %.3f sec\n", __func__, rdist, cputime() - t);
 	t = cputime();
-	h = collect_nei(v, max_dist, min_supp);
+	h = collect_nei(v, max_dist, opt->min_supp);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
 
-//	patch_gap(e, h, v, 296, max_dist, avg, std); debug_utig(v, 296, rdist); return;
-
+//	patch_gap(e, h, v, 296, max_dist, opt->avg, opt->std); debug_utig(v, 296); return;
 	old_verbose = fm_verbose;
 	fm_verbose = 1; // disable all messages and warnings
 	t = cputime();
@@ -601,7 +569,7 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
 	for (i = 0; i < n_threads; ++i) {
 		w[i].start = i, w[i].step = n_threads;
-		w[i].max_dist = max_dist, w[i].avg = avg, w[i].std = std;
+		w[i].max_dist = max_dist, w[i].opt = opt;
 		w[i].e = e, w[i].h = h;
 		w[i].v = v;
 	}
@@ -612,11 +580,12 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] patched gaps in %.3f sec (%.3f wall-clock sec)\n", __func__, cputime() - t, realtime() - treal);
 
-	for (i = 0; i < v->n; ++i) {
-		debug_utig(v, i<<1|0);
-		debug_utig(v, i<<1|1);
-	}
-	make_scaftigs(v);
+	if (opt->pr_links)
+		for (i = 0; i < v->n; ++i) {
+			debug_utig(v, i<<1|0);
+			debug_utig(v, i<<1|1);
+		}
+	make_scaftigs(v, opt->a_thres, opt->p_thres);
 	kh_destroy(64, h);
 	utig_destroy(v);
 }
