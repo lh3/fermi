@@ -307,18 +307,21 @@ static inline void end_seq(kstring_t *str, const utig_t *p, int is3, int is_2nd,
 	kputc(0, str);
 }
 
-static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, long idd, kstring_t *str, kstring_t *tmp)
+static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, kstring_t *str, kstring_t *tmp, int64_t idd)
 {
 	int j, max_len;
 	for (j = max_len = 0; j < p->reads.n; ++j) {
-		khint_t k = kh_get(64, h, p->reads.a[j].x>>1^1);
-		if (k != kh_end(h) && (idd < 0 || kh_val(h, k)>>32 == idd)) {
-			assert(p->reads.a[j].x < e->mcnt[1]);
-			fm_retrieve(e, p->reads.a[j].x, tmp);
-			if (tmp->l > max_len) max_len = tmp->l;
-			seq_reverse(tmp->l, (uint8_t*)tmp->s);
-			kputsn(tmp->s, tmp->l + 1, str);
+		khint_t k = kh_get(64, h, p->reads.a[j].x>>1);
+		if (k == kh_end(h)) continue;
+		if (idd >= 0) {
+			k = kh_get(64, h, p->reads.a[j].x>>1^1);
+			if (k == kh_end(h) || kh_val(h, k)>>32 != idd) continue;
 		}
+		assert((p->reads.a[j].x^3) < e->mcnt[1]);
+		fm_retrieve(e, p->reads.a[j].x^3, tmp);
+		if (tmp->l > max_len) max_len = tmp->l;
+		seq_reverse(tmp->l, (uint8_t*)tmp->s);
+		kputsn(tmp->s, tmp->l + 1, str);
 	}
 	return max_len;
 }
@@ -416,19 +419,19 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		str.l = rd.l = 0;
 		end_seq(&str, p, iddp&1, 0, max_dist); pl = str.l;
 		end_seq(&str, q, iddq&1, 1, max_dist);
-		max_len = add_seq(e, h, p, i? -1L : (long)iddq, &str, &rd); // the first round, using reads from unitigs only
-		add_seq(e, h, q, i? -1L : (long)iddp, &str, &rd); // the second round, using all unpaired reads
+		max_len = add_seq(e, h, p, &str, &rd, i? -1L : (int64_t)iddq);
+		add_seq(e, h, q, &str, &rd, i? -1L : (int64_t)iddp);
 		t[0] = str.s; t[1] = str.s + pl;
 		ext = assemble(str.l, str.s, max_len, t);
 		if (ext.patched) {
 			ext.t = compute_t(h, v, iddp, ext.l, avg);
-			if (i == 0 && ext.t > 1e-6) {
+			if (i == 0 && ext.t > 1e-5) {
 				p->ext[iddp&1] = q->ext[iddq&1] = ext;
-				//break;
-			} else p->ext[iddp&1] = q->ext[iddq&1] = ext;
+				break;
+			}
+			p->ext[iddp&1] = q->ext[iddq&1] = ext;
 		}
 	}
-
 	free(str.s); free(rd.s);
 }
 
@@ -483,8 +486,10 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
 
+//	patch_gap(e, h, v, 296, max_dist, avg); debug_utig(v, 296, rdist); return;
+
 	old_verbose = fm_verbose;
-	fm_verbose = 5; // disable all messages and warnings
+	fm_verbose = 1; // disable all messages and warnings
 	t = cputime();
 	treal = realtime();
 	pthread_attr_init(&attr);
@@ -504,7 +509,6 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] patched gaps in %.3f sec (%.3f wall-clock sec)\n", __func__, cputime() - t, realtime() - treal);
 
-//	patch_gap(e, h, v, 64, max_dist); debug_utig(v, 64, rdist); return;
 	for (i = 0; i < v->n; ++i) {
 		debug_utig(v, i<<1|0, rdist);
 		debug_utig(v, i<<1|1, rdist);
