@@ -63,7 +63,7 @@ static utig_v *read_utig(const char *fn, int min_supp)
 
 		kv_pushp(utig_t, *u, &p);
 		memset(p, 0, sizeof(utig_t));
-		p->nei[0] = p->nei[1] = -1;
+		p->nei[0] = p->nei[1] = p->nei2[0] = p->nei2[1] = -1;
 		sscanf(kseq->name.s, "%ld:%ld", &k[0], &k[1]);
 		p->nsr = nsr;
 		p->k[0] = k[0]; p->k[1] = k[1];
@@ -201,7 +201,7 @@ static hash64_t *collect_nei(utig_v *v, int max_dist, int min_supp)
 		}
 	}
 	kh_destroy(64, t);
-
+/*
 	for (i = 0; i < v->n; ++i) { // test reciprocal best
 		utig_t *q, *p = &v->a[i];
 		for (a = 0; a < 2; ++a) {
@@ -225,22 +225,28 @@ static hash64_t *collect_nei(utig_v *v, int max_dist, int min_supp)
 			}
 		}
 	}
+*/
 	return h;
 }
 
-#if 1
-static void debug_utig(utig_v *v, uint32_t idd, double rdist)
+static void debug_utig(utig_v *v, uint32_t idd)
 {
-	int a = idd&1;
-	utig_t *p = &v->a[idd>>1];
+	int b, a = idd&1;
+	utig_t *q, *p = &v->a[idd>>1];
+	fprintf(stderr, "LK\t%ld:%ld\t%d\t%d\t%.2f", (long)p->k[a], (long)p->k[a^1], p->len, p->nsr, p->A);
 	if (p->nei[a] >= 0) {
-		fprintf(stderr, "%d[%ld:%ld]\t%d:%d:%f\t%ld\t%d:%ld\t%ld\t%d:%ld\t%d\t%d\t%g\n", idd, (long)p->k[0], (long)p->k[1], p->len, p->nsr, (p->len - p->maxo)/rdist - M_LN2 * p->nsr,
-				(long)p->nei[a], (int)(p->dist[a]>>40), (long)((double)(p->dist[a]<<24>>24)/(p->dist[a]>>40) + .499),
-				(long)p->nei2[a], (int)(p->dist2[a]>>40), (long)((double)(p->dist2[a]<<24>>24)/(p->dist2[a]>>40) + .499),
-				p->ext[a].patched, p->ext[a].l, p->ext[a].t);
+		q = &v->a[p->nei[a]>>1];
+		b = p->nei[a]&1;
+		fprintf(stderr, "\t%ld:%ld\t%d:%d", (long)q->k[b], (long)q->k[b^1], (int)(p->dist[a]>>40), (int)((double)(p->dist[a]<<24>>24)/(p->dist[a]>>40) + .499));
+		fprintf(stderr, "\t%d:%d:%.1e", p->ext[a].patched, p->ext[a].l, p->ext[a].t);
 	}
+	if (p->nei2[a] >= 0) {
+		q = &v->a[p->nei2[a]>>1];
+		b = p->nei2[a]&1;
+		fprintf(stderr, "\t%ld:%ld\t%d:%d", (long)q->k[b], (long)q->k[b^1], (int)(p->dist2[a]>>40), (int)((double)(p->dist2[a]<<24>>24)/(p->dist2[a]>>40) + .499));
+	}
+	fputc('\n', stderr);
 }
-#endif
 
 /***************************************
  * Gamma and incomplete Beta functions *
@@ -607,8 +613,8 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 		fprintf(stderr, "[M::%s] patched gaps in %.3f sec (%.3f wall-clock sec)\n", __func__, cputime() - t, realtime() - treal);
 
 	for (i = 0; i < v->n; ++i) {
-		debug_utig(v, i<<1|0, rdist);
-		debug_utig(v, i<<1|1, rdist);
+		debug_utig(v, i<<1|0);
+		debug_utig(v, i<<1|1);
 	}
 	make_scaftigs(v);
 	kh_destroy(64, h);
