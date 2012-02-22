@@ -307,20 +307,20 @@ static inline void end_seq(kstring_t *str, const utig_t *p, int is3, int is_2nd,
 	kputc(0, str);
 }
 
-static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, kstring_t *str, kstring_t *tmp, int64_t idd)
+static int add_seq(const rld_t *e, const hash64_t *h, const utig_t *p, kstring_t *str, kstring_t *tmp, int64_t idd_self, int64_t idd_mate)
 {
 	int j, max_len;
 	for (j = max_len = 0; j < p->reads.n; ++j) {
 		khint_t k = kh_get(64, h, p->reads.a[j].x>>1);
-		if (k == kh_end(h)) continue;
-		if (idd >= 0) {
+		if (k == kh_end(h) || kh_val(h, k)>>32 != idd_self) continue; // make sure: 1) not duplicated; 2) in the right direction; 3) close to the end
+		if (idd_mate >= 0) {
 			k = kh_get(64, h, p->reads.a[j].x>>1^1);
-			if (k == kh_end(h) || kh_val(h, k)>>32 != idd) continue;
+			if (k == kh_end(h) || kh_val(h, k)>>32 != idd_mate) continue;
 		}
 		assert((p->reads.a[j].x^3) < e->mcnt[1]);
-		fm_retrieve(e, p->reads.a[j].x^3, tmp);
+		fm_retrieve(e, p->reads.a[j].x^3, tmp); // retrieve the mate
 		if (tmp->l > max_len) max_len = tmp->l;
-		seq_reverse(tmp->l, (uint8_t*)tmp->s);
+		seq_reverse(tmp->l, (uint8_t*)tmp->s); // sequence returned by fm_retrieve() are reversed (but not complemeted)
 		kputsn(tmp->s, tmp->l + 1, str);
 	}
 	return max_len;
@@ -379,28 +379,34 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 
 	memset(&e, 0, sizeof(ext_t));
 	g = fm6_api_unitig(max_len/3. < 17? max_len/3. : 17, l, s);
-	mag_g_rm_vext(g, max_len + 1, 100);
+	mag_g_merge(g, 1); // FIXME: this to remove multi-edges, which is likely to introduce small scale errors...
+	mag_g_rm_vext(g, max_len * 1.1, 2);
+	mag_g_rm_edge(g, 0, 0.8);
+	mag_g_merge(g, 1);
+	mag_g_rm_vext(g, max_len * 1.1, 100);
 	mag_g_merge(g, 0);
 	mag_g_simplify_bubble(g, 25, max_len * 2);
 	mag_g_pop_simple(g, 10., 0.15, 1); // FIXME: always agressive?
 	for (j = max_len = 0, max_j = -1; j < g->v.n; ++j)
 		if (g->v.a[j].len > max_len)
 			max_len = g->v.a[j].len, max_j = j;
-	p = &g->v.a[max_j];
-//	print_seq(t[0]); print_seq(t[1]); mag_g_print(g);
-	q = strstr(p->seq, t[0]);
-	if (q == 0) {
-		seq_revcomp6(p->len, (uint8_t*)p->seq);
+	if (max_j >= 0) { // sometimes the whole graph can be empty
+		p = &g->v.a[max_j];
+		// print_seq(t[0]); print_seq(t[1]); mag_g_print(g);
 		q = strstr(p->seq, t[0]);
-	}
-	if (q) {
-		if ((r = strstr(p->seq, t[1])) > q) { // gap patched
-			int tmp = strlen(t[0]);
-			e.patched = 1;
-			e.l = r - (q + tmp);
-			if (e.l > 0) {
-				e.s = calloc(1, e.l + 1);
-				strncpy(e.s, p->seq + tmp, e.l);
+		if (q == 0) {
+			seq_revcomp6(p->len, (uint8_t*)p->seq);
+			q = strstr(p->seq, t[0]);
+		}
+		if (q) {
+			if ((r = strstr(p->seq, t[1])) > q) { // gap patched
+				int tmp = strlen(t[0]);
+				e.patched = 1;
+				e.l = r - (q + tmp);
+				if (e.l > 0) {
+					e.s = calloc(1, e.l + 1);
+					strncpy(e.s, p->seq + tmp, e.l);
+				}
 			}
 		}
 	}
@@ -429,8 +435,8 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		str.l = rd.l = 0;
 		end_seq(&str, p, iddp&1, 0, max_dist); pl = str.l;
 		end_seq(&str, q, iddq&1, 1, max_dist);
-		max_len = add_seq(e, h, p, &str, &rd, i? -1L : (int64_t)iddq);
-		add_seq(e, h, q, &str, &rd, i? -1L : (int64_t)iddp);
+		max_len = add_seq(e, h, p, &str, &rd, iddp, i? -1L : (int64_t)iddq);
+		add_seq(e, h, q, &str, &rd, iddq, i? -1L : (int64_t)iddp);
 		t[0] = str.s; t[1] = str.s + pl;
 		ext = assemble(str.l, str.s, max_len, t);
 		if (ext.patched) {

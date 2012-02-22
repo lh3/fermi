@@ -33,6 +33,7 @@ merge.o:fermi.h rld.h ksort.h
 cmd.o:fermi.h rld.h kseq.h
 mag.o:mag.h kseq.h
 bubble.o:mag.h ksw.h
+scaf.o:mag.h rld.h fermi.h kvec.h khash.h
 main.o:fermi.h
 
 clean:

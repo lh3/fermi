@@ -59,6 +59,7 @@ extern "C" {
 	void mag_g_build_hash(mag_t *g);
 	void mag_g_print(const mag_t *g);
 	void mag_g_rm_vext(mag_t *g, int min_len, int min_nsr);
+	void mag_g_rm_edge(mag_t *g, int min_ovlp, double min_ratio);
 	void mag_g_merge(mag_t *g, int rmdup);
 	void mag_g_simplify_bubble(mag_t *g, int max_vtx, int max_dist);
 	void mag_g_pop_simple(mag_t *g, float max_cov, float max_frac, int aggressive);
