@@ -156,7 +156,7 @@ static double cal_rdist(utig_v *v)
 	return rdist;
 }
 
-static hash64_t *collect_nei(utig_v *v, int max_dist, int min_supp)
+static hash64_t *collect_nei(utig_v *v, int max_dist)
 {
 	int i, j, a, is_absent;
 	hash64_t *h, *t;
@@ -203,7 +203,7 @@ static hash64_t *collect_nei(utig_v *v, int max_dist, int min_supp)
 				else kh_val(t, k) += 1ULL<<40 | dist;
 			}
 			for (k = 0; k != kh_end(t); ++k) { // write p->dist[a] and p->nei[a]
-				if (!kh_exist(t, k) || kh_val(t, k)>>40 < min_supp) continue;
+				if (!kh_exist(t, k) || kh_val(t, k)>>40 < 1) continue;
 				if (kh_val(t, k) >= p->dist[a])
 					p->dist2[a] = p->dist[a], p->nei2[a] = p->nei[a], p->dist[a] = kh_val(t, k), p->nei[a] = kh_key(t, k);
 				else if (kh_val(t, k) >= p->dist2[a]) p->dist2[a] = kh_val(t, k), p->nei2[a] = kh_key(t, k);
@@ -400,7 +400,7 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	return e;
 }
 
-static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int max_dist, double avg, double std)
+static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int min_supp, int max_dist, double avg, double std)
 {
 	uint32_t iddq;
 	utig_t *p, *q;
@@ -410,7 +410,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	ext_t ext;
 
 	p = &v->a[iddp>>1];
-	if (p->nei[iddp&1] < 0) return; // no neighbor
+	if (p->nei[iddp&1] < 0 || p->dist[iddp&1]>>40 < min_supp) return; // no neighbor
 	iddq = p->nei[iddp&1];
 	if (iddp >= iddq) return; // avoid doing local assembly twice
 	q = &v->a[iddq>>1];
@@ -534,8 +534,8 @@ static void *worker(void *data)
 	worker_t *w = (worker_t*)data;
 	int64_t i;
 	for (i = w->start; i < w->v->n; i += w->step) {
-		patch_gap(w->e, w->h, w->v, i<<1|0, w->max_dist, w->opt->avg, w->opt->std);
-		patch_gap(w->e, w->h, w->v, i<<1|1, w->max_dist, w->opt->avg, w->opt->std);
+		patch_gap(w->e, w->h, w->v, i<<1|0, w->opt->min_supp, w->max_dist, w->opt->avg, w->opt->std);
+		patch_gap(w->e, w->h, w->v, i<<1|1, w->opt->min_supp, w->max_dist, w->opt->avg, w->opt->std);
 	}
 	return 0;
 }
@@ -567,7 +567,7 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 	if (opt->pre_excl)
 		for (i = 0; i < v->n; ++i)
 			if (v->a[i].A < opt->a_thres) v->a[i].excluded = 1;
-	h = collect_nei(v, max_dist, opt->min_supp);
+	h = collect_nei(v, max_dist);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
 
