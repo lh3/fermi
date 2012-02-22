@@ -44,7 +44,6 @@ static utig_v *read_utig(const char *fn, int min_supp)
 	gzFile fp;
 	kseq_t *kseq;
 	utig_v *u;
-	uint64_t sum_ovlp;
 
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	kseq = kseq_init(fp);
