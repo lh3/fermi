@@ -582,7 +582,7 @@ int main_scaf(int argc, char *argv[])
 	rld_t *e;
 	fmscafopt_t opt;
 	opt.min_supp = 5; opt.pr_links = 0; opt.a_thres = 20.; opt.p_thres = 1e-20;
-	while ((c = getopt(argc, argv, "m:t:Pa:p")) >= 0) {
+	while ((c = getopt(argc, argv, "m:t:Pa:p:")) >= 0) {
 		switch (c) {
 			case 't': n_threads = atoi(optarg); break;
 			case 'm': opt.min_supp = atoi(optarg); break;
