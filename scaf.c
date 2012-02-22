@@ -27,7 +27,8 @@ typedef struct {
 typedef struct {
 	uint64_t k[2];
 	ext_t ext[2];
-	int len, nsr, maxo;
+	double A;
+	int len, nsr, maxo, deleted;
 	uint8_t *seq;
 	ku128_v reads;
 	uint64_t dist[2], dist2[2];
@@ -146,7 +147,7 @@ static double cal_rdist(const utig_v *v)
 	return rdist;
 }
 
-static hash64_t *collect_nei(utig_v *v, int max_dist)
+static hash64_t *collect_nei(utig_v *v, int max_dist, int min_supp)
 {
 	int i, j, a, is_absent;
 	hash64_t *h, *t;
@@ -192,7 +193,7 @@ static hash64_t *collect_nei(utig_v *v, int max_dist)
 				else kh_val(t, k) += 1ULL<<40 | dist;
 			}
 			for (k = 0; k != kh_end(t); ++k) { // write p->dist[a] and p->nei[a]
-				if (!kh_exist(t, k) || kh_val(t, k)>>40 < 2) continue;
+				if (!kh_exist(t, k) || kh_val(t, k)>>40 < min_supp) continue;
 				if (kh_val(t, k) >= p->dist[a])
 					p->dist2[a] = p->dist[a], p->nei2[a] = p->nei[a], p->dist[a] = kh_val(t, k), p->nei[a] = kh_key(t, k);
 				else if (kh_val(t, k) >= p->dist2[a]) p->dist2[a] = kh_val(t, k), p->nei2[a] = kh_key(t, k);
@@ -426,7 +427,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	p = &v->a[iddp>>1];
 	if (p->nei[iddp&1] < 0) return; // no neighbor
 	iddq = p->nei[iddp&1];
-	if (iddp > iddq) return; // avoid doing local assembly twice
+	if (iddp >= iddq) return; // avoid doing local assembly twice
 	q = &v->a[iddq>>1];
 	if (q->nei[iddq&1] != iddp) return; // not reciprocal best
 
@@ -449,6 +450,82 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		}
 	}
 	free(str.s); free(rd.s);
+}
+
+/****************
+ * Join unitigs *
+ ****************/
+
+static void find_path1(utig_v *v, ku64_v *path)
+{
+	if (path->n == 0) return;
+	for (;;) {
+		uint32_t iddq, idd = path->a[path->n - 1]; // the last idd
+		utig_t *q, *p = &v->a[idd>>1];
+		if (p->nei[idd&1] < 0 || p->ext[idd&1].patched == 0) break;
+		iddq = p->nei[idd&1];
+		q = &v->a[iddq>>1];
+		if (q->deleted || q->A < A_THRES) break;
+		kv_push(uint64_t, *path, iddq);
+		kv_push(uint64_t, *path, iddq^1);
+		q->deleted = 1;
+	}
+}
+
+static void find_path(utig_v *v, uint32_t id, ku64_v *path)
+{
+	utig_t *p = &v->a[id];
+	path->n = 0;
+	if (p->deleted) return; // already used in other paths
+	kv_push(uint64_t, *path, id<<1|0);
+	kv_push(uint64_t, *path, id<<1|1);
+	p->deleted = 1;
+	if (p->A >= A_THRES) {
+		int i;
+		find_path1(v, path);
+		for (i = 0; i < path->n>>1; ++i) {
+			uint64_t tmp;
+			tmp = path->a[i];
+			path->a[i] = path->a[path->n - 1 - i];
+			path->a[path->n - 1 - i] = tmp;
+		}
+		find_path1(v, path);
+	}
+}
+
+static void make_scaftigs(utig_v *v)
+{
+	int i, j;
+	ku64_v path;
+	kstring_t ctg;
+	kv_init(path);
+	ctg.l = ctg.m = 0; ctg.s = 0;
+	for (i = 0; i < v->n; ++i) {
+		find_path(v, i, &path);
+		if (path.n) {
+			ctg.l = 0;
+			assert(path.n % 2 == 0);
+			for (j = 0; j < path.n; j += 2) {
+				uint32_t idd = path.a[j], ndir = (idd&1)^1;
+				utig_t *p = &v->a[idd>>1];
+				int ori_l = ctg.l;
+				kputsn((char*)p->seq, p->len, &ctg);
+				if (idd&1) seq_revcomp6(ctg.l - ori_l, (uint8_t*)ctg.s + ori_l);
+				if (j == path.n - 2) break;
+				assert(p->ext[ndir].patched);
+				if (p->ext[ndir].l > 0) {
+					ori_l = ctg.l;
+					kputsn(p->ext[ndir].s, p->ext[ndir].l, &ctg);
+					if (path.a[j+2] < path.a[j])
+						seq_revcomp6(ctg.l - ori_l, (uint8_t*)ctg.s + ori_l);
+				} else ctg.l += p->ext[ndir].l;
+			}
+			for (j = 0; j < ctg.l; ++j)
+				ctg.s[j] = "$ACGTN"[(int)ctg.s[j]];
+			printf(">%d\n", i);
+			puts(ctg.s);
+		}
+	}
 }
 
 /*********************************
@@ -495,14 +572,18 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 		fprintf(stderr, "[M::%s] read unitigs in %.3f sec\n", __func__, cputime() - t);
 	t = cputime();
 	rdist = cal_rdist(v);
+	for (i = 0; i < v->n; ++i) {
+		utig_t *p = &v->a[i];
+		p->A = (p->len - p->maxo) / rdist - p->nsr * M_LN2;
+	}
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] rdist = %.3f, computed in %.3f sec\n", __func__, rdist, cputime() - t);
 	t = cputime();
-	h = collect_nei(v, max_dist);
+	h = collect_nei(v, max_dist, min_supp);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
 
-//	patch_gap(e, h, v, 296, max_dist, avg); debug_utig(v, 296, rdist); return;
+//	patch_gap(e, h, v, 296, max_dist, avg, std); debug_utig(v, 296, rdist); return;
 
 	old_verbose = fm_verbose;
 	fm_verbose = 1; // disable all messages and warnings
@@ -529,6 +610,7 @@ void mag_scaf_core(const rld_t *e, const char *fn, double avg, double std, int m
 		debug_utig(v, i<<1|0, rdist);
 		debug_utig(v, i<<1|1, rdist);
 	}
+	make_scaftigs(v);
 	kh_destroy(64, h);
 	utig_destroy(v);
 }
