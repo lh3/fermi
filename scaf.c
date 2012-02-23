@@ -569,9 +569,8 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] rdist = %.3f, computed in %.3f sec\n", __func__, rdist, cputime() - t);
 	t = cputime();
-	if (opt->pre_excl)
-		for (i = 0; i < v->n; ++i)
-			if (v->a[i].A < opt->a_thres) v->a[i].excluded = 1;
+	for (i = 0; i < v->n; ++i)
+		if (v->a[i].A < opt->a_thres) v->a[i].excluded = 1;
 	h = collect_nei(v, max_dist);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);

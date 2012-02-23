@@ -581,7 +581,7 @@ int main_scaf(int argc, char *argv[])
 	int c, n_threads = 1;
 	rld_t *e;
 	fmscafopt_t opt;
-	opt.min_supp = 5; opt.pre_excl = opt.pr_links = 0; opt.a_thres = 20.; opt.p_thres = 1e-20;
+	opt.min_supp = 5; opt.pr_links = 0; opt.a_thres = 20.; opt.p_thres = 1e-20;
 	while ((c = getopt(argc, argv, "m:t:Pea:p:")) >= 0) {
 		switch (c) {
 			case 't': n_threads = atoi(optarg); break;
@@ -589,11 +589,10 @@ int main_scaf(int argc, char *argv[])
 			case 'P': opt.pr_links = 1; break;
 			case 'a': opt.a_thres = atof(optarg); break;
 			case 'p': opt.p_thres = atof(optarg); break;
-			case 'e': opt.pre_excl = 1; break;
 		}
 	}
 	if (optind + 4 > argc) {
-		fprintf(stderr, "\nUsage:   fermi scaf <in.fmd> <in.remapped.mag> <avg> <std>\n");
+		fprintf(stderr, "\nUsage:   fermi scaf <in.fmd> <in.remapped.mag> <avg> <std>\n\n");
 		fprintf(stderr, "Options: -t INT     number of threads [1]\n");
 		fprintf(stderr, "         -m INT     minimum number of supporting reads [%d]\n", opt.min_supp);
 		fprintf(stderr, "         -P         print the links between unitigs\n\n");
