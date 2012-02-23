@@ -14,6 +14,7 @@ KSEQ_DECLARE(gzFile)
 KHASH_DECLARE(64, uint64_t, uint64_t)
 
 #define A_THRES 20.
+#define C_THRES 1.2
 #define MIN_ISIZE 50
 
 extern unsigned char seq_nt6_table[128];
@@ -29,7 +30,7 @@ typedef struct {
 	ext_t ext[2];
 	double A;
 	int len, nsr, maxo;
-	uint16_t deleted, excluded;
+	uint8_t deleted, excluded, force_patch[2];
 	uint8_t *seq;
 	ku128_v reads;
 	uint64_t dist[2], dist2[2];
@@ -39,7 +40,11 @@ typedef struct {
 typedef kvec_t(utig_t) utig_v;
 typedef khash_t(64) hash64_t;
 
-static utig_v *read_utig(const char *fn, int min_supp)
+/*************
+ * Basic I/O *
+ *************/
+
+static utig_v *read_utig(const char *fn)
 {
 	int i, j, nsr;
 	gzFile fp;
@@ -118,6 +123,29 @@ static void utig_destroy(utig_v *v)
 	}
 	free(v->a); free(v);
 }
+
+static void debug_utig(utig_v *v, uint32_t idd)
+{
+	int b, a = idd&1;
+	utig_t *q, *p = &v->a[idd>>1];
+	fprintf(stderr, "LK\t%ld:%ld\t%d\t%d\t%.2f", (long)p->k[a], (long)p->k[a^1], p->len, p->nsr, p->A);
+	if (p->nei[a] >= 0) {
+		q = &v->a[p->nei[a]>>1];
+		b = p->nei[a]&1;
+		fprintf(stderr, "\t%ld:%ld\t%d:%d", (long)q->k[b], (long)q->k[b^1], (int)(p->dist[a]>>40), (int)(p->dist[a]<<24>>24));
+		fprintf(stderr, "\t%d:%d:%.1e", p->ext[a].patched, p->ext[a].l, p->ext[a].t);
+	}
+	if (p->nei2[a] >= 0) {
+		q = &v->a[p->nei2[a]>>1];
+		b = p->nei2[a]&1;
+		fprintf(stderr, "\t%ld:%ld\t%d:%d", (long)q->k[b], (long)q->k[b^1], (int)(p->dist2[a]>>40), (int)(p->dist2[a]<<24>>24));
+	}
+	fputc('\n', stderr);
+}
+
+/*********************************
+ * Compute A and connect unitigs *
+ *********************************/
 
 static double cal_rdist(utig_v *v)
 {
@@ -211,26 +239,49 @@ static hash64_t *collect_nei(utig_v *v, int max_dist)
 		}
 	}
 	kh_destroy(64, t);
+
+	// change the lower 40-bit as the average distance, instead of sum;
+	for (i = 0; i < v->n; ++i) {
+		utig_t *p = &v->a[i];
+		for (a = 0; a < 2; ++a) {
+			if (p->dist[a]) p->dist[a] = p->dist[a]>>40<<40 | (int)((double)(p->dist[a]<<24>>24) / (p->dist[a]>>40) + .499);
+			if (p->dist2[a]) p->dist2[a] = p->dist2[a]>>40<<40 | (int)((double)(p->dist2[a]<<24>>24) / (p->dist2[a]>>40) + .499);
+		}
+	}
 	return h;
 }
 
-static void debug_utig(utig_v *v, uint32_t idd)
+static void resolve_contained(utig_v *v, uint32_t id, double avg, int pr_link) // FIXME: only works in simple cases; topological sorting is better
 {
-	int b, a = idd&1;
-	utig_t *q, *p = &v->a[idd>>1];
-	fprintf(stderr, "LK\t%ld:%ld\t%d\t%d\t%.2f", (long)p->k[a], (long)p->k[a^1], p->len, p->nsr, p->A);
-	if (p->nei[a] >= 0) {
-		q = &v->a[p->nei[a]>>1];
-		b = p->nei[a]&1;
-		fprintf(stderr, "\t%ld:%ld\t%d:%d", (long)q->k[b], (long)q->k[b^1], (int)(p->dist[a]>>40), (int)((double)(p->dist[a]<<24>>24)/(p->dist[a]>>40) + .499));
-		fprintf(stderr, "\t%d:%d:%.1e", p->ext[a].patched, p->ext[a].l, p->ext[a].t);
+	utig_t *p = &v->a[id], *q[2];
+	int d_long, d_short, a;
+	if (p->excluded || p->nei[0] < 0 || p->nei[1] < 0) return;
+	q[0] = &v->a[p->nei[0]>>1]; q[1] = &v->a[p->nei[1]>>1];
+	if (q[0]->nei2[p->nei[0]&1] < 0 || q[1]->nei2[p->nei[1]&1] < 0) return;
+	if (q[1]->nei[p->nei[1]&1] != p->nei[0] && q[1]->nei2[p->nei[1]&1] != p->nei[0]) return;
+	if (q[0]->nei[p->nei[0]&1] == p->nei[1]) {
+		d_long = (int)(avg - (q[0]->dist[p->nei[0]&1]<<24>>24) + .499);
+	} else if (q[0]->nei2[p->nei[0]&1] == p->nei[1]) {
+		d_long = (int)(avg - (q[0]->dist2[p->nei[0]&1]<<24>>24) + .499);
+	} else return;
+	d_short = (int)(2*avg - (p->dist[0]<<24>>24) - (p->dist[1]<<24>>24) + p->len + .499);
+	if (d_short > 0 && d_long > 0 && d_short / d_long < C_THRES && d_long / d_short < C_THRES) {
+		if (pr_link) {
+			fprintf(stderr, "CT\t%ld:%ld\t%d\t%d\n", (long)p->k[0], (long)p->k[1], d_long, d_short);
+			q[0]->force_patch[p->nei[0]&1] = q[1]->force_patch[p->nei[1]&1] = 1;
+			for (a = 0; a < 2; ++a) {
+				if (q[a]->nei[p->nei[a]&1] != p->nei[a^1]) {
+					q[a]->nei[p->nei[a]&1] = p->nei[a^1];
+					q[a]->dist[p->nei[a]&1] = q[a]->dist2[p->nei[a]&1];
+				}
+				q[a]->nei2[p->nei[a]&1] = -4;
+				q[a]->dist2[p->nei[a]&1] = 0;
+			}
+			p->excluded = 1;
+			p->nei[0] = p->nei[1] = p->nei2[0] = p->nei2[1] = -5;
+			p->dist[0] = p->dist[1] = p->dist2[0] = p->dist2[1] = 0;
+		}
 	}
-	if (p->nei2[a] >= 0) {
-		q = &v->a[p->nei2[a]>>1];
-		b = p->nei2[a]&1;
-		fprintf(stderr, "\t%ld:%ld\t%d:%d", (long)q->k[b], (long)q->k[b^1], (int)(p->dist2[a]>>40), (int)((double)(p->dist2[a]<<24>>24)/(p->dist2[a]>>40) + .499));
-	}
-	fputc('\n', stderr);
 }
 
 /***************************************
@@ -405,7 +456,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	uint32_t iddq;
 	utig_t *p, *q;
 	kstring_t str, rd;
-	int max_len, pl, i, dist1, dist2;
+	int max_len, pl, i;
 	char *t[2];
 	ext_t ext;
 
@@ -416,10 +467,13 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	q = &v->a[iddq>>1];
 	if (q->nei[iddq&1] != iddp) return; // not reciprocal best
 
-	dist1 = p->dist[iddp&1]>>40; dist2 = 0;
-	if (p->nei2[iddp&1] >= 0) dist2 = p->dist2[iddp&1]>>40;
-	if (q->nei2[iddq&1] >= 0) dist2 = dist2 > q->dist2[iddq&1]>>40? dist2 : q->dist2[iddq&1]>>40;
-	if (dist2 >= min_supp || (double)dist2 / dist1 >= 1./min_supp) return;
+	if (!p->force_patch[iddp&1]) {
+		int dist1, dist2;
+		dist1 = p->dist[iddp&1]>>40; dist2 = 0;
+		if (p->nei2[iddp&1] >= 0) dist2 = p->dist2[iddp&1]>>40;
+		if (q->nei2[iddq&1] >= 0) dist2 = dist2 > q->dist2[iddq&1]>>40? dist2 : q->dist2[iddq&1]>>40;
+		if (dist2 >= min_supp || (double)dist2 / dist1 >= 1./min_supp) return;
+	}
 
 	str.s = rd.s = 0; str.m = rd.m = 0;
 	for (i = 0; i < 2; ++i) {
@@ -561,19 +615,21 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 
 	max_dist = (int)(opt->avg + 2. * opt->std + .499);
 	t = cputime();
-	v = read_utig(fn, opt->min_supp);
+	v = read_utig(fn);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] read unitigs in %.3f sec\n", __func__, cputime() - t);
 	t = cputime();
 	rdist = cal_rdist(v);
+	for (i = 0; i < v->n; ++i)
+		if (v->a[i].A < opt->a_thres) v->a[i].excluded = 1;
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] rdist = %.3f, computed in %.3f sec\n", __func__, rdist, cputime() - t);
 	t = cputime();
-	for (i = 0; i < v->n; ++i)
-		if (v->a[i].A < opt->a_thres) v->a[i].excluded = 1;
 	h = collect_nei(v, max_dist);
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
+	for (i = 0; i < v->n; ++i)
+		resolve_contained(v, i, opt->avg, opt->pr_links);
 
 //	patch_gap(e, h, v, 296, max_dist, opt->avg, opt->std); debug_utig(v, 296); return;
 	old_verbose = fm_verbose;
