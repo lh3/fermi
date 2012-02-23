@@ -14,7 +14,6 @@ KSEQ_DECLARE(gzFile)
 KHASH_DECLARE(64, uint64_t, uint64_t)
 
 #define A_THRES 20.
-#define C_THRES 1.2
 #define MIN_ISIZE 50
 
 extern unsigned char seq_nt6_table[128];
@@ -30,7 +29,7 @@ typedef struct {
 	ext_t ext[2];
 	double A;
 	int len, nsr, maxo;
-	uint8_t deleted, excluded, force_patch[2];
+	uint16_t deleted, excluded;
 	uint8_t *seq;
 	ku128_v reads;
 	uint64_t dist[2], dist2[2];
@@ -100,9 +99,11 @@ static utig_v *read_utig(const char *fn)
 
 		while (isdigit(*q)) { // read mapping
 			ku128_t x;
+			int b, e;
 			x.x = strtol(q, &q, 10); ++q;
-			x.y = (uint64_t)strtol(q, &q, 10)<<32; ++q;
-			x.y |= strtol(q, &q, 10);
+			b = strtol(q, &q, 10); ++q;
+			e = strtol(q, &q, 10);
+			x.y = (uint64_t)(b > beg? b - beg : 0)<<32 | (e - beg < p->len? e - beg : p->len);
 			kv_push(ku128_t, p->reads, x);
 			if (*q++ == 0) break;
 		}
@@ -251,11 +252,11 @@ static hash64_t *collect_nei(utig_v *v, int max_dist)
 	return h;
 }
 
-static void resolve_contained(utig_v *v, uint32_t id, double avg, int pr_link) // FIXME: only works in simple cases; topological sorting is better
+static void resolve_contained(utig_v *v, uint32_t id, double avg, double std, int pr_link) // FIXME: only works in simple cases; topological sorting is better
 {
 	utig_t *p = &v->a[id], *q[2];
 	int d_long, d_short, a;
-	if (p->excluded || p->nei[0] < 0 || p->nei[1] < 0) return;
+	if (p->excluded || p->nei[0] < 0 || p->nei[1] < 0 || p->nei2[0] >= 0 || p->nei2[1] >= 0) return;
 	q[0] = &v->a[p->nei[0]>>1]; q[1] = &v->a[p->nei[1]>>1];
 	if (q[0]->nei2[p->nei[0]&1] < 0 || q[1]->nei2[p->nei[1]&1] < 0) return;
 	if (q[1]->nei[p->nei[1]&1] != p->nei[0] && q[1]->nei2[p->nei[1]&1] != p->nei[0]) return;
@@ -265,21 +266,18 @@ static void resolve_contained(utig_v *v, uint32_t id, double avg, int pr_link) /
 		d_long = (int)(avg - (q[0]->dist2[p->nei[0]&1]<<24>>24) + .499);
 	} else return;
 	d_short = (int)(2*avg - (p->dist[0]<<24>>24) - (p->dist[1]<<24>>24) + p->len + .499);
-	if (d_short > 0 && d_long > 0 && d_short / d_long < C_THRES && d_long / d_short < C_THRES) {
+	if (abs(d_long - d_short) < std) {
 		if (pr_link) {
 			fprintf(stderr, "CT\t%ld:%ld\t%d\t%d\n", (long)p->k[0], (long)p->k[1], d_long, d_short);
-			q[0]->force_patch[p->nei[0]&1] = q[1]->force_patch[p->nei[1]&1] = 1;
+			// break the link between q[0] and q[1]
 			for (a = 0; a < 2; ++a) {
-				if (q[a]->nei[p->nei[a]&1] != p->nei[a^1]) {
-					q[a]->nei[p->nei[a]&1] = p->nei[a^1];
+				if (q[a]->nei[p->nei[a]&1] == p->nei[a^1]) {
+					q[a]->nei[p->nei[a]&1] = q[a]->nei2[p->nei[a]&1];
 					q[a]->dist[p->nei[a]&1] = q[a]->dist2[p->nei[a]&1];
 				}
 				q[a]->nei2[p->nei[a]&1] = -4;
 				q[a]->dist2[p->nei[a]&1] = 0;
 			}
-			p->excluded = 1;
-			p->nei[0] = p->nei[1] = p->nei2[0] = p->nei2[1] = -5;
-			p->dist[0] = p->dist[1] = p->dist2[0] = p->dist2[1] = 0;
 		}
 	}
 }
@@ -456,7 +454,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	uint32_t iddq;
 	utig_t *p, *q;
 	kstring_t str, rd;
-	int max_len, pl, i;
+	int max_len, pl, i, dist1, dist2;
 	char *t[2];
 	ext_t ext;
 
@@ -467,13 +465,10 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	q = &v->a[iddq>>1];
 	if (q->nei[iddq&1] != iddp) return; // not reciprocal best
 
-	if (!p->force_patch[iddp&1]) {
-		int dist1, dist2;
-		dist1 = p->dist[iddp&1]>>40; dist2 = 0;
-		if (p->nei2[iddp&1] >= 0) dist2 = p->dist2[iddp&1]>>40;
-		if (q->nei2[iddq&1] >= 0) dist2 = dist2 > q->dist2[iddq&1]>>40? dist2 : q->dist2[iddq&1]>>40;
-		if (dist2 >= min_supp || (double)dist2 / dist1 >= 1./min_supp) return;
-	}
+	dist1 = p->dist[iddp&1]>>40; dist2 = 0;
+	if (p->nei2[iddp&1] >= 0) dist2 = p->dist2[iddp&1]>>40;
+	if (q->nei2[iddq&1] >= 0) dist2 = dist2 > q->dist2[iddq&1]>>40? dist2 : q->dist2[iddq&1]>>40;
+	if (dist2 >= min_supp || (double)dist2 / dist1 >= 1./min_supp) return;
 
 	str.s = rd.s = 0; str.m = rd.m = 0;
 	for (i = 0; i < 2; ++i) {
@@ -629,7 +624,7 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 	if (fm_verbose >= 3)
 		fprintf(stderr, "[M::%s] paired unitigs in %.3f sec\n", __func__, cputime() - t);
 	for (i = 0; i < v->n; ++i)
-		resolve_contained(v, i, opt->avg, opt->pr_links);
+		resolve_contained(v, i, opt->avg, opt->std, opt->pr_links);
 
 //	patch_gap(e, h, v, 296, max_dist, opt->avg, opt->std); debug_utig(v, 296); return;
 	old_verbose = fm_verbose;
