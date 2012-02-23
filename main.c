@@ -48,9 +48,9 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         correct   Error correction\n");
 		fprintf(stderr, "         seqrank   Compute the rank of sequences\n");
 		fprintf(stderr, "         unitig    Construct unitigs\n");
-		fprintf(stderr, "         scaf      Generate scaftigs\n");
-		fprintf(stderr, "         remap     Compute the coverage and PE coverage\n");
 		fprintf(stderr, "         clean     Clean the graph\n");
+		fprintf(stderr, "         remap     Compute the coverage and PE coverage\n");
+		fprintf(stderr, "         scaf      Generate scaftigs\n");
 		fprintf(stderr, "\n");
 		fprintf(stderr, "         splitfa   Split a FASTA/Q file\n");
 		fprintf(stderr, "         trimseq   Trim a FASTA/Q file\n");

@@ -1,7 +1,10 @@
 *.a
 *.o
 .*.swp
-chr22*
 *.fa
+*.fa.gz
 *.fq
-*.bwt
+*.fq.gz
+*.fmd
+*.mag
+*.mag.gz

@@ -8,16 +8,14 @@ use Getopt::Std;
 
 sub main {
 	my %opts = (e=>'fermi', t=>2, p=>'fmdef', f=>17, k=>50);
-	getopts('e:t:p:Pcf:k:Adl:', \%opts);
+	getopts('e:t:p:Pcf:k:dl:', \%opts);
 	$opts{P} = 1 if defined($opts{c});
-	$opts{A} = defined($opts{A})? "A" : "";
 	$opts{l} = defined($opts{l})? "-l$opts{l}" : "";
 
 	die(qq/
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
 Options: -P        the input is paired
          -c        the input is collated FASTQ (two ends in the same file)
-         -A        aggressive bubble popping in pairext
          -d        double the number of jobs for split index
          -e FILE   fermi executable [$opts{e}]
          -t INT    number of threads [$opts{t}]
@@ -30,7 +28,7 @@ Options: -P        the input is paired
 	my (@lines, $in_list, $fqs, $n_split);
 
 	push(@lines, "FERMI=$opts{e}", "FLTUNIQ_K=$opts{f}", "UNITIG_K=$opts{k}", "");
-	push(@lines, (defined $opts{P})? "all:$opts{p}.ext.mag.gz" : "all:$opts{p}.mag.gz", "");
+	push(@lines, (defined $opts{P})? "all:$opts{p}.p4.fa.gz" : "all:$opts{p}.p2.mag.gz", "");
 
 	$in_list = join(" ", @ARGV);
 	$n_split = defined($opts{d})? $opts{t} * 2 : $opts{t};
@@ -66,44 +64,28 @@ Options: -P        the input is paired
 	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $n_split 2> \$@\n");
 	&build_fmd(\@lines, $n_split, $pre, $opts{l}, $opts{t});
 
+	push(@lines, "# Generate unitigs");
 	if (defined($opts{P})) {
-		push(@lines, "# Generate unitigs");
 		push(@lines, "$opts{p}.ec.rank:$opts{p}.ec.fmd");
 		push(@lines, "\t\$(FERMI) seqrank -t $opts{t} \$< > \$@ 2> \$@.log\n");
-		push(@lines, "$opts{p}.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd");
+		push(@lines, "$opts{p}.p0.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd");
 		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) -r \$^ 2> \$@.log | gzip -1 > \$@\n");
-
-		push(@lines, "# Extension using the pairing information");
-		push(@lines, "$opts{p}.c0.mag.gz:$opts{p}.mag.gz");
-		push(@lines, "\t\$(FERMI) clean \$< 2> \$@.log | gzip -1 > \$@");
-		push(@lines, "$opts{p}.c0r.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd $opts{p}.c0.mag.gz");
-		push(@lines, "\t\$(FERMI) remap -t $opts{t} -r \$^ 2> \$@.log | gzip -1 > \$@");
-		push(@lines, "$opts{p}.c1.mag.gz:$opts{p}.c0r.mag.gz");
-		push(@lines, "\t\$(FERMI) clean -CAOF \$< 2> \$@.log | gzip -1 > \$@");
-		push(@lines, "$opts{p}.c1r.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd $opts{p}.c1.mag.gz");
-		push(@lines, "\t\$(FERMI) remap -t $opts{t} -r \$^ 2> \$@.log | gzip -1 > \$@");
-		push(@lines, "$opts{p}.ext0.fa.gz:$opts{p}.ec.fmd $opts{p}.c0r.mag.gz $opts{p}.c1r.mag.gz");
-		push(@lines, qq[\t\$(FERMI) pairext -$opts{A}t $opts{t} $opts{p}.ec.fmd $opts{p}.c0r.mag.gz `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg = (\\S+) std = (\\S+)/' $opts{p}.c1r.mag.gz.log` 2> \$@.log | gzip -1 > \$@]);
-		push(@lines, "$opts{p}.ext1.fa.gz:$opts{p}.ec.fmd $opts{p}.c1r.mag.gz");
-		push(@lines, qq[\t\$(FERMI) pairext -$opts{A}t $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg = (\\S+) std = (\\S+)/' $opts{p}.c1r.mag.gz.log` 2> \$@.log | gzip -1 > \$@\n]);
-
-		$pre = "$opts{p}.ext";
-		push(@lines, "# Build FM-index for the extended sequences");
-		push(@lines, "$pre.split.log:$opts{p}.ext0.fa.gz $opts{p}.ext1.fa.gz");
-		push(@lines, "\tgzip -dc \$^ | \$(FERMI) splitfa - $pre $opts{t} 2> \$@\n");
-		&build_fmd(\@lines, $opts{t}, $pre, ''); # do not trim, either
-		push(@lines, "$opts{p}.final.fmd.log:$opts{p}.ec.fmd $opts{p}.ext.fmd");
-		push(@lines, "\t\$(FERMI) merge -t $opts{t} -fo $opts{p}.final.fmd \$^ 2> \$@");
-		push(@lines, "$opts{p}.ext.mag.gz:$opts{p}.final.fmd.log");
-		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) $opts{p}.final.fmd 2> \$@.log | gzip -1 > \$@\n");
-		push(@lines, "$opts{p}.extr.mag.gz:$opts{p}.ec.fmd $opts{p}.ext.mag.gz");
-		push(@lines, "\t\$(FERMI) remap -t $opts{t} \$^ 2> \$@.log | gzip -1 > \$@\n");
 	} else {
-		push(@lines, "# Generate unitigs");
-		push(@lines, "$opts{p}.mag.gz:$opts{p}.ec.fmd");
+		push(@lines, "$opts{p}.p0.mag.gz:$opts{p}.ec.fmd");
 		push(@lines, "\t\$(FERMI) unitig -t $opts{t} -l \$(UNITIG_K) \$< 2> \$@.log | gzip -1 > \$@\n");
 	}
+	push(@lines, "$opts{p}.p1.mag.gz:$opts{p}.p0.mag.gz");
+	push(@lines, "\t\$(FERMI) clean \$< 2> \$@.log | gzip -1 > \$@");
+	push(@lines, "$opts{p}.p2.mag.gz:$opts{p}.p1.mag.gz");
+	push(@lines, "\t\$(FERMI) clean -CAOF \$< 2> \$@.log | gzip -1 > \$@\n");
 
+	if (defined($opts{P})) {
+		push(@lines, "# Generate scaftigs");
+		push(@lines, "$opts{p}.p3.mag.gz:$opts{p}.ec.rank $opts{p}.ec.fmd $opts{p}.p2.mag.gz");
+		push(@lines, "\t\$(FERMI) remap -t $opts{t} -r \$^ 2> \$@.log | gzip -1 > \$@");
+		push(@lines, "$opts{p}.p4.fa.gz:$opts{p}.ec.fmd $opts{p}.p3.mag.gz");
+		push(@lines, qq[\t\$(FERMI) scaf -Pt $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg = (\\S+) std = (\\S+)/' $opts{p}.p3.mag.gz.log` 2> \$@.log | gzip -1 > \$@\n]);
+	}
 	print join("\n", @lines), "\n";
 }
 
