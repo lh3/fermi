@@ -15,7 +15,7 @@
 
 typedef struct {
 	int flag, max_arc, n_iter, min_ovlp, min_elen, min_ensr, min_insr, max_bdist, max_bvtx;
-	float min_dratio0, min_dratio1, a_thres;
+	float min_dratio0, min_dratio1;
 	float max_bcov, max_bfrac;
 } magopt_t;
 

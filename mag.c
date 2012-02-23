@@ -573,62 +573,6 @@ double mag_cal_rdist(mag_t *g)
 	return rdist;
 }
 
-void mag_vh_flowflt(mag_t *g, size_t idd, double thres)
-{
-	magv_t *p, *q;
-	ku128_v *r;
-	int j, max, cnt[2], j0, i;
-	double A;
-
-	q = &g->v.a[idd>>1];
-	if (q->len < 0) return;
-	r = &q->nei[idd&1];
-	// find the max overlap length
-	for (max = 0, j = 0; j < r->n; ++j)
-		max = max > r->a[j].y? max : r->a[j].y;
-	A = (q->len - max) / g->rdist - q->nsr * M_LN2;
-	if (A < thres) return;
-	// check neighbors
-	for (j = cnt[0] = cnt[1] = 0, j0 = -1; j < r->n; ++j) {
-		uint64_t w;
-		if ((int64_t)r->a[j].x < 0) continue;
-		w = tid2idd(g->h, r->a[j].x);
-		p = &g->v.a[w>>1];
-		A = (p->len - r->a[j].y) / g->rdist - p->nsr * M_LN2;
-		if (A >= thres) {
-			if (p->nei[w&1].n > 1) {
-				ku128_v *t = &p->nei[w&1];
-				for (i = 0; i < t->n; ++i) {
-					if ((int64_t)t->a[i].x < 0 || t->a[i].x == q->k[idd&1]) continue;
-					w = tid2idd(g->h, t->a[i].x);
-					p = &g->v.a[w>>1];
-					A = (p->len - r->a[j].y) / g->rdist - p->nsr * M_LN2;
-					if (A >= thres) ++cnt[1];
-				}
-			} else ++cnt[0], j0 = j;
-		}
-	}
-	if (cnt[0] == 1 && cnt[1]) {
-		fprintf(stderr, "here!\n");
-		for (j = 0; j < r->n; ++j) {
-			if (j == j0) continue;
-			mag_eh_markdel(g, r->a[j].x, q->k[idd&1]);
-			edge_mark_del(r->a[j]);
-		}
-		v128_clean(r);
-	}
-}
-
-void mag_g_flowflt(mag_t *g, double thres)
-{
-	int64_t i;
-	for (i = 0; i < g->v.n; ++i) {
-		mag_vh_flowflt(g, i<<1|0, thres);
-		mag_vh_flowflt(g, i<<1|1, thres);
-	}
-	mag_g_merge(g, 0);
-}
-
 /**************
  * Key portal *
  **************/
@@ -648,7 +592,6 @@ magopt_t *mag_init_opt()
 	o->min_ensr = 4;
 	o->min_insr = 3;
 	o->min_dratio1 = 0.8;
-	o->a_thres = 0.;
 
 	o->max_bcov = 10.;
 	o->max_bfrac = 0.15;
@@ -664,9 +607,7 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
-	//mag_vh_simplify_bubble(g, tid2idd(g->h, 49449609), 512, 500, a); exit(0);
 	//mag_vh_simplify_bubble(g, tid2idd(g->h, 34356802), 512, 500, a); exit(0); // a good case
-	//mag_vh_simplify_bubble(g, tid2idd(g->h, 51220518), 512, 500, a); exit(0);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		t = cputime();
@@ -709,7 +650,6 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 			fprintf(stderr, "[M::%s] removed interval low-cov vertices in %.3f sec.\n", __func__, cputime() - t);
 	}
 	t = cputime();
-	if (opt->a_thres >= 20.) mag_g_flowflt(g, opt->a_thres);
 	if (opt->flag & MOG_F_AGGRESSIVE) mag_g_pop_open(g, opt->min_elen);
 	else {
 		mag_g_rm_vext(g, opt->min_elen, opt->min_ensr);
