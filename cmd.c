@@ -250,27 +250,6 @@ int main_remap(int argc, char *argv[])
 	return 0;
 }
 
-int main_pairext(int argc, char *argv[])
-{
-	int c, use_mmap = 0, n_threads = 1, is_aggressive = 0;;
-	rld_t *e;
-	while ((c = getopt(argc, argv, "Ml:t:A")) >= 0) {
-		switch (c) {
-			case 'M': use_mmap = 1; break;
-			case 'A': is_aggressive = 1; break;
-			case 't': n_threads = atoi(optarg); break;
-		}
-	}
-	if (optind + 4 > argc) {
-		fprintf(stderr, "Usage: fermi pairext [-A] [-t nThreads] <reads.fmd> <graph.msg> <avg> <std>\n");
-		return 1;
-	}
-	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	fm6_pairext(e, argv[optind+1], n_threads, atof(argv[optind+2]), atof(argv[optind+3]), is_aggressive);
-	rld_destroy(e);
-	return 0;
-}
-
 int main_correct(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1;

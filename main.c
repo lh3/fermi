@@ -19,7 +19,6 @@ int main_unitig(int argc, char *argv[]);
 int main_clean(int argc, char *argv[]);
 int main_cnt2qual(int argc, char *argv[]);
 int main_seqsort(int argc, char *argv[]);
-int main_pairext(int argc, char *argv[]);
 int main_remap(int argc, char *argv[]);
 int main_scaf(int argc, char *argv[]);
 
@@ -39,7 +38,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Program: fermi (FERragina-Manzini Index for DNA sequences)\n");
 		fprintf(stderr, "Version: %s\n", FERMI_VERSION);
-		fprintf(stderr, "Contact: Heng Li <lh3@live.co.uk>\n\n");
+		fprintf(stderr, "Contact: <http://lh3.userecho.com>\n\n");
 		fprintf(stderr, "Usage:   fermi <command> [arguments]\n\n");
 		fprintf(stderr, "Command: build     Generate FM-Index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
@@ -49,7 +48,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         correct   Error correction\n");
 		fprintf(stderr, "         seqrank   Compute the rank of sequences\n");
 		fprintf(stderr, "         unitig    Construct unitigs\n");
-		fprintf(stderr, "         pairext   Unitig extension using PE reads\n");
+		fprintf(stderr, "         scaf      Generate scaftigs\n");
 		fprintf(stderr, "         remap     Compute the coverage and PE coverage\n");
 		fprintf(stderr, "         clean     Clean the graph\n");
 		fprintf(stderr, "\n");
@@ -72,7 +71,6 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "seqsort") == 0) ret = main_seqsort(argc-1, argv+1);
 	else if (strcmp(argv[1], "seqrank") == 0) ret = main_seqsort(argc-1, argv+1); // an alias of seqsort
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
-	else if (strcmp(argv[1], "pairext") == 0) ret = main_pairext(argc-1, argv+1);
 	else if (strcmp(argv[1], "remap") == 0) ret = main_remap(argc-1, argv+1);
 	else if (strcmp(argv[1], "scaf") == 0) ret = main_scaf(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
