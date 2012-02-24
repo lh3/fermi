@@ -355,7 +355,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	// initialize scoring matrix
-	for (i = k = 0; i < 5; ++i) {
+	for (i = k = 0; i < 4; ++i) {
 		for (j = 0; j < 4; ++j)
 			mat[k++] = i == j? sa : -sb;
 		mat[k++] = 0; // ambiguous base
