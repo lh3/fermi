@@ -7,6 +7,7 @@
 #include "priv.h"
 #include "kstring.h"
 #include "kvec.h"
+#include "ksw.h"
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
 
@@ -454,7 +455,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	uint32_t iddq;
 	utig_t *p, *q;
 	kstring_t str, rd;
-	int max_len, pl, i, dist1, dist2;
+	int max_len, pl, ql, i, dist1, dist2;
 	char *t[2];
 	ext_t ext;
 
@@ -474,7 +475,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	for (i = 0; i < 2; ++i) {
 		str.l = rd.l = 0;
 		end_seq(&str, p, iddp&1, 0, max_dist); pl = str.l;
-		end_seq(&str, q, iddq&1, 1, max_dist);
+		end_seq(&str, q, iddq&1, 1, max_dist); ql = str.l - pl;
 		max_len = add_seq(e, h, p, &str, &rd, iddp, i? -1L : (int64_t)iddq);
 		add_seq(e, h, q, &str, &rd, iddq, i? -1L : (int64_t)iddp);
 		t[0] = str.s; t[1] = str.s + pl;
@@ -486,6 +487,22 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 				break;
 			}
 			p->ext[iddp&1] = q->ext[iddq&1] = ext;
+		}
+	}
+	if (ext.patched == 0 && p->dist[iddp&1]<<24>>24 > avg) { // another try in case there are heterozygotes in the overlap
+		int j, k;
+		int8_t mat[25];
+		ksw_aux_t a;
+		for (i = k = 0; i < 5; ++i)
+			for (j = 0; j < 5; ++j)
+				mat[k++] = i == j? 1 : -3;
+		a.gapo = 5; a.gape = 2; a.T = 13;
+		ksw_align_short(ql - 1, (uint8_t*)t[1], pl - 1, (uint8_t*)t[0], 5, mat, &a);
+		if (a.qb == 0 && a.te+1 == pl - 1) { // an end-to-end alignment
+			p->ext[iddp&1].patched = q->ext[iddq&1].patched = 1;
+			p->ext[iddp&1].l = -(a.te+1 - a.tb);
+			q->ext[iddq&1].l = -(a.qe + 1);
+			p->ext[iddp&1].t = q->ext[iddq&1].t = compute_t(h, v, iddp, p->ext[iddp&1].l, avg, std, max_len);
 		}
 	}
 	free(str.s); free(rd.s);
