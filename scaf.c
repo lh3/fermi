@@ -418,6 +418,8 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	g = fm6_api_unitig(max_len/3. < 17? max_len/3. : 17, l, s);
 	mag_g_merge(g, 1); // FIXME: this to remove multi-edges, which is likely to introduce small scale errors...
 	mag_g_rm_vext(g, max_len * 1.1, 2);
+	mag_g_simplify_bubble(g, 25, max_len * 2);
+	mag_g_pop_simple(g, 10., 0.15, 1); // FIXME: always agressive?
 	mag_g_rm_edge(g, 0, 0.8);
 	mag_g_merge(g, 1);
 	mag_g_rm_vext(g, max_len * 1.1, 100);

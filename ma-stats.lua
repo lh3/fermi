@@ -200,11 +200,13 @@ function analyze(stack, stats, opt)
 		end
 	else return end
 	-- print the remaining
+	--[[
 	if not opt.is_print then
 		for _, v in ipairs(stack) do
 			print(table.concat(v, '\t'))
 		end
 	end
+	]]--
 end
 
 function main(arg)
@@ -217,6 +219,15 @@ function main(arg)
 		elseif o == 'g' then opt.max_gap = tonumber(a)
 		elseif o == 'l' then opt.min_len = tonumber(a)
 		end
+	end
+	if #arg == 0 then
+		print('\nUsage:   luajit ma-stats.lua [options] <bwasw.sam>\n')
+		print('Options: -l INT     exclude contigs shorter than INT bp ['..opt.min_len..']')
+		print('         -q INT     exclude alignments with maqQ lower than INT ['..opt.min_q..']')
+		print('         -m FLOAT   exclude alignments overlapping with a long alignment by FLOAT fraction ['..opt.mask_level..']')
+		print('         -g INT     join alignments separated by a gap shorter than INT bp ['..opt.max_gap..']')
+		print()
+		return
 	end
 	-- the main part
 	local fp, stack, last = io.xopen(arg[1]), {}
