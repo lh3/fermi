@@ -414,6 +414,7 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	ext_t e;
 
 	memset(&e, 0, sizeof(ext_t));
+	//printf(">0\n");for(j=0;j<l-1;++j)if(s[j]==0)printf("\n>%d\n",j);else putchar("$ACGTN"[(int)s[j]]);putchar('\n');exit(0);
 	g = fm6_api_unitig(max_len/3. < 17? max_len/3. : 17, l, s);
 	mag_g_merge(g, 1); // FIXME: this to remove multi-edges, which is likely to introduce small scale errors...
 	mag_g_rm_vext(g, max_len * 1.1, 2);
@@ -449,6 +450,8 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	mag_g_destroy(g);
 	return e;
 }
+
+#define MAX_DROP 5
 
 static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int min_supp, int max_dist, double avg, double std)
 {
@@ -490,7 +493,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		}
 	}
 	if (ext.patched == 0 && p->dist[iddp&1]<<24>>24 > avg) { // another try in case there are heterozygotes in the overlap
-		int j, k;
+		int j, k, drop[2], max_drop, min_drop;
 		int8_t mat[25];
 		ksw_aux_t a;
 		for (i = k = 0; i < 5; ++i)
@@ -498,12 +501,18 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 				mat[k++] = i == j? 1 : -3;
 		a.gapo = 5; a.gape = 2; a.T = 13;
 		ksw_align_short(ql - 1, (uint8_t*)t[1], pl - 1, (uint8_t*)t[0], 5, mat, &a);
-		if (a.qb == 0 && a.te+1 == pl - 1) { // an end-to-end alignment
-			p->ext[iddp&1].patched = q->ext[iddq&1].patched = 1;
-			p->ext[iddp&1].l = -(a.te+1 - a.tb);
-			q->ext[iddq&1].l = -(a.qe + 1);
-			p->ext[iddp&1].t = q->ext[iddq&1].t = compute_t(h, v, iddp, p->ext[iddp&1].l, avg, std, max_len);
+		drop[0] = a.qb; drop[1] = (pl - 1) - (a.te + 1);
+		max_drop = drop[0] > drop[1]? drop[0] : drop[1];
+		min_drop = drop[0] < drop[1]? drop[0] : drop[1];
+		if (min_drop == 0 && max_drop < MAX_DROP && a.score >= a.T + min_drop * 1) { // an end-to-end alignment
+			p->ext[iddp&1].l = -(a.te+1 - a.tb + drop[0] + drop[1]);
+			q->ext[iddq&1].l = -(a.qe + 1 + drop[0] + drop[1]);
+			if (-p->ext[iddp&1].l < p->len && -q->ext[iddq&1].l < q->len) {
+				p->ext[iddp&1].patched = q->ext[iddq&1].patched = 1;
+				p->ext[iddp&1].t = q->ext[iddq&1].t = compute_t(h, v, iddp, p->ext[iddp&1].l, avg, std, max_len);
+			}
 		}
+		//fprintf(stderr, "%c, %d, (%d, %d, %d), (%d, %d, %d)\n", "NY"[p->ext[iddp&1].patched], a.score, ql, a.qb, a.qe+1, pl-1, a.tb, a.te+1);
 	}
 	free(str.s); free(rd.s);
 }
@@ -586,6 +595,7 @@ static void make_scaftigs(utig_v *v, double a_thres, double p_thres)
 			puts(ctg.s);
 		}
 	}
+	free(path.a); free(ctg.s);
 }
 
 /*********************************
@@ -643,7 +653,7 @@ void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n
 	for (i = 0; i < v->n; ++i)
 		resolve_contained(v, i, opt->avg, opt->std, opt->pr_links);
 
-//	patch_gap(e, h, v, 296, max_dist, opt->avg, opt->std); debug_utig(v, 296); return;
+//	patch_gap(e, h, v, 296, opt->min_supp, max_dist, opt->avg, opt->std); debug_utig(v, 296); return;
 	old_verbose = fm_verbose;
 	fm_verbose = 1; // disable all messages and warnings
 	t = cputime();
