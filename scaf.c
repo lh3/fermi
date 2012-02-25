@@ -130,17 +130,17 @@ static void debug_utig(utig_v *v, uint32_t idd)
 {
 	int b, a = idd&1;
 	utig_t *q, *p = &v->a[idd>>1];
-	fprintf(stderr, "LK\t%ld:%ld\t%d\t%d\t%.2f", (long)p->k[a], (long)p->k[a^1], p->len, p->nsr, p->A);
+	fprintf(stderr, "LK\t%u:%d\t%ld\t%d\t%d\t%.2f", idd>>1, idd&1, (long)p->k[a], p->len, p->nsr, p->A);
 	if (p->nei[a] >= 0) {
 		q = &v->a[p->nei[a]>>1];
 		b = p->nei[a]&1;
-		fprintf(stderr, "\t%ld:%ld\t%d:%d", (long)q->k[b], (long)q->k[b^1], (int)(p->dist[a]>>40), (int)(p->dist[a]<<24>>24));
+		fprintf(stderr, "\t%ld\t%d:%d", (long)q->k[b], (int)(p->dist[a]>>40), (int)(p->dist[a]<<24>>24));
 		fprintf(stderr, "\t%d:%d:%.1e", p->ext[a].patched, p->ext[a].l, p->ext[a].t);
 	}
 	if (p->nei2[a] >= 0) {
 		q = &v->a[p->nei2[a]>>1];
 		b = p->nei2[a]&1;
-		fprintf(stderr, "\t%ld:%ld\t%d:%d", (long)q->k[b], (long)q->k[b^1], (int)(p->dist2[a]>>40), (int)(p->dist2[a]<<24>>24));
+		fprintf(stderr, "\t%ld\t%d:%d", (long)q->k[b], (int)(p->dist2[a]>>40), (int)(p->dist2[a]<<24>>24));
 	}
 	fputc('\n', stderr);
 }
