@@ -259,7 +259,10 @@ mag_t *mag_g_read(const char *fn, const magopt_t *opt)
 		p->seq = malloc(p->max_len);
 		for (i = 0; i < p->len; ++i) p->seq[i] = seq_nt6_table[(int)seq->seq.s[i]];
 		p->cov = malloc(p->max_len);
-		strcpy(p->cov, seq->qual.s);
+		if (seq->qual.l == 0)
+			for (i = 0; i < seq->seq.l; ++i)
+				p->cov[i] = 34;
+		else strcpy(p->cov, seq->qual.s);
 	}
 	// free and finalize the graph
 	kseq_destroy(seq);
