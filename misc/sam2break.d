@@ -138,7 +138,10 @@ void main(string[] args) {
 			if (opt.is_print) writeln(cast(string)l);
 			continue;
 		}
-		auto t = split(cast(string)l);
+		int col = 0, l_end;
+		for (l_end = 0; l_end < l.length; ++l_end)
+			if (l[l_end] == '\t' && (++col) == 6) break;
+		auto t = split(cast(string)l[0..l_end]); // do not split beyond the 6th TAB; this is for efficiency
 		if (t[0] != last) {
 			analyze_aln(a, s, opt);
 			a.length = 0;
