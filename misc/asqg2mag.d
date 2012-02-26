@@ -1,4 +1,4 @@
-#!/usr/bin/env rdmd -release
+#!/usr/bin/env rdmd
 
 import std.array, std.stdio, std.conv, klib;
 

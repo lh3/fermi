@@ -1,4 +1,4 @@
-#!/usr/bin/env rdmd -release
+#!/usr/bin/env rdmd
 
 import std.stdio, std.string, std.array, std.conv, std.getopt, std.algorithm, std.c.stdlib, std.c.stdio, klib;
 
