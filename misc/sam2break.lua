@@ -158,8 +158,8 @@ function analyze(stack, stats, opt)
 		end
 	end
 	for _, v in ipairs(stack) do
-		stats.L = stats.L + (v[10] - v[4])
-		table.insert(stats.len, v[10] - v[4])
+		stats.L = stats.L + (v[9] - v[8])
+		table.insert(stats.len, v[9] - v[8])
 	end
 	-- count break points
 	if #stack > 1 then
@@ -221,7 +221,7 @@ function main(arg)
 		end
 	end
 	if #arg == 0 then
-		print('\nUsage:   luajit ma-stats.lua [options] <bwasw.sam>\n')
+		print('\nUsage:   luajit sam2break.lua [options] <bwasw.sam>\n')
 		print('Options: -l INT     exclude contigs shorter than INT bp ['..opt.min_len..']')
 		print('         -q INT     exclude alignments with maqQ lower than INT ['..opt.min_q..']')
 		print('         -m FLOAT   exclude alignments overlapping with a long alignment by FLOAT fraction ['..opt.mask_level..']')

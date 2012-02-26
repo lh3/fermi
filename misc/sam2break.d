@@ -121,7 +121,11 @@ void main(string[] args) {
 	cmdopt_t opt = {false, 200, 500, 10, 0.5};
 	getopt(args, std.getopt.config.bundling, "l", &opt.min_len, "q", &opt.min_q, "p", &opt.is_print, "m", &opt.mask_level);
 	if (args.length == 1) {
-		writeln("Usage: sam2break.d <contig-aln.sam>");
+		writeln("\nUsage:   sam2break.d <contig-aln.sam>\n");
+		writeln("Options: -l INT     exclude contigs shorter than INT bp [", opt.min_len, ']');
+		writeln("         -q INT     exclude alignments with maqQ lower than INT [", opt.min_q, ']');
+		writeln("         -m FLOAT   exclude alignments overlapping with a long alignment by FLOAT fraction [", opt.mask_level, ']');
+		writeln("         -g INT     join alignments separated by a gap shorter than INT bp [", opt.max_gap, "]\n");
 		return;
 	}
 	auto f = new ZFile(args[1]);
