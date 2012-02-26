@@ -42,7 +42,10 @@ aln_t *parse_aln(string l, ref string[] t) {
 		}
 		p.qbeg = p.clip[!!(p.flag&16)];
 		p.len = p.clip[0] + p.clip[1] + p.qlen;
-	} else p.len = cast(int)t[9].length;
+	} else {
+		auto s = split(l);
+		p.len = cast(int)s[9].length;
+	}
 	return p;
 }
 
