@@ -212,7 +212,7 @@ end
 function main(arg)
 	-- parse the command line
 	local opt = {mask_level=0.5, is_print=false, min_q=10, max_gap=500, min_len=200}
-	for o, a in os.getopt(arg, 'pq:m:g:') do
+	for o, a in os.getopt(arg, 'pq:m:g:l:') do
 		if o == 'p' then opt.is_print = true
 		elseif o == 'q' then opt.min_q = tonumber(a)
 		elseif o == 'm' then opt.mask_level = tonumber(a)
