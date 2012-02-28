@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "0.0-r655"
+#define FERMI_VERSION "0.0-r658"
 
 #define FM_MASK30 0x3fffffff
 
@@ -23,7 +23,7 @@ struct __rld_t; // defined in rld.h
 struct __mog_t; // defined in mog.h
 
 typedef struct {
-	int w, min_occ, keep_bad, is_paired;
+	int w, min_occ, keep_bad, is_paired, trim_l;
 	float max_corr;
 } fmecopt_t;
 

@@ -52,17 +52,17 @@ Options: -P        the input is paired
 	my $pre = "$opts{p}.raw";
 	push(@lines, "$pre.split.log:$in_list");
 	push(@lines, "\t$fqs | \$(FERMI) splitfa - $pre $n_split 2> $pre.split.log\n");
-	&build_fmd(\@lines, $n_split, $pre, '', $opts{t}); # do not trim for the initial index
+	&build_fmd(\@lines, $n_split, $pre, $opts{t}); # do not trim for the initial index
 
 	push(@lines, "# Error correction");
 	push(@lines, "$opts{p}.ec.fq.gz:$opts{p}.raw.fmd");
-	push(@lines, "\t$fqs | \$(FERMI) correct -".(defined($opts{P})? 'p' : '')."t $opts{t} \$< - 2> \$@.log | gzip -1 > \$@\n");
+	push(@lines, "\t$fqs | \$(FERMI) correct -".(defined($opts{P})? 'p' : '')."t $opts{t} $opts{l} \$< - 2> \$@.log | gzip -1 > \$@\n");
 
 	push(@lines, "# Construct the FM-index for corrected sequences");
 	$pre = "$opts{p}.ec";
 	push(@lines, "$pre.split.log:$opts{p}.ec.fq.gz");
 	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $n_split 2> \$@\n");
-	&build_fmd(\@lines, $n_split, $pre, $opts{l}, $opts{t});
+	&build_fmd(\@lines, $n_split, $pre, $opts{t});
 
 	push(@lines, "# Generate unitigs");
 	if (defined($opts{P})) {
@@ -92,7 +92,7 @@ Options: -P        the input is paired
 }
 
 sub build_fmd {
-	my ($lines, $t, $pre, $optl, $n_threads) = @_;
+	my ($lines, $t, $pre, $n_threads) = @_;
 	my ($logs, $fmds) = ('', '');
 	$n_threads ||= $t;
 	for (0 .. $t-1) {
@@ -100,7 +100,7 @@ sub build_fmd {
 		$logs .= "$p.fmd.log ";
 		$fmds .= "$p.fmd ";
 		push(@$lines, "$p.fmd.log:$pre.split.log");
-		push(@$lines, "\t\$(FERMI) build $optl -fo $p.fmd $p.fq.gz 2> \$@; rm -f $p.fq.gz");
+		push(@$lines, "\t\$(FERMI) build -fo $p.fmd $p.fq.gz 2> \$@; rm -f $p.fq.gz");
 	}
 	push(@$lines, "", "$pre.fmd:$logs");
 	push(@$lines, "\t\$(FERMI) merge -t $n_threads -fo \$@ $fmds 2> \$@.log; rm -f $fmds\n");

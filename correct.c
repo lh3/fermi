@@ -376,12 +376,15 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 						}
 					} else if (w->info[w->n_seqs]>>16&1) is_bad = 1;
 					if (!is_bad || opt->keep_bad) {
+						int tmp = 0;
 						out.l = 0;
 						kputc('@', &out); kputl(opt->is_paired? k>>1 : k, &out);
 						kputc(opt->is_paired? ' ':'_', &out); kputw(w->info[w->n_seqs]&0xffff, &out);
 						kputc(opt->is_paired? ' ':'_', &out); kputw(w->info[w->n_seqs]>>18, &out); kputc('\n', &out);
-						kputs(w->seq[w->n_seqs], &out);
-						kputsn("\n+\n", 3, &out); kputs(w->qual[w->n_seqs], &out);
+						tmp = strlen(w->seq[w->n_seqs]);
+						if (opt->trim_l && opt->trim_l < tmp) tmp = opt->trim_l;
+						kputsn(w->seq[w->n_seqs], tmp, &out);
+						kputsn("\n+\n", 3, &out); kputsn(w->qual[w->n_seqs], tmp, &out);
 						puts(out.s);
 					}
 					free(w->seq[w->n_seqs]); free(w->qual[w->n_seqs]);

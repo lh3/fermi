@@ -255,8 +255,8 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.w = 23; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0; opt.max_corr = 0.3;
-	while ((c = getopt(argc, argv, "MKt:k:v:O:pC:")) >= 0) {
+	opt.w = 23; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0; opt.max_corr = 0.3; opt.trim_l = 0;
+	while ((c = getopt(argc, argv, "MKt:k:v:O:pC:l:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
 			case 'K': opt.keep_bad = 1; break;
@@ -266,6 +266,7 @@ int main_correct(int argc, char *argv[])
 			case 'O': opt.min_occ = atoi(optarg); break;
 			case 'p': opt.is_paired = 1; break;
 			case 'C': opt.max_corr = atof(optarg); break;
+			case 'l': opt.trim_l = atoi(optarg); break;
 		}
 	}
 	if (optind + 2 > argc) {
@@ -275,6 +276,7 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "         -O INT      minimum (k+1)-mer occurrences [%d]\n", opt.min_occ);
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
 		fprintf(stderr, "         -C FLOAT    max fraction of corrected bases [%.2f]\n", opt.max_corr);
+		fprintf(stderr, "         -l INT      trim read down to INT bp; 0 to disable [0]\n");
 		fprintf(stderr, "         -K          keep bad/unfixable reads\n");
 		fprintf(stderr, "\n");
 		return 1;

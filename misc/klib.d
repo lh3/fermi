@@ -18,16 +18,20 @@ class ZFile {
 	void *_fp;
 	ubyte *_buf;
 public:
-	this(string fn = "", int buf_size = 16384) {
+	this(string fn = "-", int buf_size = 16384) {
 		_begin = _end = 0, _eof = false;
 		_buf_size = buf_size;
 		_buf = cast(ubyte*)std.c.stdlib.malloc(_buf_size);
-		_fp = fn.length? gzopen(std.string.toStringz(fn), "rb") : gzdopen(0, "rb");
+		_fp = fn.length && fn != "-"? gzopen(std.string.toStringz(fn), "rb") : gzdopen(0, "rb");
 	}
-	~this() {
-		std.c.stdlib.free(_buf);
-		gzclose(_fp);
+	void close() {
+		if (_fp != cast(void*)0) {
+			std.c.stdlib.free(_buf);
+			gzclose(_fp);
+			_fp = cast(void*)0;
+		}
 	}
+	~this() { this.close(); }
 	int readto(ref ubyte[] dat, ubyte delimiter = '\n', bool append = false) {
 		if (!append) dat.length = 0;
 		if (_begin >= _end && _eof) return -1;
