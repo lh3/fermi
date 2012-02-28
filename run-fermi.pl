@@ -28,7 +28,7 @@ Options: -P        the input is paired
 	my (@lines, $in_list, $fqs, $n_split);
 
 	push(@lines, "FERMI=$opts{e}", "FLTUNIQ_K=$opts{f}", "UNITIG_K=$opts{k}", "");
-	push(@lines, (defined $opts{P})? "all:$opts{p}.p4.fa.gz" : "all:$opts{p}.p2.mag.gz", "");
+	push(@lines, (defined $opts{P})? "all:$opts{p}.p5.fq.gz" : "all:$opts{p}.p2.mag.gz", "");
 
 	$in_list = join(" ", @ARGV);
 	$n_split = defined($opts{d})? $opts{t} * 2 : $opts{t};
@@ -85,6 +85,8 @@ Options: -P        the input is paired
 		push(@lines, "\t\$(FERMI) remap -t $opts{t} -r \$^ 2> \$@.log | gzip -1 > \$@");
 		push(@lines, "$opts{p}.p4.fa.gz:$opts{p}.ec.fmd $opts{p}.p3.mag.gz");
 		push(@lines, qq[\t\$(FERMI) scaf -Pt $opts{t} \$^ `perl -ne 'print "] . '$$1 $$2' . qq[\\n" if /avg = (\\S+) std = (\\S+)/' $opts{p}.p3.mag.gz.log` 2> \$@.log | gzip -1 > \$@\n]);
+		push(@lines, "$opts{p}.p5.fq.gz:$opts{p}.ec.rank $opts{p}.ec.fmd $opts{p}.p4.fa.gz");
+		push(@lines, qq[\t\$(FERMI) remap -c2 -t $opts{t} -D `perl -ne 'print "] . '$$1' . qq[\\n" if /avg = \\S+ std = \\S+ cap = (\\S+)/' $opts{p}.p3.mag.gz.log` -r \$^ 2> \$@.log | gzip -1 > \$@\n]);
 	}
 	print join("\n", @lines), "\n";
 }

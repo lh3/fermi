@@ -384,7 +384,7 @@ int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int mi
 		rec[0] += w[i].rec[0], rec[1] += w[i].rec[1], rec[2] += w[i].rec[2];
 	avg = (double)rec[1] / rec[0];
 	std = sqrt((double)rec[2] / rec[0] - avg * avg);
-	fprintf(stderr, "[M::%s] avg = %.2f std = %.2f\n", __func__, avg, std);
+	fprintf(stderr, "[M::%s] avg = %.2f std = %.2f cap = %d\n", __func__, avg, std, (int)(avg + std * 2. + 1.499));
 
 	free(buf->l); free(buf->s); free(buf->name); free(buf->comment); free(buf);
 	kseq_destroy(seq);
