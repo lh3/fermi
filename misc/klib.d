@@ -2,6 +2,10 @@ module klib;
 
 import std.string, std.ascii, std.c.stdlib, std.c.string;
 
+/*******************************
+ * Buffered gzip stream reader *
+ *******************************/
+
 extern(C) void *gzopen(const char *fn, const char *mode);
 extern(C) void *gzdopen(int fd, const char *mode);
 extern(C) int gzread(void *fp, void *buf, uint len);
@@ -57,6 +61,10 @@ public:
 	}
 }
 
+/*******************************
+ * Bio sequence transformation *
+ *******************************/
+
 char[128] seq_comp_table = [
 	  0,   1,	2,	 3,	  4,   5,	6,	 7,	  8,   9,  10,	11,	 12,  13,  14,	15,
 	 16,  17,  18,	19,	 20,  21,  22,	23,	 24,  25,  26,	27,	 28,  29,  30,	31,
@@ -71,8 +79,7 @@ char[128] seq_comp_table = [
 char[] seq_revcomp(char[] seq) {
 	char[] rev;
 	rev.length = seq.length;
-	for (int i = cast(int)seq.length - 1; i >= 0; --i) {
+	for (int i = cast(int)seq.length - 1; i >= 0; --i)
 		rev[seq.length - 1 - i] = seq_comp_table[cast(int)seq[i]];
-	}
 	return rev;
 }
