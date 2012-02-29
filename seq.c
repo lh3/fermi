@@ -147,7 +147,7 @@ int main_fltuniq(int argc, char *argv[])
 			k = (int)(log(ftell(fp)) / log(4) + 1.499);
 			fclose(fp);
 			if (k > 18) k = 18;
-			if (k < 14) k = 14;
+			if (k < 15) k = 15;
 			fprintf(stderr, "[M::%s] set the k-mer size as %d\n", __func__, k);
 		}
 	}
