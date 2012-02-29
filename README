@@ -17,9 +17,8 @@ assembly processes can be resumed. Here is an example:
   make -f NA12878.mak -j16
 
 This asks fermi to use 16 CPUs to assemble paired-end reads and will produce
-raw unitigs in file "NA12878.ext.mag.gz". Graph cleaning and misassembly fixing
-need to be applied manually. Future version of fermi will integrate these
-steps into the run-fermi.pl script. It takes about a wall-clock week and a peak
-memory of 85GB to assemble 35X human reads with 16 CPUs.
+scaftigs in file "NA12878.p5.fq.gz". It takes about a wall-clock week and
+peak memory of 85GB to assemble 35X human reads with 16 CPUs.
 
-If you have any questions, ask me at <http://lh3.userecho.com/>.
+If you have any questions, ask me at <http://lh3.userecho.com/> such that
+questions and answers can be publicly available. Thank you.
