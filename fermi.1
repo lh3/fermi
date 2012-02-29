@@ -1,4 +1,4 @@
-.TH fermi 1 "5 January 2012" "fermi-r513" "Bioinformatics tools"
+.TH fermi 1 "29 Feburary 2012" "fermi-r658" "Bioinformatics tools"
 
 .SH NAME
 .PP
@@ -6,84 +6,164 @@ fermi - FERragina-Manzini Index for DNA sequences
 
 .SH SYNOPSIS
 .PP
-run-fermi.pl -p prefix -Pt 8 end1.fq end2.fq > assemble.mak
+run-fermi.pl -Pt8 end1.fq end2.fq > assemble.mak
 .PP
 make -f assemble.mak -j 8
-.PP
-fermi clean -C prefix.msg.gz > prefix.contigs.fq
 
 .SH DESCRIPTION
 .PP
-Fermi is a light-weight de novo assembler for Illumina sequence reads. It is
-one of the few assemblers that is capable of assembling a mammalian genome.
-Fermi is a good assembler for unitig construction, but its ultimate goal
-is not to become the best assembler but to provide an alternative approach to
-resequencing and to data compression. It relies on the `coherence' property of
-unitigs (Myers 2005) to represent (ideally) all information in reads such that
-further analyses can be carried on the unitigs rather than raw reads.
+Fermi is a de novo assembler with a particular focus on assembling Illumina
+short sequence reads from a mammal-sized genome. In addition to the role of a
+typical assembler, fermi also aims to preserve heterozygotes which are often
+collapsed by other assemblers. Its ultimate goal is to find a minimal set of
+unitigs to represent all the information in raw reads. Fermi follows the
+overlap-layout-consensus paradigm and uses the FM-DNA-index (FMD-index) as the
+key data structure. It is inspired by the string graph assembler (Simpson and
+Durbin, 2010 and 2012) and has a similar workflow.
 
-.SS Hardware requirement
-Fermi is designed for running on a multi-core machine with large shared memory.
-The peak memory is linear in the size of the genome and sublinear in the coverage.
-It requires a minimum 90GB memory to assemble a mammalian genome at 35-fold
-coverage. Probably fermi runs on x86_64 CPUs only due to the large memory
-requirements and assumptions on the byte order, though the latter can be
-relaxed in theory.
+.SH QUICK START
+.sp
+\
+
+.SS Hardware requirements
+Fermi is designed for running on a multi-core x86_64 machine with large shared
+memory.  The peak memory is linear in the size of the genome and sublinear in
+the coverage.  It takes approximately 90GB peak memory and 5 days to assemble a
+mammalian genome at 35-fold coverage and needs working disk space roughly
+three times as large as the original gzip'd FASTQ.
+
+.SS Installation
+Fermi can be compiled by invoking 
+.B make
+in the source code directory. After compilation, one may copy file
+.B run-fermi.pl
+and
+.B fermi
+to
+.BR PATH ,
+which finishes the installation. Fermi only depends on the
+.B zlib
+library.
 
 .SS Running fermi
 The easiest way to run fermi is to use the
 .B run-fermi.pl
 script. This script takes multiple single-end or paired-end FASTQ files as input
-and outputs a Makefile which can be used with the
-.B make
-command to do the actual assembly. The end output after this procedure is a raw
-overlap graph with per-base coverage of non-contained reads. An additional
-graph cleaning step is needed, but future versions of fermi may incorporate
-this step in the Makefile as well. The following are a few examples:
+and outputs a Makefile. The actual assembly is done by calling
+.BR make .
+For single-end data, the final output is an overlap graph; for paired-end data,
+the final output is scaftigs (i.e. unitigs linked with paired-end information
+without gaps), but the graph topology is not kept. As an example, the following
+command line assembles paired-end reads in files
+.IR reads*.fq.gz
+across 16 CPUs, requring a minimum 50bp overlap:
 
-.IP o 2
-Assemble a bacterial genome:
+  run-fermi.pl -Pt16 -e ./fermi -k50 reads*.fq.gz > fmdef.mak
+  make -f fmdef.mak -j16
 
-  run-fermi.pl -Pe ./fermi read1.fq.gz read2.fq.gz > Makefile
-  make
-  ./fermi clean -C fmdef.msg.gz > fmdef.contigs
- 
-.IP o 2
-Assemble a C. elegans genome:
+For the input files,
+.RI 2 i -th
+file is paired with the
+.RI 2( i +1)-th
+file. After assembly, scaftigs will be stored in fmdef.p5.fq.gz. This file is
+in a FASTQ-like format. The `quality' line keeps the number of non-redundant
+reads covering each scaftig position. The suffixes of other useful intermediate
+files are explained as follows, in the order that they are generated:
 
-  run-fermi.pl -t8 -Pk50 -p ce SRR065390_1.fq SRR065390_2.fq > ce.mak
-  make -j8 -f ce.mak
-  fermi clean -Co70 -l250 ce.msg.gz > ce.contigs
+.TP 11
+.B .raw.fmd
+FMD-index of the raw reads.
+.TP
+.B .ec.fq.gz
+Error corrected reads. Reads containing unique k-mers are not discarded.
+.TP
+.B .ec.fmd
+FMD-index of the error corrected reads with reads containing unique k-mers
+dropped. It is recommended to keep this index as generating this file typically
+takes about 75% of total run time and many following steps depends on it.
+.TP
+.B .ec.rank
+Rank of each read sequence in the FMD-index.
+.TP
+.B .p0.mag.gz
+Initial overlap graph in the MAG format. Briefly, MAG is a variant of FASTQ
+format with the `quality' line replaced by per-base coverage of non-duplicate
+reads.  In MAG, each unitig is labeled by two integers. On the FASTQ header
+line, the second number gives the number of reads contained in the unitig. The
+following two fields keep the left and right neighbors of the unitig and the
+length of exact overlaps.
+.TP
+.B .p1.mag.gz
+Overlap graph after trimming singleton tips and reducing excessive neighbors
+(for the sake of efficiency). It is recommended to keep this file for fine
+tuning the assembly with the
+.B clean
+command.
+.TP
+.B .p2.mag.gz
+Overlap graph after tip trimming and aggressive bubble popping with most heterozygotes
+are removed. For single-end data, this is the final output file.
+.TP
+.B .p4.fa.gz
+Initial scaftigs.
+.TP
+.B .p5.fq.gz
+The final scaftigs. In this file, unitigs in `.p4.fa.gz' are split at regions
+without bridging read pairs.
+.RE
 
-.IP o 2
-Assemble a human genome:
+.SS Performance
+.PP
+Fermi works well for HiSeq data, comparable to the mainstream assemblers such
+as SOAPdenovo, SGA and ALLPATHS-LG. Based on limited evaluations, fermi may
+produce longer N50 with a similar level of large-scale misassembly. However,
+fermi may produce more misassemblies towards the end (within ~150bp) of
+scaftigs. On one data set, it also has higher large-scale misassembly rate
+before the last pair-breaking step, though most of the additional errors
+can be removed after pair-breaking. In all, fermi yields assembly of similar
+quality to the top de novo assemblers. It may be better in some aspects or for
+some data sets, but worse in others.
 
-  run-fermi.pl -t16 -Pk50 -f18 s_1_1.fq s_1_2.fq s_2_1.fq s_2_2.fq > human.mak
-  make -j16 -f human.mak
-  fermi clean -C -r0.15 -o70 fmdef.msg.gz > human-reseq.ctg
-  fermi clean -CA fmdef.ext.msg.gz > human-long-N50.ctg
+During error correction, fermi rarely removes heterozygotes. For the NA12878
+35X data set, the error correction only significantly affects 0.2% of SNPs. Unitigs
+also preserve most information in read and because assembly takes the advantage
+of nearby information. Unitigs are more sensitive to longer short INDELs and
+some SNPs. Unitigs also retain the phasing information for SNP pairs with
+distance within the read length.
+
+.SS Limitations
+.PP
+As of now, fermi is designed and extensively tested for 100bp Illumina
+paired-end data from a single short-insert library or libraries of similar
+insert sizes. It is able to use the pairing information for the unitig
+construction, but it does not generate scaffolds and is unable to take
+advantage of reads from jumping libraries. Thus users may need a third-party
+scaffolder to construct scaffolds and/or to take advantage of reads with
+long-insert. In addition, fermi does not work with long reads having a high
+indel sequencing error rate, though it has the potential to be adapted to such
+data in future.
 
 .SH COMMANDS AND OPTIONS
 .sp
 \ 
 .SS Quick assembly with run-fermi.pl
 .B run-fermi.pl
-.RB [ \-PAc ]
+.RB [ \-PDc ]
 .RB [ \-e
 .IR fermiExe ]
 .RB [ \-t
 .IR nCPUs ]
 .RB [ \-p
 .IR prefix ]
-.RB [ \-f
-.IR uniqFltK ]
 .RB [ \-k
 .IR ovlpLen ]
 .I in1.fq.gz
 .RI [ in2.fq.gz ]
-.BI > assemble.mak
+[...]
+.B >
+.I assemble.mak
 
-Generate a Makefile to assembly input reads. To actually perform the assembly,
+Generate a Makefile for assembling input reads. To actually perform the assembly,
 one should use
 .RB ` make
 -f
@@ -92,43 +172,31 @@ one should use
 .IR nCPUs ',
 where
 .I nCPUs
-is the option used for generating the Makefile. The end assembly output for single-end data is
-.IR prefix .msg.gz
-which is an overlap graph in a FASTQ-like format with the original quality line
-encoding the per-base read depth. One should further use the
-.B clean
-command or another assembler to remove tips and bubbles. For paired-end data, file 
-.IR prefix .ext.msg.gz
-is the final output which considers the pairing information during contig construction.
-
-In addition to the final assembly graph, the following files are also generated
-as potentially useful intermediate results:
-.IR prefix .raw.fmd,
-the FM-index of the raw sequence reads;
-.IR prefix .ec.fq.gz,
-the error-corrected read sequences;
-.IR prefix .ec.fmd,
-the FM-index of the error-corrected reads.
+is the option used for generating the Makefile.
 
 .B OPTIONS:
 .TP 10
 .B -c
 The input is collated paired-end FASTQs where the
-.RI 2* i -th
+.RI 2 i -th
 and
-.RI 2*( i +1)-th
+.RI 2( i +1)-th
 reads in each input file constitute a read pair.
 .TP
 .B -P
 The input is separated paired-end FASTQ pairs where the
 .IR i -th
 read in the
-.RI 2* j -th
+.RI 2 j -th
 input file and the
 .IR i -th
 read in the
-.RI 2*( j +1)-th
+.RI 2( j +1)-th
 file constitute a read pair.
+.TP
+.B -D
+Halve the number of split files when building the index. This is faster but
+increases the memory usage.
 .TP
 .BI -e \ FILE
 Path of the
@@ -141,16 +209,10 @@ Prefix of output files [fmdef]
 .BI -t \ INT
 Maximum number of CPUs. Must be a number no less than 2. [2]
 .TP
-.BI -f \ INT
-K-mer length used for filtering unique mers (see also
-.BR fltuniq ).
-Typically between 16 and 18. [17]
-.TP
 .BI -k \ INT
 Minimum overlap when constructing unitigs (see also
 .BR unitig ).
 [50]
-
 
 .SS Assembly related commands
 
@@ -402,56 +464,6 @@ structure, the BWT construction algorithm, the error correction strategy, the
 overlap graph construction procedure are all different from those
 implemented in SGA.
 
-.SS Limitations
-.PP
-As of now, fermi is designed and extensively tested for 100bp Illumina
-paired-end data from a single short-insert library or libraries of similar
-insert sizes. It is able to use the pairing information for the unitig
-construction, but it does not generate scaffolds and is unable to take
-advantage of reads from jumping libraries. Thus users may need a third-party
-scaffolder to construct scaffolds and/or to take advantage of reads with
-long-insert. In addition, fermi does not work with long reads having a high
-indel sequencing error rate, though it has the potential to be applied to such
-data in future.
-
-.SS Performance
-.PP
-Fermi works well for single-end HiSeq data. The corrected unitig N50 is
-usually longer than other assemblers, though as a tradeoff the misassembly rate
-may be a little higher in comparison to SGA and SOAPdenovo. For paired-end data,
-fermi extends unitigs by doing local assembly around the ends. This usually
-yields contigs of length comparable to the scaftigs produced by other assemblers.
-
-During error correction, fermi rarely removes heterozygotes. For the NA12878
-35X data set, the error correction only significantly affects 0.2% of SNPs. Unitigs
-also preserve most information in read and because assembly takes the advantage
-of nearby information, unitigs are more sensitive to longer short INDELs and
-some SNPs. Unitigs also retain the phasing information for SNP pairs with
-distance within the read length.
-
-Like SGA, fermi effectively trades speed for a small memory footprint. It also
-strives for minimal disk usage, which further slows fermi down. Given 35X human
-data, fermi takes roughly 7 days using 16 CPUs with the memory peaking around 85GB.
-
-.SS Unitig, contig, scaftig and scaffold
-.PP
-Given a haploid genome and sequence reads from the genome, a
-.I unitig
-is a subsequence of the genome that cannot be extended unambiguously with the
-sequence reads and is not contained in other unitigs. A unitig may have
-multiple copies in the genome, but these copies are indistinguishable from the
-sequence reads. Given paired-end data, a
-.I scaffold
-is a sequence consisting of unitigs and possibly gaps between them that are
-inferred from the pairing information. A contiguous subsequence
-in a scaffold is a
-.IR scaftig .
-As read pairs may resolve small repeats and reveal undetected overlaps, scaftigs
-are usually longer than unitigs. A
-.IR contig ,
-by definition, is a contiguous sequence. It is a more generic concept.
-We may regard unitigs, scaftigs or a walk along unitigs as contigs.
-
 
 .SH AUTHOR
 .PP
@@ -460,3 +472,4 @@ Heng Li <lh3@me.com>
 .SH SEE ALSO
 .PP
 Fermi git repository: <https://github.com/lh3/fermi>
+General Q&A site of the author: <http://lh3.userecho.com>

@@ -7,31 +7,31 @@ use Getopt::Std;
 &main;
 
 sub main {
-	my %opts = (e=>'fermi', t=>2, p=>'fmdef', f=>17, k=>50);
-	getopts('e:t:p:Pcf:k:dl:', \%opts);
+	my %opts = (e=>'fermi', t=>2, p=>'fmdef', k=>50);
+	getopts('e:t:p:Pck:Dl:', \%opts);
 	$opts{P} = 1 if defined($opts{c});
 	$opts{l} = defined($opts{l})? "-l$opts{l}" : "";
+	my $min_clean_o = int($opts{k} * 1.2 + .499);
 
 	die(qq/
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
-Options: -P        the input is paired
+Options: -P        the input files are paired (ends in separate files)
          -c        the input is collated FASTQ (two ends in the same file)
-         -d        double the number of jobs for split index
+         -D        halve the number of jobs for building the split index
          -e FILE   fermi executable [$opts{e}]
          -t INT    number of threads [$opts{t}]
          -p STR    prefix of output files [$opts{p}]
-         -f INT    k-mer length for unique-mer filtering [$opts{f}]
          -l INT    trim reads to INT bp after error correction [inf]
          -k INT    minimum overlap [$opts{k}]
 \n/) if (@ARGV == 0);
 
 	my (@lines, $in_list, $fqs, $n_split);
 
-	push(@lines, "FERMI=$opts{e}", "FLTUNIQ_K=$opts{f}", "UNITIG_K=$opts{k}", "");
+	push(@lines, "FERMI=$opts{e}", "UNITIG_K=$opts{k}", "OVERLAP_K=$min_clean_o", "");
 	push(@lines, (defined $opts{P})? "all:$opts{p}.p5.fq.gz" : "all:$opts{p}.p2.mag.gz", "");
 
 	$in_list = join(" ", @ARGV);
-	$n_split = defined($opts{d})? $opts{t} * 2 : $opts{t};
+	$n_split = defined($opts{D})? $opts{t} : $opts{t} * 2;
 
 	$fqs = '';
 	if (defined($opts{P}) && !defined($opts{c})) {
@@ -61,7 +61,7 @@ Options: -P        the input is paired
 	push(@lines, "# Construct the FM-index for corrected sequences");
 	$pre = "$opts{p}.ec";
 	push(@lines, "$pre.split.log:$opts{p}.ec.fq.gz");
-	push(@lines, "\t\$(FERMI) fltuniq -k \$(FLTUNIQ_K) \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $n_split 2> \$@\n");
+	push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $n_split 2> \$@\n");
 	&build_fmd(\@lines, $n_split, $pre, $opts{t});
 
 	push(@lines, "# Generate unitigs");
@@ -77,7 +77,7 @@ Options: -P        the input is paired
 	push(@lines, "$opts{p}.p1.mag.gz:$opts{p}.p0.mag.gz");
 	push(@lines, "\t\$(FERMI) clean \$< 2> \$@.log | gzip -1 > \$@");
 	push(@lines, "$opts{p}.p2.mag.gz:$opts{p}.p1.mag.gz");
-	push(@lines, "\t\$(FERMI) clean -CAOF \$< 2> \$@.log | gzip -1 > \$@\n");
+	push(@lines, "\t\$(FERMI) clean -CAOFo \$(OVERLAP_K) \$< 2> \$@.log | gzip -1 > \$@\n");
 
 	if (defined($opts{P})) {
 		push(@lines, "# Generate scaftigs");
