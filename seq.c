@@ -1,4 +1,5 @@
 #include <zlib.h>
+#include <math.h>
 #include <stdio.h>
 #include <ctype.h>
 #include <unistd.h>
@@ -120,7 +121,7 @@ int main_splitfa(int argc, char *argv[])
 
 int main_fltuniq(int argc, char *argv[])
 {
-	int c, k = 17;
+	int c, k = 0;
 	uint64_t *flags, mask;
 	kstring_t out, prev_name;
 	gzFile fp;
@@ -132,8 +133,23 @@ int main_fltuniq(int argc, char *argv[])
 		}
 	}
 	if (optind == argc) {
-		fprintf(stderr, "Usage: fermi fltuniq [-k kmer=17] <in.fa>\n");
+		fprintf(stderr, "Usage: fermi fltuniq <in.fa>\n");
 		return 1;
+	}
+
+	if (k == 0) { // compute the k-mer length based on the input file size
+		FILE *fp;
+		if ((fp = fopen(argv[optind], "rb")) == 0) {
+			fprintf(stderr, "[E::%s] fail to open the input file\n", __func__);
+			return 1;
+		} else {
+			fseek(fp, 0, SEEK_END);
+			k = (int)(log(ftell(fp)) / log(4) + 1.499);
+			fclose(fp);
+			if (k > 18) k = 18;
+			if (k < 14) k = 14;
+			fprintf(stderr, "[M::%s] set the k-mer size as %d\n", __func__, k);
+		}
 	}
 
 	fp = gzopen(argv[optind], "r");
