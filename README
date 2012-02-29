@@ -13,7 +13,7 @@ memory. The easiest way to run fermi is to use the run-fermi.pl script. It
 generates a Makefile. The actual assembly is done by invoking make. Premature
 assembly processes can be resumed. Here is an example:
 
-  run-fermi.pl -dAPe ./fermi -p NA12878 -t16 -f18 reads*.fq.gz > NA12878.mak
+  run-fermi.pl -Pe ./fermi -p NA12878 -t16 reads*.fq.gz > NA12878.mak
   make -f NA12878.mak -j16
 
 This asks fermi to use 16 CPUs to assemble paired-end reads and will produce
