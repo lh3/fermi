@@ -25,14 +25,16 @@ Durbin, 2010 and 2012) and has a similar workflow.
 .sp
 \
 
-.SS Hardware requirements
+.SS Requirements and installation
 Fermi is designed for running on a multi-core x86_64 machine with large shared
 memory.  The peak memory is linear in the size of the genome and sublinear in
 the coverage.  It takes approximately 90GB peak memory and 5 days to assemble a
 mammalian genome at 35-fold coverage and needs working disk space roughly
 three times as large as the original gzip'd FASTQ.
 
-.SS Installation
+Fermi is writen in C and can be compiled by gcc or clang. The only library
+dependency is
+.BR zlib .
 Fermi can be compiled by invoking 
 .B make
 in the source code directory. After compilation, one may copy file
@@ -40,10 +42,8 @@ in the source code directory. After compilation, one may copy file
 and
 .B fermi
 to
-.BR PATH ,
-which finishes the installation. Fermi only depends on the
-.B zlib
-library.
+.BR PATH .
+This finishes the installation.
 
 .SS Running fermi
 The easiest way to run fermi is to use the
@@ -61,7 +61,7 @@ across 16 CPUs, requring a minimum 50bp overlap:
   run-fermi.pl -Pt16 -e ./fermi -k50 reads*.fq.gz > fmdef.mak
   make -f fmdef.mak -j16
 
-For the input files,
+For the input files, the
 .RI 2 i -th
 file is paired with the
 .RI 2( i +1)-th
@@ -87,11 +87,11 @@ Rank of each read sequence in the FMD-index.
 .TP
 .B .p0.mag.gz
 Initial overlap graph in the MAG format. Briefly, MAG is a variant of FASTQ
-format with the `quality' line replaced by per-base coverage of non-duplicate
-reads.  In MAG, each unitig is labeled by two integers. On the FASTQ header
-line, the second number gives the number of reads contained in the unitig. The
-following two fields keep the left and right neighbors of the unitig and the
-length of exact overlaps.
+format with the `quality' line replaced by per-base coverage computed from
+non-duplicate reads.  In MAG, each unitig is labeled by two integers. On the
+FASTQ header line, the second number gives the number of reads contained in the
+unitig. The following two fields keep the left and right neighbors of the
+unitig and the length of exact overlaps.
 .TP
 .B .p1.mag.gz
 Overlap graph after trimming singleton tips and reducing excessive neighbors
@@ -292,7 +292,8 @@ and use the collected informtion to fix sequencing errors in
 .B fermi seqrank
 .RB [ \-t
 .IR nThreads ]
-.RI > out.rank
+>
+.I out.rank
 
 Compute the rank of each sequence and output a binary file to be used with
 .BR unitig .
@@ -311,11 +312,7 @@ Compute the rank of each sequence and output a binary file to be used with
 
 Construct the unitig graph from
 .I in.fmd
-by unambiguously and maximally extending each read. When
-.B -r
-is specified, this command assumes the input are paired. It then estimates
-the mean and the standard deviation of the insert size distribution and
-records the read positions of unpaired reads.
+by unambiguously and maximally extending each read.
 
 .B OPTIONS:
 .RS
@@ -333,14 +330,18 @@ The
 .I FILE
 here must be generated from
 .IR in.fmd .
-When this option is in use, the (2*i) and (2*i+1)-th sequences form a pair. [null]
+This option speeds up the graph construction at the cost of a larger memory footprint. Although
+generating
+.I FILE
+also takes time, this file is required by several other commands.
+[null]
 .RE
 
 
 .TP
 .B clean
 .B fermi clean
-.RB [ \-CA ]
+.RB [ \-CSA ]
 .RB [ \-N
 .IR maxNei ]
 .RB [ \-d
@@ -357,10 +358,97 @@ When this option is in use, the (2*i) and (2*i+1)-th sequences form a pair. [nul
 .IR minBblCov ]
 .RB [ \-r
 .IR minBblRatio ]
-.I in.msg
+.I in.mag
 
 Clean unitig graph
-.IR in.msg .
+.I in.mag
+by conservative tip removal.
+Option
+.B -C
+further enables more aggressive tip removal, weak overlap cut and bubble popping.
+
+.B OPTIONS:
+.RS
+.TP 10
+.BI -N \ INT
+During graph reading, read maximum
+.I INT
+neighbors per vertex. Shorter overlaps will be dropped. This option helps to reduce the memory caused by highly repetitive sequences. [512]
+.TP
+.BI -d \ FLOAT
+During graph reading, drop an overlap if it is shorter than
+.I FLOAT
+times the second longest overlap. This option also helps to reduce the memory. [0.70]
+.TP
+.BR -l \ INT
+Keep tips whose length no shorter than
+.I INT
+[300]
+.TP
+.B -O
+Read the graph without any modification.
+.TP
+.B -F
+If during graph reading the graph is not modified, skip graph amendation. Without this option,
+the
+.B clean
+command tries to fix inconsistent overlaps, which may be errors in the input or the result from
+conservation tip removal. This step is quite slow.
+.TP
+.B -C
+Enable more aggressive graph cleaning. When this option is absent, only singletons orphans and tips will be removed. The following
+options are only effective when this option is in use.
+.TP
+.BR -e \ INT
+Keep tips supported by no less than
+.I INT
+reads [4]
+.TP
+.BR -i \ INT
+Remove an internal vertex if it is shorter than
+.B -l
+and supported by less than
+.I INT
+reads [3]
+.TP
+.BR -o \ INT
+Drop an overlap shorter than
+.I INT
+[60]
+.TP
+.BR -o \ FLOAT
+Drop an overlap if it is shorter than
+.I FLOAT
+times the longest overlap [0.80]
+.TP
+.BR -n \ INT
+Apply tip removal and overlap cutting for
+.I INT
+rounds [3]
+.TP
+.BR -w \ FLOAT
+Keep a bubble if one side of the bubble having average coverage higher than
+.I FLOAT
+[10.0]
+.TP
+.BR -r \ FLOAT
+Keep a bubble if the coverage of the weak side of the bubble is more than
+.I FLOAT
+times the total coverage of the bubble.
+[0.15]
+.TP
+.B -S
+Skip bubble simplification, which converts complex bubbles to simple ones.
+.TP
+.B -A
+Enable even more aggressive bubble popping. Without this option, the
+.B clean
+command tries to preserve heterozygotes, but applying the option will get
+most heterozygotes removed. The option also more aggressively removes
+tips that are caused by undetected overlaps.
+.RE
+
+
 
 .SS Sequence processing commands
 
