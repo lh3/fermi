@@ -159,7 +159,7 @@ int main_unpack(int argc, char *argv[])
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	if (n) {
 		for (i = 0; (int)i < n; ++i)
-			if (list[i] >= 0 && list[i] < e->mcnt[1])
+			if (list[i] < e->mcnt[1])
 				print_i(e, list[i], &s);
 	} else {
 		for (i = 0; i < e->mcnt[1]; ++i)

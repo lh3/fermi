@@ -44,7 +44,7 @@ static inline int ilog2(uint32_t v)
 	return (t = (v >> 8)) ? 8 + LogTable256[t] : LogTable256[v];
 }
 
-inline int64_t rld_delta_enc1(int64_t x, int *width)
+static inline int64_t rld_delta_enc1(int64_t x, int *width)
 {
 	int y = ilog2(x);
 	int z = ilog2(y + 1);

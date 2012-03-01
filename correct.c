@@ -22,7 +22,6 @@ KSEQ_DECLARE(gzFile)
 KHASH_INIT(solid, uint32_t, uint8_t, 1, solid_hash, solid_eq)
 typedef khash_t(solid) shash_t;
 
-static volatile int g_stdout_lock;
 static double g_tc, g_tr;
 
 static void compute_SUF(int suf_len)
