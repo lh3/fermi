@@ -302,6 +302,7 @@ void mag_g_destroy(mag_t *g)
 	kh_destroy(64, g->h);
 	for (i = 0; i < g->v.n; ++i)
 		mag_v_destroy(&g->v.a[i]);
+	free(g->alt.s);
 	free(g->v.a);
 	free(g);
 }

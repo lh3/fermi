@@ -27,12 +27,20 @@ typedef struct { size_t n, m; ku128_t *a; } ku128_v;
 #endif
 
 typedef struct {
+	int beg, end;
+	uint32_t start;
+} maga_t;
+
+typedef struct { int n, m; maga_t *a; } maga_v;
+
+typedef struct {
 	int len, nsr;    // length; number supporting reads
 	uint32_t max_len;// allocated seq/cov size
 	uint64_t k[2];   // bi-interval
 	ku128_v nei[2];  // neighbors
 	char *seq, *cov; // sequence and coverage
 	void *ptr;       // additional information
+	maga_v alt;
 } magv_t;
 
 typedef struct { size_t n, m; magv_t *a; } magv_v;
@@ -42,6 +50,7 @@ typedef struct __mog_t {
 	float rdist;  // read distance
 	int min_ovlp; // minimum overlap seen from the graph
 	void *h;
+	kstring_t alt;
 } mag_t;
 
 struct mogb_aux;
@@ -69,6 +78,7 @@ extern "C" {
 	void mag_v_del(mag_t *g, magv_t *p);
 	void mag_v_write(const magv_t *p, kstring_t *out);
 	void mag_v_pop_open(mag_t *g, magv_t *p, int min_elen);
+	void mag_v_flip(mag_t *g, magv_t *p);
 
 	uint64_t mag_tid2idd(void *h, uint64_t tid);
 	void mag_v128_clean(ku128_v *r);

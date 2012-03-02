@@ -195,6 +195,8 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 		l[j] = q[j]->len - (int)(q[j]->nei[0].a->y + q[j]->nei[1].a->y);
 	}
 	if (q[0]->nei[dir[0]^1].a->x != q[1]->nei[dir[1]^1].a->x) return; // no bubble
+	if (dir[0]) mag_v_flip(g, q[0]);
+	if (dir[1]) mag_v_flip(g, q[1]);
 	for (j = 0; j < 2; ++j) { // set seq[] and cov[], and compute avg[]
 		if (l[j] > 0) {
 			seq[j] = malloc(l[j]<<1);
@@ -202,10 +204,6 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 			for (i = 0; i < l[j]; ++i) {
 				seq[j][i] = q[j]->seq[i + q[j]->nei[0].a->y];
 				cov[j][i] = q[j]->cov[i + q[j]->nei[0].a->y];
-			}
-			if (dir[j]) {
-				seq_revcomp6(l[j], (uint8_t*)seq[j]);
-				seq_reverse(l[j], (uint8_t*)cov[j]);
 			}
 			for (i = 0, avg[j] = 0.; i < l[j]; ++i) {
 				--seq[j][i]; // change DNA6 encoding to DNA4 for SW below
@@ -245,8 +243,23 @@ void mag_vh_pop_simple(mag_t *g, uint64_t idd, float max_cov, float max_frac, in
 	}
 	if (n_diff < max_n_diff || r_diff < MAX_R_DIFF) {
 		j = avg[0] < avg[1]? 0 : 1;
-		if (aggressive || (avg[j] < max_cov && avg[j] / (avg[j^1] + avg[j]) < max_frac))
+		if (aggressive || (avg[j] < max_cov && avg[j] / (avg[j^1] + avg[j]) < max_frac)) {
+			maga_t *r;
+			kv_pushp(maga_t, q[j^1]->alt, &r);
+			r->beg = r->end = 0;
+			for (i = 0; i < l[0] && i < l[1]; ++i)
+				if (seq[0][i] != seq[1][i]) break;
+			r->beg = i;
+			for (i = 0; i < l[0] && i < l[1]; ++i)
+				if (seq[0][l[0] - 1 - i] != seq[1][l[1] - 1 - i]) break;
+			r->end = i;
+			r->start = g->alt.l;
+			kputsn(q[j]->seq + q[j]->nei[0].a[0].y + r->beg, l[j] - r->end - r->beg, &g->alt); kputc(0, &g->alt);
+			kputsn(q[j]->cov + q[j]->nei[0].a[0].y + r->beg, l[j] - r->end - r->beg, &g->alt); kputc(0, &g->alt);
+			r->beg += q[j^1]->nei[0].a[0].y;
+			r->end = q[j^1]->nei[0].a[0].y + (l[j^1] - r->end);
 			mag_v_del(g, q[j]);
+		}
 	}
 	free(seq[0]); free(seq[1]);
 }
