@@ -485,7 +485,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		add_seq(e, h, q, &str, &rd, iddq, i? -1L : (int64_t)iddp);
 		t[0] = str.s; t[1] = str.s + pl;
 		ext = assemble(str.l, str.s, max_len, t);
-		if (ext.patched) {
+		if (ext.patched && ext.l + p->len > 0 && ext.l + q->len > 0) {
 			ext.t = compute_t(h, v, iddp, ext.l, avg, std, max_len);
 			if (i == 0 && ext.t > 1e-5) {
 				p->ext[iddp&1] = q->ext[iddq&1] = ext;
@@ -507,17 +507,14 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 		max_drop = drop[0] > drop[1]? drop[0] : drop[1];
 		min_drop = drop[0] < drop[1]? drop[0] : drop[1];
 		if (min_drop == 0 && max_drop < MAX_DROP && a.score >= a.T + min_drop * 1) { // an end-to-end alignment
-			int lp = a.te+1 - a.tb + drop[0] + drop[1];
+			int lp = a.te + 1 - a.tb + drop[0] + drop[1];
 			int lq = a.qe + 1 + drop[0] + drop[1];
 			if (lp < p->len && lq < q->len) {
 				p->ext[iddp&1].l = -lp;
 				q->ext[iddq&1].l = -lq;
-				if (-p->ext[iddp&1].l < p->len && -q->ext[iddq&1].l < q->len) {
-					p->ext[iddp&1].patched = q->ext[iddq&1].patched = 1;
-					p->ext[iddp&1].t = q->ext[iddq&1].t = compute_t(h, v, iddp, p->ext[iddp&1].l, avg, std, max_len);
-				}
-			} else fprintf(stderr, "[E::%s] This is a bug: (%ld:%ld,%d,%d; %ld:%ld,%d,%d)\n", __func__,
-						   (long)p->k[0], (long)p->k[1], p->len, lp, (long)q->k[0], (long)q->k[1], q->len, lq);
+				p->ext[iddp&1].patched = q->ext[iddq&1].patched = 1;
+				p->ext[iddp&1].t = q->ext[iddq&1].t = compute_t(h, v, iddp, p->ext[iddp&1].l, avg, std, max_len);
+			}
 		}
 		//fprintf(stderr, "%c, %d, (%d, %d, %d), (%d, %d, %d)\n", "NY"[p->ext[iddp&1].patched], a.score, ql, a.qb, a.qe+1, pl-1, a.tb, a.te+1);
 	}
