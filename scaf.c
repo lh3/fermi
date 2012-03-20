@@ -417,7 +417,7 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 	//printf(">0\n");for(j=0;j<l-1;++j)if(s[j]==0)printf("\n>%d\n",j);else putchar("$ACGTN"[(int)s[j]]);putchar('\n');exit(0);
 	g = fm6_api_unitig(max_len/3. < 17? max_len/3. : 17, l, s);
 	mag_g_merge(g, 1); // FIXME: this to remove multi-edges, which is likely to introduce small scale errors...
-	mag_g_rm_vext(g, max_len * 1.1, 2);
+	mag_g_rm_vext(g, max_len * 1.1, 4);
 	mag_g_simplify_bubble(g, 25, max_len * 2);
 	mag_g_pop_simple(g, 10., 0.15, 1); // FIXME: always agressive?
 	mag_g_rm_edge(g, 0, 0.8);
@@ -516,6 +516,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 				p->ext[iddp&1].t = q->ext[iddq&1].t = compute_t(h, v, iddp, p->ext[iddp&1].l, avg, std, max_len);
 			}
 		}
+		if (!p->ext[iddp&1]) fprintf(stderr, "SW\t%ld\t%ld\t%d\t%d\t%d\n", p->k[iddp&1], q->k[iddq&1], drop[0], drop[1], a.score);
 		//fprintf(stderr, "%c, %d, (%d, %d, %d), (%d, %d, %d)\n", "NY"[p->ext[iddp&1].patched], a.score, ql, a.qb, a.qe+1, pl-1, a.tb, a.te+1);
 	}
 	free(str.s); free(rd.s);

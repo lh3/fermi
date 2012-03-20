@@ -611,6 +611,7 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 	if ((opt->flag & MOG_F_CLEAN) == 0) return;
 	if (g->min_ovlp < opt->min_ovlp) g->min_ovlp = opt->min_ovlp;
 	//mag_vh_simplify_bubble(g, tid2idd(g->h, 34356802), 512, 500, a); exit(0); // a good case
+	mag_g_rm_vext(g, opt->min_elen, opt->min_ensr < 3? opt->min_ensr : 3);
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		t = cputime();
