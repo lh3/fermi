@@ -503,17 +503,26 @@ void mag_g_rm_vint(mag_t *g, int min_len, int min_nsr, int min_ovlp)
 	}
 }
 
-void mag_g_rm_edge(mag_t *g, int min_ovlp, double min_ratio)
+void mag_g_rm_edge(mag_t *g, int min_ovlp, double min_ratio, int min_len, int min_nsr)
 {
 	int i, j, k;
 	for (i = 0; i < g->v.n; ++i) {
 		magv_t *p = &g->v.a[i];
+		if (p->len >= 0 && (p->nei[0].n == 0 || p->nei[1].n == 0) && p->len < min_len && p->nsr < min_nsr)
+			continue; // skip tips
 		for (j = 0; j < 2; ++j) {
 			ku128_v *r = &p->nei[j];
-			int max_ovlp = min_ovlp;
+			int max_ovlp = min_ovlp, max_k = -1;
 			if (r->n == 0) continue; // no overlapping reads
 			for (k = 0; k < r->n; ++k) // get the max overlap length
-				if (max_ovlp < r->a[k].y) max_ovlp = r->a[k].y;
+				if (max_ovlp < r->a[k].y)
+					max_ovlp = r->a[k].y, max_k = k;
+			if (max_k >= 0) { // test if max_k is a tip
+				uint64_t x = tid2idd(g->h, r->a[max_k].x);
+				magv_t *q = &g->v.a[x>>1];
+				if (q->len >= 0 && (q->nei[0].n == 0 || q->nei[1].n == 0) && q->len < min_len && q->nsr < min_nsr)
+					max_ovlp = min_ovlp;
+			}
 			for (k = 0; k < r->n; ++k) {
 				if (edge_is_del(r->a[k])) continue;
 				if (r->a[k].y < min_ovlp || (double)r->a[k].y / max_ovlp < min_ratio) {
@@ -615,7 +624,7 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 	for (j = 0; j < opt->n_iter; ++j) {
 		double r = opt->n_iter == 1? 1. : .5 + .5 * j / (opt->n_iter - 1);
 		t = cputime();
-		mag_g_rm_edge(g, opt->min_ovlp * r, opt->min_dratio1 * r);
+		mag_g_rm_edge(g, opt->min_ovlp * r, opt->min_dratio1 * r, opt->min_elen, opt->min_ensr);
 		mag_g_rm_vext(g, opt->min_elen * r, opt->min_ensr * r > 2.? opt->min_ensr * r > 2. : 2);
 		mag_g_merge(g, 1);
 		if (fm_verbose >= 3)
@@ -647,7 +656,7 @@ void mag_g_clean(mag_t *g, const magopt_t *opt)
 	if (opt->min_insr >= 2) {
 		t = cputime();
 		mag_g_rm_vint(g, opt->min_elen, opt->min_insr, g->min_ovlp);
-		mag_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1);
+		mag_g_rm_edge(g, opt->min_ovlp, opt->min_dratio1, opt->min_elen, opt->min_ensr);
 		mag_g_rm_vext(g, opt->min_elen, opt->min_ensr);
 		mag_g_merge(g, 1);
 		if (fm_verbose >= 3)
