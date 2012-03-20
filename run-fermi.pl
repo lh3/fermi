@@ -42,7 +42,7 @@ Options: -P        the input files are paired (ends in separate files)
 		}
 	} else {
 		for my $f (@ARGV) {
-			$fqs .= ($f =~ /\.gz$/)? "gzip -dc $f; " : "cat $f; ";
+			$fqs .= ($f =~ /\.gz$/)? "gzip -dc $f; " : ($f =~ /\.bam$/)? "samtools bam2fq -n $f; " : "cat $f; ";
 		}
 	}
 	chop($fqs); chop($fqs);
