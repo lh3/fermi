@@ -516,7 +516,7 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 				p->ext[iddp&1].t = q->ext[iddq&1].t = compute_t(h, v, iddp, p->ext[iddp&1].l, avg, std, max_len);
 			}
 		}
-		if (!p->ext[iddp&1]) fprintf(stderr, "SW\t%ld\t%ld\t%d\t%d\t%d\n", p->k[iddp&1], q->k[iddq&1], drop[0], drop[1], a.score);
+		if (!p->ext[iddp&1].patched) fprintf(stderr, "SW\t%ld\t%ld\t%d\t%d\t%d\n", p->k[iddp&1], q->k[iddq&1], drop[0], drop[1], a.score);
 		//fprintf(stderr, "%c, %d, (%d, %d, %d), (%d, %d, %d)\n", "NY"[p->ext[iddp&1].patched], a.score, ql, a.qb, a.qe+1, pl-1, a.tb, a.te+1);
 	}
 	free(str.s); free(rd.s);
