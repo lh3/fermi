@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Program: fermi (FERragina-Manzini Index for DNA sequences)\n");
 		fprintf(stderr, "Version: %s\n", FERMI_VERSION);
-		fprintf(stderr, "Contact: <http://lh3.userecho.com>\n\n");
+		fprintf(stderr, "Contact: <http://hengli.uservoice.com>\n\n");
 		fprintf(stderr, "Usage:   fermi <command> [arguments]\n\n");
 		fprintf(stderr, "Command: build     Generate FM-Index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
