@@ -598,7 +598,7 @@ int main_contrast(int argc, char *argv[])
 		case 'o': min_occ = atoi(optarg); break;
 		}
 	}
-	if (optind + 3 < argc) {
+	if (optind + 3 > argc) {
 		fprintf(stderr, "\nUsage:   fermi contrast <ref.fmd> <src.fmd> <src.rank>\n\n");
 		fprintf(stderr, "Options: -o INT    minimum occurrence [%d]\n", min_occ);
 		fprintf(stderr, "         -t INT    number of threads [%d]\n", n_threads);
@@ -620,6 +620,7 @@ int main_contrast(int argc, char *argv[])
 		if (set[i>>6]>>(i&0x3f)&1) {
 			j = rank[i]>>2;
 			final[j>>6] |= 1ULL<<(j&0x3f);
+//			fprintf(stderr, "%lld\n", j);
 		}
 	}
 	free(set); free(rank);
