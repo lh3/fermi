@@ -9,7 +9,7 @@ typedef struct {
 	int start, step;
 } worker_t;
 
-void *worker(void *data)
+static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
 	int64_t i;
