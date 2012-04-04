@@ -624,6 +624,7 @@ int main_contrast(int argc, char *argv[])
 		}
 	}
 	free(set); free(rank);
+	fwrite(&n_seqs, 8, 1, stdout);
 	fwrite(final, 8, (n_seqs + 63) / 64, stdout);
 	free(final);
 	return 0;
