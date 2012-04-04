@@ -454,6 +454,7 @@ static ext_t assemble(int l, char *s, int max_len, char *const t[2])
 }
 
 #define MAX_DROP 7
+#define SCORE_THRES 13
 
 static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t iddp, int min_supp, int max_dist, double avg, double std)
 {
@@ -496,16 +497,15 @@ static void patch_gap(const rld_t *e, const hash64_t *h, utig_v *v, uint32_t idd
 	if (ext.patched == 0 && p->dist[iddp&1]<<24>>24 > avg) { // another try in case there are heterozygotes in the overlap
 		int j, k, drop[2], max_drop, min_drop;
 		int8_t mat[25];
-		ksw_aux_t a;
+		kswr_t a;
 		for (i = k = 0; i < 5; ++i)
 			for (j = 0; j < 5; ++j)
 				mat[k++] = i == j? 1 : -3;
-		a.gapo = 5; a.gape = 2; a.T = 13;
-		ksw_align_short(ql - 1, (uint8_t*)t[1], pl - 1, (uint8_t*)t[0], 5, mat, &a);
+		a = ksw_align(ql - 1, (uint8_t*)t[1], pl - 1, (uint8_t*)t[0], 5, mat, 5, 2, KSW_XSTART, 0);
 		drop[0] = a.qb; drop[1] = (pl - 1) - (a.te + 1);
 		max_drop = drop[0] > drop[1]? drop[0] : drop[1];
 		min_drop = drop[0] < drop[1]? drop[0] : drop[1];
-		if (min_drop == 0 && max_drop < MAX_DROP && a.score >= a.T + max_drop) { // an end-to-end alignment
+		if (min_drop == 0 && max_drop < MAX_DROP && a.score >= SCORE_THRES + max_drop) { // an end-to-end alignment
 			int lp = a.te + 1 - a.tb + drop[0] + drop[1];
 			int lq = a.qe + 1 + drop[0] + drop[1];
 			if (lp < p->len && lq < q->len) {
