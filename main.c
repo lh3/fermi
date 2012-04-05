@@ -53,6 +53,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         clean     Clean the graph\n");
 		fprintf(stderr, "         remap     Compute the coverage and PE coverage\n");
 		fprintf(stderr, "         scaf      Generate scaftigs\n");
+		fprintf(stderr, "         contrast  Compare two FMD-indices\n");
+		fprintf(stderr, "         sub       Extract sub-index with a bit array\n");
 		fprintf(stderr, "\n");
 		fprintf(stderr, "         splitfa   Split a FASTA/Q file\n");
 		fprintf(stderr, "         trimseq   Trim a FASTA/Q file\n");

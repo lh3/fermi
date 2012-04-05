@@ -634,7 +634,6 @@ int main_contrast(int argc, char *argv[])
 
 int main_sub(int argc, char *argv[])
 {
-	extern rld_t *fm_sub(rld_t *e, const uint64_t *sub, int n_threads);
 	int c, n_threads = 1;
 	rld_t *e;
 	uint64_t n_seqs, *sub;
