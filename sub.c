@@ -42,13 +42,13 @@ static rld_t *gen_idx(rld_t *e0, uint64_t *bits)
 			if (bits[k>>6]>>(k&0x3f)&1) {
 				if (c != c0) {
 					if (len) rld_enc(e, &witr, len, c0);
-					c = c0, len = 1;
+					c0 = c, len = 1;
 				} else ++len;
 			}
 		}
 	}
 	if (len) rld_enc(e, &witr, len, c0);
-	assert(k == e0->mcnt[1]);
+	assert(k == e0->mcnt[0]);
 	rld_destroy(e0);
 	rld_enc_finish(e, &witr);
 	return e;
@@ -77,6 +77,7 @@ rld_t *fm_sub(rld_t *e, const uint64_t *sub, int n_threads)
 	int i, j;
 	rld_t *r;
 
+	if (n_threads < 1) n_threads = 1;
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	tid = (pthread_t*)calloc(n_threads, sizeof(pthread_t));
