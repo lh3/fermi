@@ -592,10 +592,11 @@ int main_contrast(int argc, char *argv[])
 	uint64_t *set, *final, n_seqs, *rank, i, j, n_reads = 0;
 	FILE *fp;
 
-	while ((c = getopt(argc, argv, "k:o:")) >= 0) {
+	while ((c = getopt(argc, argv, "k:o:t:")) >= 0) {
 		switch (c) {
 		case 'k': k = atoi(optarg); break;
 		case 'o': min_occ = atoi(optarg); break;
+		case 't': n_threads = atoi(optarg); break;
 		}
 	}
 	if (optind + 3 > argc) {
