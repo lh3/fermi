@@ -631,3 +631,37 @@ int main_contrast(int argc, char *argv[])
 	free(final);
 	return 0;
 }
+
+int main_sub(int argc, char *argv[])
+{
+	extern rld_t *fm_sub(rld_t *e, const uint64_t *sub, int n_threads);
+	int c, n_threads = 1;
+	rld_t *e;
+	uint64_t n_seqs, *sub;
+	FILE *fp;
+	while ((c = getopt(argc, argv, "t:")) >= 0) {
+		switch (c) {
+		case 't': n_threads = atoi(optarg); break;
+		}
+	}
+	if (optind + 2 > argc) {
+		fprintf(stderr, "Usage: fermi sub [-t nThreads] <in.fmd> <array.bits>\n");
+		return 1;
+	}
+	e = rld_restore(argv[optind]);
+	fp = fopen(argv[optind+1], "rb");
+	fread(&n_seqs, 8, 1, fp);
+	if (n_seqs != e->mcnt[1]) {
+		fprintf(stderr, "[E::%s] unmatched index and the bit array\n", __func__);
+		rld_destroy(e);
+		return 1;
+	}
+	sub = malloc((n_seqs + 63) / 64 * 8);
+	fread(sub, 8, (n_seqs + 63) / 64, fp);
+	fclose(fp);
+	e = fm_sub(e, sub, n_threads);
+	free(sub);
+	rld_dump(e, "-");
+	rld_destroy(e);
+	return 0;
+}

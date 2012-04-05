@@ -1,9 +1,9 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2
 DFLAGS=		#-D_USE_RLE6 #-DNDEBUG
-OBJS=		utils.o seq.o ksa.o ksa64.o rld.o exact.o merge.o correct.o \
-			build.o smem.o unitig.o seqsort.o cmd.o example.o \
-			ksw.o mag.o bubble.o scaf.o cmp.o
+OBJS=		utils.o seq.o ksa.o ksa64.o rld.o exact.o merge.o sub.o correct.o \
+			build.o smem.o unitig.o seqsort.o cmp.o cmd.o example.o \
+			ksw.o mag.o bubble.o scaf.o
 PROG=		fermi
 INCLUDES=	
 LIBS=		-lpthread -lm -lz
@@ -30,6 +30,7 @@ unitig.o:unitig.c fermi.h rld.h kstring.h kvec.h
 correct.o:correct.c fermi.h rld.h kvec.h kseq.h
 smem.o:smem.c fermi.h rld.h kvec.h
 merge.o:merge.c fermi.h rld.h ksort.h
+sub.o:sub.c fermi.h rld.h
 cmd.o:cmd.c fermi.h rld.h kseq.h
 mag.o:mag.c mag.h kseq.h
 bubble.o:bubble.c mag.h ksw.h
