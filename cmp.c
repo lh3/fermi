@@ -13,7 +13,7 @@ static fmintv_t descend(const rld_t *e, int suf_len, int suf)
 	fm6_set_intv(e, (suf&3) + 1, ik);
 	for (i = 1; i < suf_len; ++i) {
 		fm6_extend(e, &ik, ok, 1);
-		ik = ok[suf>>i*2 & 0x3];
+		ik = ok[(suf>>i*2&3) + 1];
 	}
 	return ik;
 }
@@ -63,13 +63,14 @@ static void contrast_core(const rld_t *ref, const rld_t *src, uint64_t *set, int
 			}
 		}
 	}
+	free(rstack.a); free(sstack.a); free(tstack.a);
 }
 
 typedef struct {
 	int tid, n_suf, k, min_occ;
-	uint64_t *set;
 	uint32_t *suf;
 	const rld_t *ref, *src;
+	uint64_t *set;
 } worker_t;
 
 static void *worker(void *data)

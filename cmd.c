@@ -589,7 +589,7 @@ int main_contrast(int argc, char *argv[])
 	extern uint64_t *fm6_contrast(const rld_t *ref, const rld_t *src, int k, int min_occ, int n_threads);
 	int c, min_occ = 3, k = 55, n_threads = 1;
 	rld_t *ref, *src;
-	uint64_t *set, *final, n_seqs, *rank, i, j;
+	uint64_t *set, *final, n_seqs, *rank, i, j, n_reads = 0;
 	FILE *fp;
 
 	while ((c = getopt(argc, argv, "k:o:")) >= 0) {
@@ -620,10 +620,12 @@ int main_contrast(int argc, char *argv[])
 		if (set[i>>6]>>(i&0x3f)&1) {
 			j = rank[i]>>2;
 			final[j>>6] |= 1ULL<<(j&0x3f);
-//			fprintf(stderr, "%lld\n", j);
+			++n_reads;
 		}
 	}
 	free(set); free(rank);
+	fprintf(stderr, "[M::%s] %ld reads selected\n", __func__, (long)n_reads);
+	for (i = 0; i < n_seqs; i += 2) assert(((final[i>>6]>>(i&0x3f) ^ final[i>>6]>>((i^1)&0x3f)) & 1) == 0);
 	fwrite(&n_seqs, 8, 1, stdout);
 	fwrite(final, 8, (n_seqs + 63) / 64, stdout);
 	free(final);
