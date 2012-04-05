@@ -29,7 +29,7 @@ static void set_bits(const rld_t *e, const uint64_t *sub, uint64_t *bits, int st
 
 static rld_t *gen_idx(rld_t *e0, uint64_t *bits)
 {
-	int c, c0 = -1;
+	int c = 0, c0 = -1;
 	int64_t l, i, k = 0, len = 0;
 	rld_t *e;
 	rlditr_t ritr, witr;
