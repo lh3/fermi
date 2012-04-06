@@ -143,7 +143,6 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	while (fa->heap.n) {
 		const shash_t *h;
 		khint_t k;
-		int parent;
 		// get the best so far
 		z = fa->heap.a[0];
 		fa->heap.a[0] = kv_pop(fa->heap);
@@ -154,7 +153,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 			continue;
 		}
 		if (n_rst && (int)(z.y>>48) + MAX_SC_DIFF < (int)(rst[0].y>>48)) break;
-		i = (z.y&0xffff) - 1; parent = (int)(z.y>>16);
+		i = (z.y&0xffff) - 1;
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
 		k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
