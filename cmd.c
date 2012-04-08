@@ -667,3 +667,61 @@ int main_sub(int argc, char *argv[])
 	rld_destroy(e);
 	return 0;
 }
+
+static inline uint64_t popcount64(uint64_t y)
+{
+	y = y - ((y >> 1) & 0x5555555555555555ull);
+	y = (y & 0x3333333333333333ull) + (y >> 2 & 0x3333333333333333ull);
+	return ((y + (y >> 4)) & 0xf0f0f0f0f0f0f0full) * 0x101010101010101ull >> 56;
+}
+
+static uint64_t count_bits(uint64_t len, uint64_t *x)
+{
+	uint64_t k, cnt;
+	for (k = cnt = 0; k < len; ++k)
+		cnt += popcount64(x[k]);
+	return cnt;
+}
+
+static uint64_t *read_sub(const char *fn, uint64_t *len)
+{
+	uint64_t *sub, end;
+	FILE *fp;
+	*len = 0;
+	if ((fp = fopen(fn, "rb")) == 0) return 0;
+	fread(len, 8, 1, fp);
+	end = (*len + 63) / 64;
+	sub = calloc(end, 8);
+	fread(sub, 8, end, fp);
+	fclose(fp);
+	fprintf(stderr, "[M::%s] loaded file `%s' containing %ld bits\n", __func__, fn, (long)count_bits(end, sub));
+	return sub;
+}
+
+int main_bitand(int argc, char *argv[])
+{
+	int i;
+	uint64_t len0, *sub0, k, end;
+	if (argc < 3) {
+		fprintf(stderr, "Usage: fermi bitand <in1.bit> <in2.bit> [...]\n");
+		return 1;
+	}
+	sub0 = read_sub(argv[1], &len0);
+	end = (len0 + 63) / 64;
+	for (i = 2; i < argc; ++i) {
+		uint64_t len1, *sub1;
+		sub1 = read_sub(argv[i], &len1);
+		if (len1 != len0) {
+			fprintf(stderr, "[E::%s] unequal array length\n", __func__);
+			return 1; // memory leak
+		}
+		for (k = 0; k < end; ++k)
+			sub0[k] &= sub1[k];
+		free(sub1);
+	}
+	fprintf(stderr, "[M::%s] the output contains %ld bits\n", __func__, (long)count_bits(end, sub0));
+	fwrite(&len0, 8, 1, stdout);
+	fwrite(sub0, 8, end, stdout);
+	free(sub0);
+	return 0;
+}
