@@ -3,20 +3,20 @@ Getting Started
 
 1. Acquire the fermi source code from the [download page][5] and compile with:
 
-       tar -jxf fermi-x.y.tar.bz2
-       (cd fermi-x.y; make)
+   		tar -jxf fermi-x.y.tar.bz2
+   		(cd fermi-x.y; make)
 
    where `x.y` is the version number.
 
 2. Download the *C. elegans* reads [SRR065390][8] (ftp directory) and convert
    to the FASTQ format with the `fastq-dump` tool from the [SRA toolkit][9]:
 
-       fastq-dump --split-spot SRR065390.lite.sra
+   		fastq-dump --split-spot SRR065390.lite.sra
 
 3. Perform assembly with:
 
-       fermi-x.y/run-fermi.pl -ct8 -e fermi-x.y/fermi SRR065390.fastq > fmdef.mak
-       make -f fmdef.mak -j 8 > fmdef.log 2>&1
+   		fermi-x.y/run-fermi.pl -ct8 -e fermi-x.y/fermi SRR065390.fastq > fmdef.mak
+   		make -f fmdef.mak -j 8 > fmdef.log 2>&1
 
    The entire procedure takes about several hours with 8 CPU cores. File
    `fmdef.p5.fq.gz` contains the final contigs. The quality line in the
