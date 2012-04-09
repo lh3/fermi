@@ -39,14 +39,15 @@ calling.
 
 ####4. How to run fermi for de novo assembly?
 
-The [fermi manpage](https://github.com/lh3/fermi/blob/master/fermi.1) gives an
+The [fermi manpage](https://github.com/lh3/fermi/blob/master/fermi.1) shows an
 example. Briefly, if you have Illumina short-insert paired-end reads `read1.fq.gz`
 and `read2.fq.gz`, you can run:
 
     run-fermi.pl -Pe ./fermi -t12 read1.fq.gz read2.fq.gz > fmdef.mak
     make -f fmdef.mak -j 12
 
-to perform assembly using 12 CPU cores. The manpage explains more details.
+to perform assembly using 12 CPU cores. The `fmdef.p5.fq.gz` gives the final
+contigs using the paired-end information.
 
 ####5. How to use fermi to correct sequencing errors?
 
