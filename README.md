@@ -1,13 +1,14 @@
 Getting Started
 ---------------
 
-1. Acquire the fermi source code from the [download page][5] and compile with (`x.y` is the version number):
+1. Acquire the fermi source code from the [download page][5] and compile with
+   (`x.y` is the version number):
 
    		tar -jxf fermi-x.y.tar.bz2
    		(cd fermi-x.y; make)
 
-2. Download the *C. elegans* reads [SRR065390][8] (ftp directory) and convert
-   to the FASTQ format with the `fastq-dump` tool from the [SRA toolkit][9]:
+2. Download the *C. elegans* reads [SRR065390][8] from SRA and convert to the
+   FASTQ format with the `fastq-dump` tool from the [SRA toolkit][9]:
 
    		fastq-dump --split-spot SRR065390.lite.sra
 
@@ -96,7 +97,7 @@ you may use
 [5]: https://github.com/lh3/fermi/downloads
 [6]: http://zlib.net/
 [7]: https://github.com/lh3/fermi/blob/master/README.md
-[8]: ftp://ftp-trace.ncbi.nlm.nih.gov/sra/sra-instant/reads/ByExp/litesra/SRX/SRX026/SRX026594/SRR065390/
+[8]: http://www.ncbi.nlm.nih.gov/sra?term=SRR065390
 [9]: http://www.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?cmd=show&f=software&m=software&s=software
 
 
@@ -110,4 +111,4 @@ tool for whole-genome shot-gun sequencing. Source code can be acquired from
 the [download page][5]. Please read the [manpage][2] and the [FAQ][7] for
 detailed usage.
 
-(1.0: 2012-04-09, r697)
+(1.0: 2012-04-09, r700)
