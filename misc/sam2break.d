@@ -1,6 +1,6 @@
 #!/usr/bin/env rdmd
 
-import std.stdio, std.string, std.array, std.conv, std.getopt, std.algorithm, std.c.stdlib, std.c.stdio, bio;
+import std.stdio, std.array, std.conv, std.getopt, std.algorithm, std.c.stdio, bio;
 
 struct cmdopt_t {
 	bool is_print;
@@ -117,7 +117,7 @@ void analyze_aln(ref aln_t*[] a, ref stats_t s, const ref cmdopt_t opt)
 
 void main(string[] args)
 {
-	cmdopt_t opt = {false, 200, 500, 10, 0.5};
+	cmdopt_t opt = {false, 150, 500, 10, 0.5};
 	getopt(args, std.getopt.config.bundling, "l", &opt.min_len, "q", &opt.min_q, "p", &opt.is_print, "m", &opt.mask_level);
 	if (args.length == 1) {
 		writeln("\nUsage:   sam2break.d <contig-aln.sam>\n");
