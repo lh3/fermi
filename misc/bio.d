@@ -33,7 +33,7 @@ public:
 			_fp = null;
 		}
 	}
-	this(string fn = "-", int buf_size = 16384) { this.open(fn, buf_size); }
+	this(string fn, int buf_size = 16384) { this.open(fn, buf_size); }
 	this() { eof = true; _fp = null; }
 	~this() { this.close(); }
 	int readto(ref ubyte[] dat, ubyte delimiter = '\n', bool append = false) {
