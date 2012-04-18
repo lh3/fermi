@@ -1,6 +1,6 @@
 #!/usr/bin/env rdmd
 
-import std.array, std.stdio, std.conv, klib;
+import std.array, std.stdio, std.conv, bio;
 
 void asqg2mag(string fn) {
 	struct ipair_t {

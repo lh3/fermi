@@ -1,6 +1,6 @@
 #!/usr/bin/env rdmd
 
-import std.stdio, std.string, std.array, std.conv, std.getopt, std.algorithm, std.c.stdlib, std.c.stdio, klib;
+import std.stdio, std.string, std.array, std.conv, std.getopt, std.algorithm, std.c.stdlib, std.c.stdio, bio;
 
 struct cmdopt_t {
 	bool is_print;
@@ -20,7 +20,8 @@ struct aln_t {
 	int[2] clip;
 }
 
-aln_t *parse_aln(string l, ref string[] t) {
+aln_t *parse_aln(string l, ref string[] t)
+{
 	auto p = new aln_t;
 	p.sam = l;
 	p.chr = t[2];
@@ -28,18 +29,10 @@ aln_t *parse_aln(string l, ref string[] t) {
 	p.mapq = to!int(t[4]);
 	p.flag = to!int(t[1]);
 	if ((p.flag&4) == 0) { // mapped
-		// parse CIGAR
-		auto q = t[5].ptr;
-		while (q - t[5].ptr < t[5].length) {
-			char *r;
-			auto oplen = strtol(q, &r, 10);
-			if (*r == 'S' || *r == 'H') {
-				p.clip[q == t[5].ptr? 0 : 1] = cast(int)oplen;
-			} else if (*r == 'M') p.qlen += oplen, p.rlen += oplen;
-			else if (*r == 'I') p.qlen += oplen;
-			else if (*r == 'D' || *r == 'N') p.rlen += oplen;
-			q = cast(immutable(char)*)r + 1;
-		}
+		auto cs = sam_parse_cigar(t[5]);
+		p.qlen = cs.n_M + cs.n_I;
+		p.rlen = cs.n_M + cs.n_D + cs.n_N;
+		p.clip[0] = cs.clip[0]; p.clip[1] = cs.clip[1];
 		p.qbeg = p.clip[!!(p.flag&16)];
 		p.len = p.clip[0] + p.clip[1] + p.qlen;
 	} else {
@@ -49,7 +42,8 @@ aln_t *parse_aln(string l, ref string[] t) {
 	return p;
 }
 
-void count_break(ref int[5] c, ref aln_t*[] a, const ref cmdopt_t opt) {
+void count_break(ref int[5] c, ref aln_t*[] a, const ref cmdopt_t opt)
+{
 	int[5] b = [cast(int)a.length, 0, 0, 0, 0];
 	foreach (p; a) {
 		if (p.mapq < opt.min_q) continue;
@@ -66,7 +60,8 @@ void count_break(ref int[5] c, ref aln_t*[] a, const ref cmdopt_t opt) {
 		if (b[i]) c[i] += b[i] - 1;
 }
 
-void analyze_aln(ref aln_t*[] a, ref stats_t s, const ref cmdopt_t opt) {
+void analyze_aln(ref aln_t*[] a, ref stats_t s, const ref cmdopt_t opt)
+{
 	// special treatment of unmapped
 	if (a.length == 1 && (a[0].flag&4) == 4) {
 		++s.n_un; s.l_un += a[0].len;
@@ -120,7 +115,8 @@ void analyze_aln(ref aln_t*[] a, ref stats_t s, const ref cmdopt_t opt) {
 	}
 }
 
-void main(string[] args) {
+void main(string[] args)
+{
 	cmdopt_t opt = {false, 200, 500, 10, 0.5};
 	getopt(args, std.getopt.config.bundling, "l", &opt.min_len, "q", &opt.min_q, "p", &opt.is_print, "m", &opt.mask_level);
 	if (args.length == 1) {
