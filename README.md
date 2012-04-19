@@ -124,6 +124,8 @@ genome with [BWA-SW][10] to locate the mutations and break points. It is also
 possible to compare one sample to multiple samples by intersecting selected
 reads using the `bitand` command and then performs the assembly.
 
+A more convenient command-line interface is likely to be added in future.
+
 
 [1]: http://arxiv.org/abs/1203.6364
 [2]: https://github.com/lh3/fermi/blob/master/fermi.1
