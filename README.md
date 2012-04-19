@@ -89,6 +89,41 @@ you may use
 
     make -f fmdef.mak -j 12 fmdef.ec.fq.gz
 
+####7. What is contrast assembly? How can I use it?
+
+The idea of contrast assembly was first proposed and has been implemented by
+Jared Simpson and Richard Durbin. It works by assembling reads containing a
+k-mer that is present in one set of reads but absent from another set of reads.
+The contigs we get this way will span variants, including mutations and
+breakpoints, only seen from the first set of reads. Mapping the contigs back
+provides the locations. This approach directly focuses on the differences
+between read sets and helps to reduce the complication of structural variations
+and the imperfect reference genome.
+
+To perform contrast assembly given two sets of reads, we need to generate
+error-corrected FMD-index for both sets, use the `contrast` command to pick
+reads unique to one read set, and then apply the `sub` command to extract
+the FMD-index of selected reads. The following shows an example:
+
+	# error correction for sample1; paired reads are interleaved in sample1.fq.gz
+    run-fermi.pl -ct12 -p sample1 sample1.fq.gz > sample1.mak
+	make -f sample1.mak -j 12 sample1.ec.rank
+	# error correction for sample2
+    run-fermi.pl -ct12 -p sample2 sample2.fq.gz > sample2.mak
+	make -f sample2.mak -j 12 sample2.ec.rank
+	# identify reads unique to one sample
+	fermi contrast -t12 sample1.ec.fmd sample1.ec.rank sample1.sub sample2.ec.fmd sample2.ec.rank sample2.sub
+	# generate the FMD-index for reads unique to sample1; similar applied to sample2
+	fermi sub -t12 sample1.fmd sample1.sub > sample1.sub.fmd
+	# assemble unique reads and perform graph simplification
+	fermi unitig -l50 -t12 sample1.sub.fmd > sample1.sub.mag
+	fermi clean -CA sample1.sub.mag > sample1-cleaned.sub.mag
+
+We can aligned the resulting contigs `sample1-cleaned.sub.mag` to the reference
+genome with [BWA-SW][10] to locate the mutations and break points. It is also
+possible to compare one sample to multiple samples by intersecting selected
+reads using the `bitand` command and then performs the assembly.
+
 
 [1]: http://arxiv.org/abs/1203.6364
 [2]: https://github.com/lh3/fermi/blob/master/fermi.1
@@ -99,6 +134,7 @@ you may use
 [7]: https://github.com/lh3/fermi/blob/master/README.md
 [8]: http://www.ncbi.nlm.nih.gov/sra?term=SRR065390
 [9]: http://www.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?cmd=show&f=software&m=software&s=software
+[10]: https://github.com/lh3/bwa
 
 
 Release Notes

@@ -16,7 +16,7 @@ sub main {
 	die(qq/
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
 Options: -P        the input files are paired (ends in separate files)
-         -c        the input is collated FASTQ (two ends in the same file)
+         -c        the input is collated\/initerleaved FASTQ (two ends in the same file)
          -D        halve the number of jobs for building the split index
          -e FILE   fermi executable [$opts{e}]
          -t INT    number of threads [$opts{t}]
