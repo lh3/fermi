@@ -44,7 +44,7 @@ uint64_t fm_backward_search_multi(int n, rld_t *const*e, int len, const uint8_t 
 				rld_rank21(e[j], k[j] - 1, l[j] - 1, c, &ok, &ol);
 				k[j] = e[j]->cnt[c] + ok;
 				l[j] = e[j]->cnt[c] + ol;
-				if (k[j] > l[j] - 1) done[j] = 1, ++finished;
+				if (k[j] == l[j]) done[j] = 1, ++finished;
 			} else k[j] = l[j] = e[j]->cnt[c] + rld_rank11(e[j], k[j] - 1, c);
 		}
 		if (finished == n) break;
