@@ -32,6 +32,32 @@ double cputime();
 double realtime();
 void liftrlimit();
 
+#include "rld.h"
+int main_test(int argc, char *argv[])
+{
+	extern uint64_t fm_backward_search_multi(int n, rld_t *const*e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end);
+	int i, l;
+	uint64_t beg, end;
+	l = strlen(argv[1]);
+	for (i = 0; i < l; ++i)
+		argv[1][i] = seq_nt6_table[(int)argv[1][i]];
+	if (argc > 3) {
+		int n = argc - 2;
+		rld_t **e;
+		e = alloca(n * sizeof(void*));
+		for (i = 2; i < argc; ++i)
+			e[i - 2] = rld_restore(argv[i]);
+		fm_backward_search_multi(n, e, l, (uint8_t*)argv[1], &beg, &end);
+		printf("%lld,%lld\n", beg, end);
+	} else {
+		rld_t *e;
+		e = rld_restore(argv[2]);
+		fm_backward_search(e, l, (uint8_t*)argv[1], &beg, &end);
+		printf("%lld,%lld\n", beg, end);
+	}
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	int i, ret = 0;
@@ -90,6 +116,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "example") == 0) ret = main_example(argc-1, argv+1);
 	else if (strcmp(argv[1], "contrast") == 0) ret = main_contrast(argc-1, argv+1);
 	else if (strcmp(argv[1], "bitand") == 0) ret = main_bitand(argc-1, argv+1);
+	else if (strcmp(argv[1], "test") == 0) ret = main_test(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;

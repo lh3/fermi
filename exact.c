@@ -22,6 +22,40 @@ uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_
 	return l - k + 1;
 }
 
+uint64_t fm_backward_search_multi(int n, rld_t *const*e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
+{
+	uint64_t *k, *l, ok, ol;
+	int i, j, c, finished = 0;
+	int8_t *done;
+	c = str[len - 1];
+	k = alloca(n * 8);
+	l = alloca(n * 8);
+	done = alloca(n);
+	for (j = 0; j < n; ++j) {
+		k[j] = e[j]->cnt[c];
+		l[j] = e[j]->cnt[c + 1];
+		done[j] = 0;
+	}
+	for (i = len - 2; i >= 0; --i) {
+		c = str[i];
+		for (j = 0; j < n; ++j) {
+//			printf("%d,%d,[%lld,%lld]%c\n", i, j, k[j], l[j], done[j]? '*' : '.');
+			if (!done[j]) {
+				rld_rank21(e[j], k[j] - 1, l[j] - 1, c, &ok, &ol);
+				k[j] = e[j]->cnt[c] + ok;
+				l[j] = e[j]->cnt[c] + ol;
+				if (k[j] > l[j] - 1) done[j] = 1, ++finished;
+			} else k[j] = l[j] = e[j]->cnt[c] + rld_rank11(e[j], k[j] - 1, c);
+		}
+		if (finished == n) break;
+	}
+	if (finished == n) return 0;
+	for (j = 0, *sa_beg = *sa_end = 0; j < n; ++j)
+		*sa_beg += k[j], *sa_end += l[j];
+	--*sa_end;
+	return *sa_end - *sa_beg + 1;
+}
+
 int64_t fm_retrieve(const rld_t *e, uint64_t x, kstring_t *s)
 {
 	uint64_t k = x, *ok;
