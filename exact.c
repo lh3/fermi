@@ -22,7 +22,7 @@ uint64_t fm_backward_search(const rld_t *e, int len, const uint8_t *str, uint64_
 	return l - k + 1;
 }
 
-uint64_t fm_backward_search_multi(int n, rld_t *const*e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
+uint64_t fm_multi_backward_search(int n, rld_t *const*e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end)
 {
 	uint64_t *k, *l, ok, ol;
 	int i, j, c, finished = 0;

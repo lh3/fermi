@@ -35,7 +35,7 @@ void liftrlimit();
 #include "rld.h"
 int main_test(int argc, char *argv[])
 {
-	extern uint64_t fm_backward_search_multi(int n, rld_t *const*e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end);
+	extern uint64_t fm_multi_backward_search(int n, rld_t *const*e, int len, const uint8_t *str, uint64_t *sa_beg, uint64_t *sa_end);
 	int i, l;
 	uint64_t beg, end;
 	l = strlen(argv[1]);
@@ -47,7 +47,7 @@ int main_test(int argc, char *argv[])
 		e = alloca(n * sizeof(void*));
 		for (i = 2; i < argc; ++i)
 			e[i - 2] = rld_restore(argv[i]);
-		fm_backward_search_multi(n, e, l, (uint8_t*)argv[1], &beg, &end);
+		fm_multi_backward_search(n, e, l, (uint8_t*)argv[1], &beg, &end);
 		printf("%lld,%lld\n", beg, end);
 	} else {
 		rld_t *e;
