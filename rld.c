@@ -100,6 +100,8 @@ void rld_itr_init(const rld_t *e, rlditr_t *itr, uint64_t k)
 	itr->p = itr->shead + e->offset0[rld_size_bit(*itr->shead)];
 	itr->q = (uint8_t*)itr->p;
 	itr->r = 64;
+	itr->c = -1;
+	itr->l = 0;
 }
 
 /************
@@ -132,7 +134,7 @@ static inline void enc_next_block(rld_t *e, rlditr_t *itr)
 }
 
 #ifdef _USE_RLE6
-inline int rld_enc0(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
+static inline int rld_enc0(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 {
 	if (itr->q >= (uint8_t*)(itr->shead + r->ssize) - 1) {
 		*itr->q = 0xff;
@@ -145,7 +147,7 @@ inline int rld_enc0(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 	return 0;
 }
 
-int rld_enc(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
+static inline int rld_enc1(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 {
 	const int max_l = 31;
 	for (; l > max_l; l -= max_l)
@@ -154,7 +156,7 @@ int rld_enc(rld_t *r, rlditr_t *itr, int64_t l, uint8_t c)
 	return 0;
 }
 #else
-int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
+static int rld_enc1(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
 {
 	int w;
 	uint64_t x = rld_delta_enc1(l, &w) << e->abits | c;
@@ -170,6 +172,16 @@ int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
 	return 0;
 }
 #endif
+
+int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
+{
+	if (l == 0) return 0;
+	if (itr->c != c) {
+		if (itr->l) rld_enc1(e, itr, itr->l, itr->c);
+		itr->l = l; itr->c = c;
+	} else itr->l += l;
+	return 0;
+}
 
 void rld_rank_index(rld_t *e)
 {
@@ -217,6 +229,7 @@ void rld_rank_index(rld_t *e)
 uint64_t rld_enc_finish(rld_t *e, rlditr_t *itr)
 {
 	int i;
+	if (itr->l) rld_enc1(e, itr, itr->l, itr->c);
 	enc_next_block(e, itr);
 	e->n_bytes = (((uint64_t)(e->n - 1) * RLD_LSIZE) + (itr->p - *itr->i)) * 8;
 	// recompute e->cnt as the accumulative count; e->mcnt[] keeps the marginal counts

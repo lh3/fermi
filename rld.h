@@ -11,7 +11,8 @@
 #define RLD_LMASK (RLD_LSIZE - 1)
 
 typedef struct {
-	int r; // bits remained in the last 64-bit integer
+	int r, c; // $r: bits remained in the last 64-bit integer; $c: pending symbol
+	int64_t l; // $l: pending length
 	uint64_t *p, *shead, *stail, **i;
 	uint8_t *q;
 } rlditr_t;
@@ -111,6 +112,25 @@ static inline int64_t rld_dec(const rld_t *e, rlditr_t *itr, int *_c, int is_fre
 		itr->r = 64;
 		return rld_dec0(e, itr, _c);
 	} else return l;
+}
+
+// take k symbols from e0 and write it to e
+static inline void rld_dec_enc(rld_t *e, rlditr_t *itr, const rld_t *e0, rlditr_t *itr0, int64_t k)
+{
+	if (itr0->l >= k) { // there are more pending symbols
+		rld_enc(e, itr, k, itr0->c);
+		itr0->l -= k; // l - k symbols remains
+	} else { // use up all pending symbols
+		int c = -1; // to please gcc
+		int64_t l;
+		rld_enc(e, itr, itr0->l, itr0->c); // write all pending symbols
+		k -= itr0->l;
+		for (; k > 0; k -= l) { // we always go into this loop because l0<k
+			l = rld_dec(e0, itr0, &c, 1);
+			rld_enc(e, itr, k < l? k : l, c);
+		}
+		itr0->l = -k; itr0->c = c;
+	}
 }
 
 #endif
