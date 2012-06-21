@@ -185,43 +185,40 @@ int rld_enc(rld_t *e, rlditr_t *itr, int64_t l, uint8_t c)
 
 void rld_rank_index(rld_t *e)
 {
-	uint64_t last, n_blks;
+	uint64_t last, n_blks, i, k, *cnt;
+	int j;
 
 	n_blks = e->n_bytes * 8 / 64 / e->ssize + 1;
 	last = rld_last_blk(e);
-	{
-		uint64_t i, k, *cnt;
-		int j;
-		cnt = alloca(e->asize * 8);
-		e->ibits = ilog2(e->mcnt[0] / n_blks) + RLD_IBITS_PLUS;
-		e->n_frames = ((e->mcnt[0] + (1ll<<e->ibits) - 1) >> e->ibits) + 1;
-		e->frame = xcalloc(e->n_frames * e->asize1, 8);
-		e->frame[0] = 0;
-		for (j = 0; j < e->asize; ++j) cnt[j] = 0;
-		for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
-			uint64_t sum, *p = rld_seek_blk(e, i);
-			if (rld_size_bit(*p)) { // 32-bit count
-				uint32_t *q = (uint32_t*)p;
-				for (j = 1; j <= e->asize; ++j) cnt[j-1] += q[j];
-			} else { // 16-bit count
-				uint16_t *q = (uint16_t*)p;
-				for (j = 1; j <= e->asize; ++j) cnt[j-1] += q[j];
-			}
-			for (j = 0, sum = 0; j < e->asize; ++j) sum += cnt[j];
-			while (sum >= k<<e->ibits) ++k;
-			if (k < e->n_frames) {
-				uint64_t x = k * e->asize1;
-				e->frame[x] = i;
-				for (j = 0; j < e->asize; ++j) e->frame[x + j + 1] = cnt[j];
-			}
+	cnt = alloca(e->asize * 8);
+	e->ibits = ilog2(e->mcnt[0] / n_blks) + RLD_IBITS_PLUS;
+	e->n_frames = ((e->mcnt[0] + (1ll<<e->ibits) - 1) >> e->ibits) + 1;
+	e->frame = xcalloc(e->n_frames * e->asize1, 8);
+	e->frame[0] = 0;
+	for (j = 0; j < e->asize; ++j) cnt[j] = 0;
+	for (i = e->ssize, k = 1; i <= last; i += e->ssize) {
+		uint64_t sum, *p = rld_seek_blk(e, i);
+		if (rld_size_bit(*p)) { // 32-bit count
+			uint32_t *q = (uint32_t*)p;
+			for (j = 1; j <= e->asize; ++j) cnt[j-1] += q[j];
+		} else { // 16-bit count
+			uint16_t *q = (uint16_t*)p;
+			for (j = 1; j <= e->asize; ++j) cnt[j-1] += q[j];
 		}
-		assert(k >= e->n_frames - 1);
-		for (k = 1; k < e->n_frames; ++k) { // fill zero cells
+		for (j = 0, sum = 0; j < e->asize; ++j) sum += cnt[j];
+		while (sum >= k<<e->ibits) ++k;
+		if (k < e->n_frames) {
 			uint64_t x = k * e->asize1;
-			if (e->frame[x] == 0) {
-				for (j = 0; j <= e->asize; ++j)
-					e->frame[x + j] = e->frame[x - e->asize1 + j];
-			}
+			e->frame[x] = i;
+			for (j = 0; j < e->asize; ++j) e->frame[x + j + 1] = cnt[j];
+		}
+	}
+	assert(k >= e->n_frames - 1);
+	for (k = 1; k < e->n_frames; ++k) { // fill zero cells
+		uint64_t x = k * e->asize1;
+		if (e->frame[x] == 0) {
+			for (j = 0; j <= e->asize; ++j)
+				e->frame[x + j] = e->frame[x - e->asize1 + j];
 		}
 	}
 }
@@ -305,6 +302,8 @@ rld_t *rld_restore(const char *fn)
 		while ((l = fread(buf, 1, 0x10000, fp)) != 0)
 			for (i = 0; i < l; ++i)
 				if (buf[i]>>3) rld_enc(e, &itr, buf[i]>>3, buf[i]&7);
+		fclose(fp);
+		free(buf);
 		rld_enc_finish(e, &itr);
 		return e;
 	}
