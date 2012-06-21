@@ -25,6 +25,7 @@ int main_scaf(int argc, char *argv[]);
 int main_contrast(int argc, char *argv[]);
 int main_bitand(int argc, char *argv[]);
 
+int main_ropebwt(int argc, char *argv[]);
 int main_example(int argc, char *argv[]);
 
 double rssmem();
@@ -70,6 +71,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Contact: <http://hengli.uservoice.com>\n\n");
 		fprintf(stderr, "Usage:   fermi <command> [arguments]\n\n");
 		fprintf(stderr, "Command: build     Generate FM-Index\n");
+		fprintf(stderr, "         ropebwt   Alternative algorithms for constructing FM-index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
 		fprintf(stderr, "         merge     Merge multiple FM-Indexes\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
@@ -116,6 +118,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "example") == 0) ret = main_example(argc-1, argv+1);
 	else if (strcmp(argv[1], "contrast") == 0) ret = main_contrast(argc-1, argv+1);
 	else if (strcmp(argv[1], "bitand") == 0) ret = main_bitand(argc-1, argv+1);
+	else if (strcmp(argv[1], "ropebwt") == 0) ret = main_ropebwt(argc-1, argv+1);
 //	else if (strcmp(argv[1], "test") == 0) ret = main_test(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
