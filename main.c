@@ -31,7 +31,7 @@ double rssmem();
 double cputime();
 double realtime();
 void liftrlimit();
-
+/*
 #include "rld.h"
 int main_test(int argc, char *argv[])
 {
@@ -57,7 +57,7 @@ int main_test(int argc, char *argv[])
 	}
 	return 0;
 }
-
+*/
 int main(int argc, char *argv[])
 {
 	int i, ret = 0;
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "example") == 0) ret = main_example(argc-1, argv+1);
 	else if (strcmp(argv[1], "contrast") == 0) ret = main_contrast(argc-1, argv+1);
 	else if (strcmp(argv[1], "bitand") == 0) ret = main_bitand(argc-1, argv+1);
-	else if (strcmp(argv[1], "test") == 0) ret = main_test(argc-1, argv+1);
+//	else if (strcmp(argv[1], "test") == 0) ret = main_test(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;
