@@ -72,7 +72,7 @@ int main_ropebwt(int argc, char *argv[])
 		bcr = bcr_init(flag&FLAG_THR, tmpfn);
 		if (!(flag&FLAG_NON)) fprintf(stderr, "Warning: With bcr, an ambiguous base will be converted to a random base\n");
 	} else if (algo == BPR) bpr = bpr_init(max_nodes, max_runs);
-	fp = gzopen(argv[optind], "rb");
+	fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "rb") : gzdopen(fileno(stdin), "rb");
 	ks = kseq_init(fp);
 	while (kseq_read(ks) >= 0) {
 		int l = ks->seq.l;
