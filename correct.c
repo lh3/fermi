@@ -118,9 +118,10 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, 
 
 #define RATIO_FACTOR 10
 #define DIFF_FACTOR  13
-#define MISS_PENALTY 40
 #define MAX_HEAP    256
 #define MAX_SC_DIFF  60
+#define MAX_QUAL     40
+#define MISS_PENALTY 10
 
 static volatile uint64_t g_n_query = 0;
 
@@ -156,7 +157,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		}
 		if (n_rst && (int)(z.y>>48) > (int)(rst[0].y>>48) + MAX_SC_DIFF) break;
 		i = (z.y&0xffff) - 1;
-		q = qual[i] - 33 < 40? qual[i] - 33 : 40;
+		q = qual[i] - 33 < MAX_QUAL? qual[i] - 33 : MAX_QUAL;
 		if (q < 3) q = 3;
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
@@ -168,7 +169,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 				int v = kh_val(h, k); // recall that v is packed as - ratio<<3 | rest_depth
 				int tmp, score, max = (v&7)? (v&7) * (v>>3) : v>>3; // max is approx. the depth of the best base
 				score = (max - (v&7)) * DIFF_FACTOR; // score for the best stack path
-				if (max - (v&7) < 2) score = 1;
+				if (max - (v&7) < 2) score = 3;
 				tmp = (v&7)? (v>>3) * RATIO_FACTOR : 10000;
 				if (tmp < score) score = tmp;
 				tmp = (7 - (v&7)) * DIFF_FACTOR;
@@ -180,7 +181,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > q)
 					save_state(fa, &z, kh_key(h, k)&3, q, shift, 1); // the stack path
 			} else save_state(fa, &z, s->s[i] - 1, 0, shift, 1); // the read base is the same as the best base
-		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - q, shift, 0);
+		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY + (MAX_QUAL - q), shift, 0);
 	}
 	assert(n_rst == 1 || n_rst == 2);
 	score_diff = n_rst == 1? MAX_SC_DIFF : (int)(rst[1].y>>48) - (int)(rst[0].y>>48);
