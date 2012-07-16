@@ -122,6 +122,8 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, 
 #define MAX_HEAP    256
 #define MAX_SC_DIFF  60
 
+static volatile uint64_t g_n_query = 0;
+
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
 	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
@@ -152,11 +154,12 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 			if (n_rst == 2) break;
 			continue;
 		}
-		if (n_rst && (int)(z.y>>48) + MAX_SC_DIFF < (int)(rst[0].y>>48)) break;
+		if (n_rst && (int)(z.y>>48) > (int)(rst[0].y>>48) + MAX_SC_DIFF) break;
 		i = (z.y&0xffff) - 1;
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
 		k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
+		__sync_fetch_and_add(&g_n_query, 1);
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
@@ -389,9 +392,11 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 					++w->n_seqs;
 				}
 				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
-				if (fm_verbose >= 3)
-					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock)\n",
-							__func__, (long)id, cputime() - g_tc, realtime() - g_tr);
+				if (fm_verbose >= 3) {
+					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock); %ld hash table lookups\n",
+							__func__, (long)id, cputime() - g_tc, realtime() - g_tr, (long)g_n_query);
+					g_n_query = 0;
+				}
 				pre_id = id;
 			}
 			if (ret < 0) break;
