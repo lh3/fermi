@@ -116,7 +116,7 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, 
 	ks_heapup_128y(fa->heap.n, fa->heap.a);
 }
 
-#define TIMES_FACTOR 10
+#define RATIO_FACTOR 10
 #define DIFF_FACTOR  13
 #define MISS_PENALTY 40
 #define MAX_HEAP    256
@@ -126,7 +126,7 @@ static volatile uint64_t g_n_query = 0;
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
-	int i, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
+	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
 	ku128_t z, rst[2];
 
 	if (s->l <= opt->w) return 0xffff;
@@ -156,6 +156,8 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		}
 		if (n_rst && (int)(z.y>>48) > (int)(rst[0].y>>48) + MAX_SC_DIFF) break;
 		i = (z.y&0xffff) - 1;
+		q = qual[i] - 33 < 40? qual[i] - 33 : 40;
+		if (q < 3) q = 3;
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
 		k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
@@ -163,21 +165,22 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
-				int tmp, score, max = (kh_val(h, k)&7)? (kh_val(h, k)&7) * (kh_val(h, k)>>3) : kh_val(h, k)>>3;
-				score = (max - (kh_val(h, k)&7)) * DIFF_FACTOR; // score for the best stack path
-				if (max - (kh_val(h, k)&7) < 2) score = 1;
-				tmp = (kh_val(h, k)&7)? (kh_val(h, k)>>3) * TIMES_FACTOR : 10000;
+				int v = kh_val(h, k); // recall that v is packed as - ratio<<3 | rest_depth
+				int tmp, score, max = (v&7)? (v&7) * (v>>3) : v>>3; // max is approx. the depth of the best base
+				score = (max - (v&7)) * DIFF_FACTOR; // score for the best stack path
+				if (max - (v&7) < 2) score = 1;
+				tmp = (v&7)? (v>>3) * RATIO_FACTOR : 10000;
 				if (tmp < score) score = tmp;
-				tmp = (7 - (kh_val(h, k)&7)) * DIFF_FACTOR;
+				tmp = (7 - (v&7)) * DIFF_FACTOR;
 				if (tmp < score) score = tmp;
 				if (score < 1) score = 1;
 				// if we have too many possibilities, keep the better path among the two
-				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || score < qual[i]-33))
+				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || score < q))
 					save_state(fa, &z, s->s[i] - 1, score, shift, 1); // the read path
-				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > qual[i]-33)
-					save_state(fa, &z, kh_key(h, k)&3, qual[i]-33 > 3? qual[i]-33 : 3, shift, 1); // the stack path
-			} else save_state(fa, &z, s->s[i] - 1, 0, shift, 1);
-		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - (qual[i] - 33), shift, 0);
+				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > q)
+					save_state(fa, &z, kh_key(h, k)&3, q, shift, 1); // the stack path
+			} else save_state(fa, &z, s->s[i] - 1, 0, shift, 1); // the read base is the same as the best base
+		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY - q, shift, 0);
 	}
 	assert(n_rst == 1 || n_rst == 2);
 	score_diff = n_rst == 1? MAX_SC_DIFF : (int)(rst[1].y>>48) - (int)(rst[0].y>>48);
@@ -393,8 +396,8 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 				}
 				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
 				if (fm_verbose >= 3) {
-					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock); %ld hash table lookups\n",
-							__func__, (long)id, cputime() - g_tc, realtime() - g_tr, (long)g_n_query);
+					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock); %.3f hash table lookups per read\n",
+							__func__, (long)id, cputime() - g_tc, realtime() - g_tr, (double)g_n_query / id);
 					g_n_query = 0;
 				}
 				pre_id = id;
