@@ -396,11 +396,9 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 					++w->n_seqs;
 				}
 				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
-				if (fm_verbose >= 3) {
+				if (fm_verbose >= 3)
 					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock); %.3f hash table lookups per read\n",
 							__func__, (long)id, cputime() - g_tc, realtime() - g_tr, (double)g_n_query / id);
-					g_n_query = 0;
-				}
 				pre_id = id;
 			}
 			if (ret < 0) break;

@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "1.0-r718"
+#define FERMI_VERSION "1.0-r722"
 
 #define FM_MASK30 0x3fffffff
 
