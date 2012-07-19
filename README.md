@@ -119,7 +119,7 @@ the FMD-index of selected reads. The following shows an example:
 	fermi unitig -l50 -t12 sample1.sub.fmd > sample1.sub.mag
 	fermi clean -CA -l150 sample1.sub.mag > sample1-cleaned.sub.mag
 
-We can aligned the resulting contigs `sample1-cleaned.sub.mag` to the reference
+We can align the resulting contigs `sample1-cleaned.sub.mag` to the reference
 genome with [BWA-SW][10] to pinpoint the mutations and break points. It is also
 possible to compare one sample to multiple samples by intersecting selected
 reads using the `bitand` command and then performs the assembly.
