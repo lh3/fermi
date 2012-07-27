@@ -127,7 +127,7 @@ static volatile uint64_t g_n_query = 0;
 
 static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
 {
-	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
+	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff, n_query = 0;
 	ku128_t z, rst[2];
 
 	if (s->l <= opt->w) return 0xffff;
@@ -162,7 +162,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
 		k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
-		__sync_fetch_and_add(&g_n_query, 1);
+		++n_query;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
@@ -183,6 +183,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 			} else save_state(fa, &z, s->s[i] - 1, 0, shift, 1); // the read base is the same as the best base
 		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY + (MAX_QUAL - q), shift, 0);
 	}
+	__sync_fetch_and_add(&g_n_query, n_query);
 	assert(n_rst == 1 || n_rst == 2);
 	score_diff = n_rst == 1? MAX_SC_DIFF : (int)(rst[1].y>>48) - (int)(rst[0].y>>48);
 	assert(score_diff >= 0);
