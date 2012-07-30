@@ -181,7 +181,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				int i0 = i;
-				while (0&&i0 > 0) {
+				while (i0 > 0) {
 					for (i = (z.y&0xffff) - 1, l = 0; i >= 1 && l < opt->w>>1 && s->s[i] < 5; --i, ++l)
 						z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2;
 					if (s->s[i] == 5) break;
