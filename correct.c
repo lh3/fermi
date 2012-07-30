@@ -123,11 +123,9 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, 
 #define MAX_QUAL     40
 #define MISS_PENALTY 10
 
-static volatile uint64_t g_n_query = 0;
-
-static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa)
+static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa, uint64_t *n_query)
 {
-	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff, n_query = 0;
+	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
 	ku128_t z, rst[2];
 
 	if (s->l <= opt->w) return 0xffff;
@@ -162,7 +160,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
 		k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
-		++n_query;
+		++*n_query;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
@@ -181,32 +179,24 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > q)
 					save_state(fa, &z, kh_key(h, k)&3, q, shift, 1); // the stack path
 			} else { // the read base is the same as the best base
-			/*
 				ku128_t z0 = z;
 				int i0 = i;
-				while (i0 > 0) {
-					for (i = z.y&0xffff, l = 0; i >= 1 && l < opt->w>>1 && s->s[i] < 5; --i, ++l)
+				while (0&&i0 > 0) {
+					for (i = (z.y&0xffff) - 1, l = 0; i >= 1 && l < opt->w>>1 && s->s[i] < 5; --i, ++l)
 						z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2;
-					if (s->s[i] == 5) {
-						z = z0; i = i0;
-						break;
-					}
+					if (s->s[i] == 5) break;
 					h = solid[z.x & (SUF_NUM - 1)];
 					k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
+					++*n_query;
 					if (k != kh_end(h) && s->s[i] == (kh_key(h, k)&3) + 1) {
 						z.y = z.y>>16<<16 | (i + 1);
 						z0 = z; i0 = i;
-					} else {
-						i = i0; z = z0;
-						break;
-					}
+					} else break;
 				}
-			*/
-				save_state(fa, &z, s->s[i] - 1, 0, shift, 1);
+				save_state(fa, &z0, s->s[i0] - 1, 0, shift, 1);
 			}
 		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY + (MAX_QUAL - q), shift, 0);
 	}
-	__sync_fetch_and_add(&g_n_query, n_query);
 	assert(n_rst == 1 || n_rst == 2);
 	score_diff = n_rst == 1? MAX_SC_DIFF : (int)(rst[1].y>>48) - (int)(rst[0].y>>48);
 	assert(score_diff >= 0);
@@ -226,9 +216,10 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	return qsum | score_diff<<18 | no_hits<<17;
 }
 
-static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
+static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
 {
 	int i, j, ret0, ret1, n_lower;
+	uint64_t n_query = 0;
 	kstring_t str;
 	fixaux_t fa;
 
@@ -241,11 +232,11 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 			str.s[j] = seq_nt6_table[(int)str.s[j]];
 		seq_revcomp6(str.l, (uint8_t*)str.s); // to the reverse complement strand
 		seq_reverse(str.l, (uint8_t*)qual[i]);
-		ret0 = ec_fix1(opt, solid, &str, qual[i], &fa); // 0x7fff0000 if no correction; 0xffff if too short
+		ret0 = ec_fix1(opt, solid, &str, qual[i], &fa, &n_query); // 0x7fff0000 if no correction; 0xffff if too short
 		seq_reverse(str.l, (uint8_t*)qual[i]); // back to the forward strand
 		seq_revcomp6(str.l, (uint8_t*)str.s);
 		if (ret0 != 0xffff) { // then we need to correct in the reverse direction
-			ret1 = ec_fix1(opt, solid, &str, qual[i], &fa);
+			ret1 = ec_fix1(opt, solid, &str, qual[i], &fa, &n_query);
 			info[i] = ((ret0&0xffff) + (ret1&0xffff)) | (ret0>>18 < ret1>>18? ret0>>18 : ret1>>18)<<18;
 			if ((ret0>>17&1) && (ret1>>17&1)) info[i] |= 1<<16;
 		} else info[i] = ret0;
@@ -258,6 +249,7 @@ static void ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, 
 	}
 	free(str.s);
 	free(fa.heap.a); free(fa.stack.a);
+	return n_query;
 }
 
 /************************
@@ -294,12 +286,13 @@ typedef struct {
 	shash_t *const* solid;
 	int n_seqs, *info;
 	char **seq, **qual;
+	uint64_t n_query;
 } worker2_t;
 
 static void *worker2(void *data)
 {
 	worker2_t *w = (worker2_t*)data;
-	ec_fix(w->e, w->opt, w->solid, w->n_seqs, w->seq, w->qual, w->info);
+	w->n_query = ec_fix(w->e, w->opt, w->solid, w->n_seqs, w->seq, w->qual, w->info);
 	return 0;
 }
 
@@ -388,9 +381,17 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 			worker2_t *w;
 			ret = kseq_read(seq);
 			if (ret < 0 || (id && id%BATCH_SIZE == 0)) {
+				uint64_t n_query = 0, n_seq = 0;
 				for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
 				for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
-				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
+				for (j = 0; j < n_threads; ++j) {
+					n_seq += w2[j].n_seqs;
+					n_query += w2[j].n_query;
+					w2[j].n_seqs = w2[j].n_query = 0;
+				}
+				if (fm_verbose >= 3)
+					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock); %.2f lookups per read\n",
+							__func__, (long)id, cputime() - g_tc, realtime() - g_tr, (double)n_query / n_seq);
 				for (k = pre_id; k < id; ++k) {
 					int is_bad = 0;
 					w = &w2[k%n_threads];
@@ -420,9 +421,6 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 					++w->n_seqs;
 				}
 				for (j = 0; j < n_threads; ++j) w2[j].n_seqs = 0;
-				if (fm_verbose >= 3)
-					fprintf(stderr, "[M::%s] corrected errors in %ld reads in %.3f CPU seconds (%.3f wall clock); %.3f hash table lookups per read\n",
-							__func__, (long)id, cputime() - g_tc, realtime() - g_tr, (double)g_n_query / id);
 				pre_id = id;
 			}
 			if (ret < 0) break;
