@@ -99,7 +99,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint
 
 typedef struct {
 	ku128_v heap;
-	fm32_v stack;
+	fm64_v stack;
 } fixaux_t;
 
 static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, int shift, int has_match)
@@ -110,8 +110,8 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, 
 	w.x = (uint64_t)c<<shift | p->x>>2;
 	// the structure of w.y - score:16, pos_in_stack:32, seq_pos:16
 	w.y = (uint64_t)((p->y>>48) + score)<<48 | fa->stack.n<<16 | ((p->y&0xffff) - 1);
-	// structure of a stack element - base:3, has_match:1, parent_pos_in_stack:28
-	kv_push(uint32_t, fa->stack, c<<29 | has_match<<28 | (uint32_t)(p->y>>16));
+	// structure of a stack element - read_pos:32, base:3, has_match:1, parent_pos_in_stack:28
+	kv_push(uint64_t, fa->stack, ((p->y&0xffff) - 1)<<32 | (uint32_t)c<<29 | has_match<<28 | (uint32_t)(p->y>>16));
 	kv_push(ku128_t, fa->heap, w);
 	ks_heapup_128y(fa->heap.n, fa->heap.a);
 }
@@ -139,7 +139,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		else z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2, ++l;
 	if (i == 0) return 0xffff; // no good k-mer
 	// the first element in the heap
-	kv_push(uint32_t, fa->stack, 0);
+	kv_push(uint64_t, fa->stack, 0);
 	z.y = i + 1;
 	kv_push(ku128_t, fa->heap, z);
 	// traverse
@@ -180,7 +180,30 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 					save_state(fa, &z, s->s[i] - 1, score, shift, 1); // the read path
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > q)
 					save_state(fa, &z, kh_key(h, k)&3, q, shift, 1); // the stack path
-			} else save_state(fa, &z, s->s[i] - 1, 0, shift, 1); // the read base is the same as the best base
+			} else { // the read base is the same as the best base
+			/*
+				ku128_t z0 = z;
+				int i0 = i;
+				while (i0 > 0) {
+					for (i = z.y&0xffff, l = 0; i >= 1 && l < opt->w>>1 && s->s[i] < 5; --i, ++l)
+						z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2;
+					if (s->s[i] == 5) {
+						z = z0; i = i0;
+						break;
+					}
+					h = solid[z.x & (SUF_NUM - 1)];
+					k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
+					if (k != kh_end(h) && s->s[i] == (kh_key(h, k)&3) + 1) {
+						z.y = z.y>>16<<16 | (i + 1);
+						z0 = z; i0 = i;
+					} else {
+						i = i0; z = z0;
+						break;
+					}
+				}
+			*/
+				save_state(fa, &z, s->s[i] - 1, 0, shift, 1);
+			}
 		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY + (MAX_QUAL - q), shift, 0);
 	}
 	__sync_fetch_and_add(&g_n_query, n_query);
@@ -190,14 +213,14 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	if (score_diff >= MAX_SC_DIFF) score_diff = MAX_SC_DIFF;
 	if (rst[0].y>>48 == 0) return score_diff<<18; // no corrections are made
 	// backtrack
-	i = 0; qsum = 0; l = (uint32_t)(rst[0].y>>16);
+	qsum = 0; l = (uint32_t)(rst[0].y>>16);
 	while (l) {
-		if (s->s[i] - 1 != fa->stack.a[l]>>29) {
-			s->s[i] = (fa->stack.a[l]>>29) + 1;
+		i = fa->stack.a[l]>>32;
+		if (s->s[i] - 1 != (uint32_t)fa->stack.a[l]>>29) {
+			s->s[i] = ((uint32_t)fa->stack.a[l]>>29) + 1;
 			qsum += qual[i] - 33;
-		} else if ((fa->stack.a[l]>>28&1) && qual[i] < 37) qual[i] = 37;
-		++i;
-		l = fa->stack.a[l]<<4>>4;
+		} else if (((uint32_t)fa->stack.a[l]>>28&1) && qual[i] < 37) qual[i] = 37;
+		l = (uint32_t)fa->stack.a[l]<<4>>4;
 	}
 	// return value: score_diff:14, (empty):2, sum_modified_qual:16
 	return qsum | score_diff<<18 | no_hits<<17;

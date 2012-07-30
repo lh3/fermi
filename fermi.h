@@ -17,6 +17,7 @@ typedef struct {
 
 typedef struct { size_t n, m; int32_t *a; } fm32s_v;
 typedef struct { size_t n, m; uint32_t *a; } fm32_v;
+typedef struct { size_t n, m; uint64_t *a; } fm64_v;
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
 
 struct __rld_t; // defined in rld.h
