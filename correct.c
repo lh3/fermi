@@ -166,9 +166,10 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
-				int v = kh_val(h, k); // recall that v is packed as - ratio<<3 | rest_depth
-				int tmp, score, max = (v&7)? (v&7) * (v>>3) : v>>3; // max is approx. the depth of the best base
-				score = (max - (v&7)) * DIFF_FACTOR; // score for the best stack path
+				int v = kh_val(h, k); // recall that v is packed as - "(best_depth/rest_depth)<<3 | rest_depth" or "best_detph<<3 | 0"
+				int tmp, score, max = (v&7)? (v&7) * (v>>3) : v>>3; // max is the approximate depth of the best base
+				// compute the score for the best stack path
+				score = (max - (v&7)) * DIFF_FACTOR;
 				if (max - (v&7) < 1) score = 1;
 				tmp = (v&7)? (v>>3) * RATIO_FACTOR : 10000;
 				if (tmp < score) score = tmp;
@@ -182,21 +183,23 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 					save_state(fa, &z, kh_key(h, k)&3, q, shift, 1); // the stack path
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
-				int i0 = i, v = kh_val(h, k), occ_last = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
+				int i0 = i;
+				// to disable the jumping heuristic, comment out from the following line to the end of the while() block
+				int v = kh_val(h, k), occ_last = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
 				while (i0 > 0) {
 					for (i = (z.y&0xffff) - 1, l = 0; i >= 1 && l < opt->w>>1 && s->s[i] < 5; --i, ++l)
-						z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2;
+						z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
 					if (s->s[i] == 5) break;
 					h = solid[z.x & (SUF_NUM - 1)];
 					k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
 					++*n_query;
-					if (k != kh_end(h) && s->s[i] == (kh_key(h, k)&3) + 1) {
-						int v = kh_val(h, k), occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
-						if (occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) {
+					if (k != kh_end(h) && s->s[i] == (kh_key(h, k)&3) + 1) { // in the hash table and the read base is the best
+						int v = kh_val(h, k), occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
+						if (occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
 							z.y = z.y>>16<<16 | (i + 1);
 							z0 = z; i0 = i;
 							occ_last = occ;
-						} else break;
+						} else break; // if not good, reject and stop jumping
 					} else break;
 				}
 				save_state(fa, &z0, s->s[i0] - 1, 0, shift, 1);
