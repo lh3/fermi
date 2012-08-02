@@ -125,7 +125,7 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, 
 #define MIN_OCC       5
 #define MIN_OCC_RATIO 0.8
 
-static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa, uint64_t *n_query)
+static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa, uint64_t *n_query, int min_i)
 {
 	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
 	ku128_t z, rst[2];
@@ -167,35 +167,35 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 			no_hits = 0;
 			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
 				int v = kh_val(h, k); // recall that v is packed as - "(best_depth/rest_depth)<<3 | rest_depth" or "best_detph<<3 | 0"
-				int tmp, score, max = (v&7)? (v&7) * (v>>3) : v>>3; // max is the approximate depth of the best base
-				// compute the score for the best stack path
-				score = (max - (v&7)) * DIFF_FACTOR;
-				if (max - (v&7) < 1) score = 1;
+				int tmp, penalty, max = (v&7)? (v&7) * (v>>3) : v>>3; // max is the approximate depth of the best base
+				// compute the penalty for the best stack path
+				penalty = (max - (v&7)) * DIFF_FACTOR;
+				if (max - (v&7) < 1) penalty = 1;
 				tmp = (v&7)? (v>>3) * RATIO_FACTOR : 10000;
-				if (tmp < score) score = tmp;
+				if (tmp < penalty) penalty = tmp;
 				tmp = (7 - (v&7)) * DIFF_FACTOR;
-				if (tmp < score) score = tmp;
-				if (score < 1) score = 1;
+				if (tmp < penalty) penalty = tmp;
+				if (penalty < 1) penalty = 1;
 				// if we have too many possibilities, keep the better path among the two
-				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || score < q))
-					save_state(fa, &z, s->s[i] - 1, score, shift, 1); // the read path
-				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || score > q)
+				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty < q))
+					save_state(fa, &z, s->s[i] - 1, penalty, shift, 1); // the read path
+				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty > q)
 					save_state(fa, &z, kh_key(h, k)&3, q, shift, 1); // the stack path
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				int i0 = i;
-				// to disable the jumping heuristic, comment out from the following line to the end of the while() block
 				int v = kh_val(h, k), occ_last = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
-				while (i0 > 0) {
+				while (i0 > 0 && i0 >= min_i && (v&7) <= 1) {
 					for (i = (z.y&0xffff) - 1, l = 0; i >= 1 && l < opt->w>>1 && s->s[i] < 5; --i, ++l)
 						z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
 					if (s->s[i] == 5) break;
 					h = solid[z.x & (SUF_NUM - 1)];
 					k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
+					v = kh_val(h, k);
 					++*n_query;
 					if (k != kh_end(h) && s->s[i] == (kh_key(h, k)&3) + 1) { // in the hash table and the read base is the best
-						int v = kh_val(h, k), occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
-						if (occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
+						int occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
+						if (occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO && (v&7) <= 1) { // if occ is good enough, jump again
 							z.y = z.y>>16<<16 | (i + 1);
 							z0 = z; i0 = i;
 							occ_last = occ;
@@ -241,11 +241,11 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 			str.s[j] = seq_nt6_table[(int)str.s[j]];
 		seq_revcomp6(str.l, (uint8_t*)str.s); // to the reverse complement strand
 		seq_reverse(str.l, (uint8_t*)qual[i]);
-		ret0 = ec_fix1(opt, solid, &str, qual[i], &fa, &n_query); // 0x7fff0000 if no correction; 0xffff if too short
+		ret0 = ec_fix1(opt, solid, &str, qual[i], &fa, &n_query, str.l); // 0x7fff0000 if no correction; 0xffff if too short; disable jumping in the first round
 		seq_reverse(str.l, (uint8_t*)qual[i]); // back to the forward strand
 		seq_revcomp6(str.l, (uint8_t*)str.s);
 		if (ret0 != 0xffff) { // then we need to correct in the reverse direction
-			ret1 = ec_fix1(opt, solid, &str, qual[i], &fa, &n_query);
+			ret1 = ec_fix1(opt, solid, &str, qual[i], &fa, &n_query, opt->w);
 			info[i] = ((ret0&0xffff) + (ret1&0xffff)) | (ret0>>18 < ret1>>18? ret0>>18 : ret1>>18)<<18;
 			if ((ret0>>17&1) && (ret1>>17&1)) info[i] |= 1<<16;
 		} else info[i] = ret0;
