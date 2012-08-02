@@ -26,7 +26,7 @@ void seq_revcomp6(int l, unsigned char *s);
 
 uint64_t *fm6_seqsort(const rld_t *e, int n_threads);
 int fm6_unitig(const struct __rld_t *e, int min_match, int n_threads, const uint64_t *sorted);
-int fm6_ec_correct(const struct __rld_t *e, const fmecopt_t *opt, const char *fn, int n_threads);
+int fm6_ec_correct(const struct __rld_t *e, fmecopt_t *opt, const char *fn, int n_threads);
 int fm6_remap(const char *fn, const rld_t *e, uint64_t *sorted, int skip, int min_pcv, int max_dist, int n_threads);
 void mag_scaf_core(const rld_t *e, const char *fn, const fmscafopt_t *opt, int n_threads);
 

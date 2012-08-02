@@ -1,5 +1,5 @@
 CC=			gcc
-CFLAGS=		-g -Wall -O2
+CFLAGS=		-g -Wall -O2 -pg
 DFLAGS=		#-D_USE_RLE6 #-DNDEBUG
 OBJS=		utils.o seq.o ksa.o ksa64.o rld.o exact.o merge.o sub.o correct.o \
 			build.o smem.o unitig.o seqsort.o cmp.o cmd.o example.o \

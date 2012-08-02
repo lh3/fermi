@@ -255,7 +255,7 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.w = 23; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0; opt.max_corr = 0.3; opt.trim_l = 0;
+	opt.w = -1; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0; opt.max_corr = 0.3; opt.trim_l = 0;
 	while ((c = getopt(argc, argv, "MKt:k:v:O:pC:l:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
@@ -272,7 +272,7 @@ int main_correct(int argc, char *argv[])
 	if (optind + 2 > argc) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   fermi correct [options] <reads.fmd> <reads.fq>\n\n");
-		fprintf(stderr, "Options: -k INT      k-mer length [%d]\n", opt.w);
+		fprintf(stderr, "Options: -k INT      k-mer length; -1 for auto [%d]\n", opt.w);
 		fprintf(stderr, "         -O INT      minimum (k+1)-mer occurrences [%d]\n", opt.min_occ);
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
 		fprintf(stderr, "         -C FLOAT    max fraction of corrected bases [%.2f]\n", opt.max_corr);

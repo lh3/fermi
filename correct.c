@@ -8,8 +8,6 @@
 #include "kvec.h"
 #include "kstring.h"
 
-#define DEFAULT_SUF_LEN 8
-
 static int SUF_LEN, SUF_NUM;
 
 #include <zlib.h>
@@ -34,7 +32,7 @@ static void compute_SUF(int suf_len)
  * Collect good k-mers *
  ***********************/
 
-static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq, shash_t *solid, int64_t cnt[2])
+void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq, shash_t *solid, int64_t cnt[2])
 {
 	int i, ret, shift = (opt->w - len - 1) * 2;
 	kstring_t str;
@@ -185,22 +183,23 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 				ku128_t z0 = z;
 				int i0 = i;
 				int v = kh_val(h, k), occ_last = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
-				while (i0 > 0 && i0 >= min_i && (v&7) <= 1) {
-					for (i = (z.y&0xffff) - 1, l = 0; i >= 1 && l < opt->w>>1 && s->s[i] < 5; --i, ++l)
-						z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
-					if (s->s[i] == 5) break;
-					h = solid[z.x & (SUF_NUM - 1)];
-					k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
-					v = kh_val(h, k);
-					++*n_query;
-					if (k != kh_end(h) && s->s[i] == (kh_key(h, k)&3) + 1) { // in the hash table and the read base is the best
-						int occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
-						if (occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO && (v&7) <= 1) { // if occ is good enough, jump again
-							z.y = z.y>>16<<16 | (i + 1);
-							z0 = z; i0 = i;
-							occ_last = occ;
-						} else break; // if not good, reject and stop jumping
-					} else break;
+				if ((v&7) <= 1) {
+					while (i0 > 0 && i0 >= min_i) {
+						for (i = (z.y&0xffff) - 1, l = 0; i >= 1 && l < opt->w>>1 && s->s[i] < 5; --i, ++l)
+							z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
+						if (s->s[i] == 5) break;
+						h = solid[z.x & (SUF_NUM - 1)];
+						k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
+						++*n_query;
+						if (k != kh_end(h) && s->s[i] == (kh_key(h, k)&3) + 1) { // in the hash table and the read base is the best
+							int v = kh_val(h, k), occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
+							if ((v&7) <= 1 && occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
+								z.y = z.y>>16<<16 | (i + 1);
+								z0 = z; i0 = i;
+								occ_last = occ;
+							} else break; // if not good, reject and stop jumping
+						} else break;
+					}
 				}
 				save_state(fa, &z0, s->s[i0] - 1, 0, shift, 1);
 			}
@@ -309,7 +308,9 @@ static void *worker2(void *data)
  * The key portal *
  ******************/
 
-int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_threads)
+#define MAX_KMER 27
+
+int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_threads)
 {
 	int j, n_threads;
 	int64_t i, cnt[2];
@@ -317,15 +318,13 @@ int fm6_ec_correct(const rld_t *e, const fmecopt_t *opt, const char *fn, int _n_
 	pthread_t *tid;
 	pthread_attr_t attr;
 
-	compute_SUF(DEFAULT_SUF_LEN);
-	if (opt->w <= SUF_LEN) {
-		fprintf(stderr, "[E::%s] excessively small `-w'. Please increase manually to at least %d.\n", __func__, SUF_LEN + 1);
-		return 1;
+	if (opt->w < 0) { // determine k-mer
+		opt->w = (int)(log(e->mcnt[0]) / log(4) + 6.499);
+		if (opt->w >= MAX_KMER) opt->w = MAX_KMER;
+		if (fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] set k-mer length to %d\n", __func__, opt->w);
 	}
-	if (opt->w > SUF_LEN + 15) { // we keep 15-mer (30 bits) in a 32-bit integer; the rest 2 bits are for other uses
-		fprintf(stderr, "[E::%s] k-mer length cannot exceed %d\n", __func__, SUF_LEN + 15);
-		return 1;
-	}
+	compute_SUF(opt->w > 15? opt->w - 15 : 1);
 	// initialize "solid" and "tid"
 	assert(_n_threads <= SUF_NUM);
 	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
