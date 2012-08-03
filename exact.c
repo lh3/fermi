@@ -137,3 +137,35 @@ void fm_reverse_fmivec(fmintv_v *p)
 		}
 	}
 }
+
+fmintv_t *fm6_traverse(const rld_t *e, int depth)
+{
+	fmintv_t *rst, ok[6], ik;
+	fmintv_v stack;
+
+	rst = calloc(1<<depth*2, sizeof(fmintv_t));
+	ik.x[0] = ik.x[1] = 0; ik.x[2] = e->mcnt[0]; ik.info = 0;
+	kv_init(stack);
+	kv_push(fmintv_t, stack, ik);
+	while (stack.n) {
+		int c, d;
+		ik = kv_pop(stack);
+		d = ik.info&0xffffffff; // depth of the node
+		if (d != depth) {
+			if (ik.x[2] == e->mcnt[0]) {
+				for (c = 1; c < 5; ++c)
+					fm6_set_intv(e, c, ok[c]);
+			} else fm6_extend(e, &ik, ok, 1);
+			for (c = 1; c < 5; ++c) {
+				if (ok[c].x[2]) {
+					ok[c].info = ik.info + 1;
+					ok[c].info |= (uint64_t)(c - 1) << (32 + d * 2);
+					kv_push(fmintv_t, stack, ok[c]);
+				}
+			}
+		} else rst[ik.info>>32] = ik;
+	}
+
+	free(stack.a);
+	return rst;
+}

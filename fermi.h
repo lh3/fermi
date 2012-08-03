@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "1.0-r732"
+#define FERMI_VERSION "1.0-r735"
 
 #define FM_MASK30 0x3fffffff
 
@@ -96,6 +96,8 @@ extern "C" {
 	 */
 	int fm6_extend(const struct __rld_t *e, const fmintv_t *ik, fmintv_t ok[6], int is_back);
 	int fm6_extend0(const struct __rld_t *e, const fmintv_t *ik, fmintv_t *ok0, int is_back);
+
+	fmintv_t *fm6_traverse(const struct __rld_t *e, int depth);
 
 	int fm6_smem1(const struct __rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, int self_match);
 	int fm6_smem(const struct __rld_t *e, int len, const uint8_t *q, fmintv_v *mem, int self_match);

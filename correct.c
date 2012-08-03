@@ -32,24 +32,19 @@ static void compute_SUF(int suf_len)
  * Collect good k-mers *
  ***********************/
 
-void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const uint8_t *seq, shash_t *solid, int64_t cnt[2])
+static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmintv_t *suf_intv, shash_t *solid, int64_t cnt[2])
 {
 	int i, ret, shift = (opt->w - len - 1) * 2;
 	kstring_t str;
 	fmintv_v stack;
 	fmintv_t ok[6], ik;
 
+	if (suf_intv->x[2] == 0) return;
 	assert(len > 0 && opt->w > len);
 	kv_init(stack);
-	str.m = opt->w + 1;
+	str.m = opt->w + 1; str.l = 0;
 	str.s = calloc(str.m, 1);
-	str.l = 0;
-	fm6_set_intv(e, seq[0], ik); // descend to the root of the subtree to be processed
-	for (i = 1; i < len; ++i) {
-		fm6_extend(e, &ik, ok, 1);
-		ik = ok[(int)seq[i]];
-	}
-
+	ik = *suf_intv;
 	ik.info = len<<4;
 	kv_push(fmintv_t, stack, ik);
 	while (stack.n) {
@@ -271,18 +266,15 @@ typedef struct {
 	int64_t cnt[2];
 	int n_seqs, tid;
 	uint32_t *seqs;
+	const fmintv_t *top;
 } worker1_t;
 
 static void *worker1(void *data)
 {
 	worker1_t *w = (worker1_t*)data;
-	int i, j;
-	for (i = 0; i < w->n_seqs; ++i) {
-		uint8_t seq[SUF_LEN+1];
-		for (j = 0; j < SUF_LEN; ++j)
-			seq[j] = (w->seqs[i]>>(j*2)&0x3) + 1;
-		ec_collect(w->e, w->opt, SUF_LEN, seq, w->solid[i], w->cnt);
-	}
+	int i;
+	for (i = 0; i < w->n_seqs; ++i)
+		ec_collect(w->e, w->opt, SUF_LEN, &w->top[w->seqs[i]], w->solid[i], w->cnt);
 	return 0;
 }
 
@@ -336,15 +328,20 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 
 	{ // initialize and launch worker1
 		worker1_t *w1;
+		fmintv_t *top;
 		int max_seqs;
 		n_threads = _n_threads%2? _n_threads : _n_threads - 1;
 		g_tc = cputime(); g_tr = realtime();
 		w1 = calloc(n_threads, sizeof(worker1_t));
 		max_seqs = (SUF_NUM + n_threads - 1) / n_threads;
+		top = fm6_traverse(e, SUF_LEN);
+		if (fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] traverse the trie up to depth %d in %.3f sec\n", __func__, SUF_LEN, cputime() - g_tc);
+		g_tc = cputime(); g_tr = realtime();
 		for (j = 0; j < n_threads; ++j) {
 			w1[j].seqs = calloc(max_seqs, 4);
 			w1[j].solid = calloc(max_seqs, sizeof(void*));
-			w1[j].e = e, w1[j].opt = opt, w1[j].tid = j;
+			w1[j].e = e, w1[j].top = top, w1[j].opt = opt, w1[j].tid = j;
 		}
 		for (i = 0, j = 0; i < SUF_NUM; ++i) { // assign seqs and hash tables
 			w1[j].solid[w1[j].n_seqs] = solid[i];
@@ -361,6 +358,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] collected %ld informative and %ld ambiguous k-mers in %.3f sec (%.3f wall clock)\n",
 					__func__, (long)cnt[1], (long)(cnt[0] - cnt[1]), cputime() - g_tc, realtime() - g_tr);
+		free(top);
 	}
 
 	{ // initialize and launch worker2
@@ -472,6 +470,8 @@ int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 	fmecopt_t opt;
 	shash_t **solid;
 	char **seq2, **qual2;
+	fmintv_t *top;
+
 	// set correction parameters
 	opt.w = kmer > 0? kmer : 19;
 	opt.min_occ = 3;
@@ -488,12 +488,10 @@ int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 	solid = malloc(SUF_NUM * sizeof(void*));
 	for (i = 0; i < SUF_NUM; ++i) solid[i] = kh_init(solid);
 	// collect solid k-mers
-	for (i = 0; i < SUF_NUM; ++i) {
-		uint8_t s[SUF_LEN+1];
-		for (j = 0; j < SUF_LEN; ++j)
-			s[j] = (i>>(j*2)&0x3) + 1;
-		ec_collect(e, &opt, SUF_LEN, s, solid[i], cnt);
-	}
+	top = fm6_traverse(e, SUF_LEN);
+	for (i = 0; i < SUF_NUM; ++i)
+		ec_collect(e, &opt, SUF_LEN, &top[i], solid[i], cnt);
+	free(top);
 	// correct errors
 	seq2  = malloc(sizeof(void*) * e->mcnt[1] / 2); // NB: e->mcnt[1] equals twice of the number of sequences in _seq
 	qual2 = malloc(sizeof(void*) * e->mcnt[1] / 2);
