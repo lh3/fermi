@@ -114,7 +114,7 @@ extern "C" {
 	 */
 	struct __rld_t *fm_merge(struct __rld_t *e0, struct __rld_t *e1, int n_threads);
 
-	struct __rld_t *fm_sub(struct __rld_t *e, const uint64_t *sub, int n_threads);
+	struct __rld_t *fm_sub(struct __rld_t *e, const uint64_t *sub, int n_threads, int is_comp);
 
 	int64_t fm6_api_readseq(const char *fn, char **_seq, char **_qual);
 	void fm6_api_writeseq(int64_t l, char *seq, char *qual);

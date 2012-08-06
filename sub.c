@@ -27,7 +27,7 @@ static void set_bits(const rld_t *e, const uint64_t *sub, uint64_t *bits, int st
 	}
 }
 
-static rld_t *gen_idx(rld_t *e0, uint64_t *bits)
+static rld_t *gen_idx(rld_t *e0, uint64_t *bits, int is_comp)
 {
 	int c = 0, c0 = -1;
 	int64_t l, i, k = 0, len = 0;
@@ -39,7 +39,7 @@ static rld_t *gen_idx(rld_t *e0, uint64_t *bits)
 	rld_itr_init(e0, &ritr, 0);
 	while ((l = rld_dec(e0, &ritr, &c, 1)) >= 0) {
 		for (i = 0; i < l; ++i, ++k) {
-			if (bits[k>>6]>>(k&0x3f)&1) {
+			if ((bits[k>>6]>>(k&0x3f)&1) == !is_comp) {
 				if (c != c0) {
 					if (len) rld_enc(e, &witr, len, c0);
 					c0 = c, len = 1;
@@ -68,7 +68,7 @@ static void *worker(void *data)
 	return 0;
 }
 
-rld_t *fm_sub(rld_t *e, const uint64_t *sub, int n_threads)
+rld_t *fm_sub(rld_t *e, const uint64_t *sub, int n_threads, int is_comp)
 {
 	uint64_t *bits;
 	worker_t *w;
@@ -91,7 +91,7 @@ rld_t *fm_sub(rld_t *e, const uint64_t *sub, int n_threads)
 	for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 	free(tid); free(w);
 
-	r = gen_idx(e, bits);
+	r = gen_idx(e, bits, is_comp);
 	free(bits);
 	return r;
 }

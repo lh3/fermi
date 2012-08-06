@@ -637,17 +637,18 @@ int main_contrast(int argc, char *argv[])
 
 int main_sub(int argc, char *argv[])
 {
-	int c, n_threads = 1;
+	int c, n_threads = 1, is_comp = 0;
 	rld_t *e;
 	uint64_t n_seqs, *sub;
 	FILE *fp;
-	while ((c = getopt(argc, argv, "t:")) >= 0) {
+	while ((c = getopt(argc, argv, "ct:")) >= 0) {
 		switch (c) {
 		case 't': n_threads = atoi(optarg); break;
+		case 'c': is_comp = 1; break;
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi sub [-t nThreads] <in.fmd> <array.bits>\n");
+		fprintf(stderr, "Usage: fermi sub [-c] [-t nThreads] <in.fmd> <array.bits>\n");
 		return 1;
 	}
 	e = rld_restore(argv[optind]);
@@ -661,7 +662,7 @@ int main_sub(int argc, char *argv[])
 	sub = malloc((n_seqs + 63) / 64 * 8);
 	fread(sub, 8, (n_seqs + 63) / 64, fp);
 	fclose(fp);
-	e = fm_sub(e, sub, n_threads);
+	e = fm_sub(e, sub, n_threads, is_comp);
 	free(sub);
 	rld_dump(e, "-");
 	rld_destroy(e);
