@@ -215,7 +215,7 @@ int64_t bpr_insert_symbol(bprope6_t *rope, int a, int64_t x)
 	return z;
 }
 
-void bpr_insert_string(bprope6_t *rope, int l, uint8_t *str)
+void bpr_insert_string(bprope6_t *rope, int l, const uint8_t *str)
 {
 	uint64_t x = rope->c[0];
 	for (--l; l >= 0; --l)

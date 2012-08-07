@@ -42,7 +42,7 @@ extern "C" {
 
 	bcr_t *bcr_init(int is_threaded, const char *tmpfn);
 	void bcr_destroy(bcr_t *b);
-	void bcr_append(bcr_t *b, int len, uint8_t *seq);
+	void bcr_append(bcr_t *b, int len, const uint8_t *seq);
 	void bcr_build(bcr_t *b);
 
 	bcritr_t *bcr_itr_init(const bcr_t *b);

@@ -355,7 +355,7 @@ size_t bcr_bwtmem(const bcr_t *b)
 	return mem;
 }
 
-void bcr_append(bcr_t *b, int len, uint8_t *seq)
+void bcr_append(bcr_t *b, int len, const uint8_t *seq)
 {
 	int i;
 	assert(len >= 1 && len < 65536);
