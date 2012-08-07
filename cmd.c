@@ -255,8 +255,8 @@ int main_correct(int argc, char *argv[])
 	int c, use_mmap = 0, n_threads = 1;
 	rld_t *e;
 	fmecopt_t opt;
-	opt.w = -1; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0; opt.max_corr = 0.3; opt.trim_l = 0;
-	while ((c = getopt(argc, argv, "MKt:k:v:O:pC:l:")) >= 0) {
+	opt.w = -1; opt.min_occ = 3; opt.keep_bad = 0; opt.is_paired = 0; opt.max_corr = 0.3; opt.trim_l = 0; opt.step = 5;
+	while ((c = getopt(argc, argv, "MKt:k:v:O:pC:l:s:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
 			case 'K': opt.keep_bad = 1; break;
@@ -267,6 +267,7 @@ int main_correct(int argc, char *argv[])
 			case 'p': opt.is_paired = 1; break;
 			case 'C': opt.max_corr = atof(optarg); break;
 			case 'l': opt.trim_l = atoi(optarg); break;
+			case 's': opt.step = atoi(optarg); break;
 		}
 	}
 	if (optind + 2 > argc) {
@@ -277,6 +278,7 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
 		fprintf(stderr, "         -C FLOAT    max fraction of corrected bases [%.2f]\n", opt.max_corr);
 		fprintf(stderr, "         -l INT      trim read down to INT bp; 0 to disable [0]\n");
+		fprintf(stderr, "         -s INT      step size for the jumping heuristic; 0 to disable [%d]\n", opt.step);
 		fprintf(stderr, "         -K          keep bad/unfixable reads\n");
 		fprintf(stderr, "\n");
 		return 1;
