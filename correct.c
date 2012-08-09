@@ -311,7 +311,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 	pthread_attr_t attr;
 
 	if (opt->w < 0) { // determine k-mer
-		opt->w = (int)(log(e->mcnt[0]) / log(4) + 6.499);
+		opt->w = (int)(log(e->mcnt[0]) / log(4) + 8.499);
 		if (opt->w >= MAX_KMER) opt->w = MAX_KMER;
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] set k-mer length to %d\n", __func__, opt->w);
