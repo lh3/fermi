@@ -53,7 +53,7 @@ Options: -P        the input files are paired (ends in separate files)
 	my $pre = "$opts{p}.raw";
 	if (defined($opts{b})) {
 		push(@lines, "$pre.fmd:$in_list");
-		push(@lines, "\t$fqs | \$(FERMI) ropebwt -a bcr -btNf $pre.tmp - > \$@ 2> \$@.log", '');
+		push(@lines, "\t$fqs | \$(FERMI) ropebwt -a bcr -v3 -btNf $pre.tmp - > \$@ 2> \$@.log", '');
 	} else {
 		push(@lines, "$pre.split.log:$in_list");
 		push(@lines, "\t$fqs | \$(FERMI) splitfa - $pre $n_split 2> $pre.split.log\n");
@@ -68,7 +68,7 @@ Options: -P        the input files are paired (ends in separate files)
 	$pre = "$opts{p}.ec";
 	if (defined($opts{b})) {
 		push(@lines, "$pre.fmd:$opts{p}.ec.fq.gz");
-		push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) ropebwt -a bcr -btf $pre.tmp - > \$@ 2> \$@.log", '');
+		push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) ropebwt -a bcr -v3 -btf $pre.tmp - > \$@ 2> \$@.log", '');
 	} else {
 		push(@lines, "$pre.split.log:$opts{p}.ec.fq.gz");
 		push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $n_split 2> \$@\n");
