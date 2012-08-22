@@ -152,7 +152,7 @@ heuristics in error correction. On two human data sets, fermi takes 30% less
 wall-clock time and produces slightly longer scaftigs, though at the cost of
 marginally increased assembly break points in comparison to release 1.0.
 
-(1.1: 2012-04-09, r743)
+(1.1: 2012-08-22, r744)
 
 ###Release 1.0 (2012-04-09)
 
