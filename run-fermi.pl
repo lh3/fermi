@@ -8,7 +8,7 @@ use Getopt::Std;
 
 sub main {
 	my %opts = (e=>'fermi', t=>2, p=>'fmdef', k=>50);
-	getopts('e:t:p:Pck:Dbl:', \%opts);
+	getopts('e:t:p:Pck:DBl:', \%opts);
 	$opts{P} = 1 if defined($opts{c});
 	$opts{l} = defined($opts{l})? "-l$opts{l}" : "";
 	my $min_clean_o = int($opts{k} * 1.2 + .499);
@@ -17,8 +17,8 @@ sub main {
 Usage:   run-fermi.pl [options] <in1.fq> [in2.fq [...]]\n
 Options: -P        the input files are paired (ends in separate files)
          -c        the input is collated\/initerleaved FASTQ (two ends in the same file)
-         -D        halve the number of jobs for building the split index
-         -b        use bcr for constructing FM-index
+         -D        halve the number of jobs for building the split index (effective with -B)
+         -B        use the original algorithm for constructing FMD-index (default is BCR)
          -e FILE   fermi executable [$opts{e}]
          -t INT    number of threads [$opts{t}]
          -p STR    prefix of output files [$opts{p}]
@@ -51,7 +51,7 @@ Options: -P        the input files are paired (ends in separate files)
 
 	push(@lines, "# Construct the FM-index for raw sequences");
 	my $pre = "$opts{p}.raw";
-	if (defined($opts{b})) {
+	if (!defined($opts{B})) {
 		push(@lines, "$pre.fmd:$in_list");
 		push(@lines, "\t$fqs | \$(FERMI) ropebwt -a bcr -v3 -btNf $pre.tmp - > \$@ 2> \$@.log", '');
 	} else {
@@ -66,7 +66,7 @@ Options: -P        the input files are paired (ends in separate files)
 
 	push(@lines, "# Construct the FM-index for corrected sequences");
 	$pre = "$opts{p}.ec";
-	if (defined($opts{b})) {
+	if (!defined($opts{B})) {
 		push(@lines, "$pre.fmd:$opts{p}.ec.fq.gz");
 		push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) ropebwt -a bcr -v3 -btf $pre.tmp - > \$@ 2> \$@.log", '');
 	} else {
