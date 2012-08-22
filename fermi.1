@@ -1,4 +1,4 @@
-.TH fermi 1 "29 Feburary 2012" "fermi-r662" "Bioinformatics tools"
+.TH fermi 1 "22 August 2012" "fermi-r743" "Bioinformatics tools"
 
 .SH NAME
 .PP
@@ -28,7 +28,7 @@ Durbin, 2010 and 2012) and has a similar workflow.
 .SS Requirements and installation
 Fermi is designed for running on a multi-core x86_64 machine with large shared
 memory.  The peak memory is linear in the size of the genome and sublinear in
-the coverage.  It takes approximately 90GB peak memory and 5 days to assemble a
+the coverage.  It takes approximately 90GB peak memory and 3 days to assemble a
 mammalian genome at 35-fold coverage and needs working disk space roughly
 three times as large as the original gzip'd FASTQ.
 
@@ -148,7 +148,7 @@ data in future.
 \ 
 .SS Quick assembly with run-fermi.pl
 .B run-fermi.pl
-.RB [ \-PDc ]
+.RB [ \-PDBc ]
 .RB [ \-e
 .IR fermiExe ]
 .RB [ \-t
@@ -157,6 +157,8 @@ data in future.
 .IR prefix ]
 .RB [ \-k
 .IR ovlpLen ]
+.RB [ \-l
+.IR maxLen ]
 .I in1.fq.gz
 .RI [ in2.fq.gz ]
 [...]
@@ -194,9 +196,16 @@ read in the
 .RI 2( j +1)-th
 file constitute a read pair.
 .TP
+.B -B
+Use the SAIS algorithm to build the FMD-index. The default is BCR. The BCR
+algorithm is much faster for reads up to 150-200bp. For longer sequences, the
+original algorithm is better. See also `FURTHER NOTES' about the BWT
+construction algorithms.
+.TP
 .B -D
 Halve the number of split files when building the index. This is faster but
-increases the memory usage.
+increases the memory usage. This option is only effective with
+.BR -B .
 .TP
 .BI -e \ FILE
 Path of the
@@ -208,6 +217,11 @@ Prefix of output files [fmdef]
 .TP
 .BI -t \ INT
 Maximum number of CPUs. Must be a number no less than 2. [2]
+.TP
+.BI -l \ INT
+After error correction, trim reads down to
+.I INT
+bp. [inf]
 .TP
 .BI -k \ INT
 Minimum overlap when constructing unitigs (see also
@@ -265,6 +279,29 @@ bytes of memory, where
 is the total length of the concatenated sequence and
 .I S
 is the size of the final FM-index which is run-length-delta encoded.
+
+
+.TP
+.B ropebwt
+.B fermi ropebwt
+.RB [ \-btFRNOT ]
+.RB [ \-a
+.IR algorithm ]
+.RB [ \-r
+.IR nRuns ]
+.RB [ \-n
+.IR nChild ]
+.RB [ \-o
+.IR outFile ]
+.RB [ \-f
+.IR tmpFile ]
+.RB [ \-v
+.IR verbose ]
+.I in.fa
+
+Construct the BWT for sequences in file
+.I in.fa
+using the BCR or the BPR algorithm.
 
 
 .TP
@@ -541,15 +578,66 @@ Find the super-maximal exact matches against the FM-index.
 .sp
 \ 
 
+.SS Constructing BWT
+.PP
+Fermi implements four algorithms for constructing BWT: SAIS, SAIS-merge, BPR
+and BCR. They all work with sequences with multiple sentinels. Each algorithm
+has its own strength and weakness.
+
+SAIS is the original algorithm used by fermi. It is modified from Yuta Mori's
+reimplementation of the single-sentinel SAIS algorithm by introducing
+comparisons between sentinels. This algorithm needs to construct the suffix
+array and is thus memory demanding given many sequences. The SAIS algorithm is
+implemented in file `ksa.c'.
+
+SAIS-merge is built on top of SAIS. It uses SAIS to construct the suffix array
+for a part of sequences and then merges the partial suffix array to the
+existing FM-index. Given many short sequences, the memory footprint is roughly
+linear in the entropy of the sequences. The
+.B build
+command uses the SAIS-merge algorithm. SAIS-merge is still memory demanding
+given a very long sequence (e.g. a human chromosome) as it has to call SAIS
+for the whole sequence.
+
+The BPR algorithm works by inserting each symbol to the partial FM-index
+represented as a B+-rope. It is the simplest yet works efficiently for all
+types of input sequences. On a single thread, BPR is marginally faster than
+SAIS-merge. However, as BPR is cache demanding, launching multiple BPR
+processes will make them compete cache with each other and greatly impact the
+performance. BPR is largely inspired by BCR.
+
+SAIS, SAIS-merge and BPR all run on a single thread. Parallelization is
+achieved by building BWT for part of sequences and merging them together with
+the
+.B merge
+commanda. Using atomic CPU instructions implemented in the x86-64 CPUs, merging
+can be parallelized lock-free.
+
+BCR, or the Bauer-Cox-Rosone algorithm, is a distinct algorithm designed for
+many short sequences. It is much faster than the others given Illumina short
+reads. However, the time complexity of BCR is quadratic in the length of the
+longest sequence. It becomes very slow for long reads.
+
+Fermi improves the original BCR algorithm in several aspects. Firstly, fermi
+builds the FM-index largely in RAM. This increases the memory usage, but is
+much preferred when fast disk I/O is not available. Secondly, fermi uses radix
+sort to greatly speed up the construction. Thirdly, fermi multi-threads the
+computing bottleneck. This typically halves the wall-clock time. With these
+improvements, fermi is able to construct the BWT for 35-fold human reads in RAM
+without the extra merging step. For 100bp reads, fermi-BCR is the fastest BWT
+construction algorithm to date.
+
+
 .SS Fermi and SGA
 .PP
-Fermi is fundamentally influenced by the string graph assembler (SGA; Simpson and Durbin, 2010 and 2012) written
-by Jared Simpson. Although initially I was planning something quite different,
-most of my ideas turned out to be wrong or impractical once I started to
-implement them. In the end, fermi takes a very similar overall approach to SGA.
-On the other hand, fermi is entirely a fresh implementation. The FM-index data
-structure, the BWT construction algorithm, the error correction strategy, the
-overlap graph construction procedure are all different from those
+Fermi is fundamentally influenced by the string graph assembler (SGA; Simpson
+and Durbin, 2010 and 2012) written by Jared Simpson. Although initially I was
+planning something quite different, most of my ideas turned out to be wrong or
+impractical once I started to implement them. In the end, fermi takes a very
+similar overall approach to SGA.  On the other hand, fermi is entirely a fresh
+implementation. The FM-index data structure, the BWT construction algorithm,
+the error correction strategy, the overlap graph construction procedure are all
+different from those
 implemented in SGA.
 
 

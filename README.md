@@ -28,8 +28,9 @@ FAQ
 
 ####0. In addition to this FAQ, are there any other documentations?
 
-The algorithms and evaluations are described in the [preprint][1] available
-from arXiv. The detailed usage is documented in the [fermi manpage][2].
+The algorithms and evaluations are described in the [fermi paper][11] with the
+[preprint][1] available from arXiv. The detailed usage is documented in the
+[fermi manpage][2].
 
 ####1. What is fermi?
 
@@ -137,10 +138,21 @@ A more convenient command-line interface is likely to be added in future.
 [8]: http://www.ncbi.nlm.nih.gov/sra?term=SRR065390
 [9]: http://www.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?cmd=show&f=software&m=software&s=software
 [10]: https://github.com/lh3/bwa
-
+[11]: http://bioinformatics.oxfordjournals.org/content/28/14/1838
+[12]: http://www.springerlink.com/content/b55m96rj18462152/
 
 Release Notes
 -------------
+
+###Release 1.1 (2012-08-22)
+
+This release reduces the runtime of assembly by introducing an improved version
+of the [BCR algorithm][12] for constructing FMD-index and by deploying
+heuristics in error correction. On two human data sets, fermi takes 30% less
+wall-clock time and produces slightly longer scaftigs, though at the cost of
+marginally increased assembly break points in comparison to release 1.0.
+
+(1.1: 2012-04-09, r743)
 
 ###Release 1.0 (2012-04-09)
 
