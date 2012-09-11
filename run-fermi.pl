@@ -8,7 +8,7 @@ use Getopt::Std;
 
 sub main {
 	my %opts = (e=>'fermi', t=>2, p=>'fmdef', k=>50);
-	getopts('e:t:p:Pck:DBl:', \%opts);
+	getopts('e:t:p:Pck:DBCl:', \%opts);
 	$opts{P} = 1 if defined($opts{c});
 	$opts{l} = defined($opts{l})? "-l$opts{l}" : "";
 	my $min_clean_o = int($opts{k} * 1.2 + .499);
@@ -19,6 +19,7 @@ Options: -P        the input files are paired (ends in separate files)
          -c        the input is collated\/initerleaved FASTQ (two ends in the same file)
          -D        halve the number of jobs for building the split index (effective with -B)
          -B        use the original algorithm for constructing FMD-index (default is BCR)
+         -C        skip error correction
          -e FILE   fermi executable [$opts{e}]
          -t INT    number of threads [$opts{t}]
          -p STR    prefix of output files [$opts{p}]
@@ -50,7 +51,7 @@ Options: -P        the input files are paired (ends in separate files)
 	$fqs = '(' . $fqs . ')';
 
 	push(@lines, "# Construct the FM-index for raw sequences");
-	my $pre = "$opts{p}.raw";
+	my $pre = defined($opts{C})? "$opts{p}.ec" : "$opts{p}.raw";
 	if (!defined($opts{B})) {
 		push(@lines, "$pre.fmd:$in_list");
 		push(@lines, "\t$fqs | \$(FERMI) ropebwt -a bcr -v3 -btNf $pre.tmp - > \$@ 2> \$@.log", '');
@@ -60,19 +61,21 @@ Options: -P        the input files are paired (ends in separate files)
 		&build_fmd(\@lines, $n_split, $pre, $opts{t}); # do not trim for the initial index
 	}
 
-	push(@lines, "# Error correction");
-	push(@lines, "$opts{p}.ec.fq.gz:$opts{p}.raw.fmd");
-	push(@lines, "\t$fqs | \$(FERMI) correct -".(defined($opts{P})? 'p' : '')."t $opts{t} $opts{l} \$< - 2> \$@.log | gzip -1 > \$@\n");
+	if (!defined($opts{C})) {
+		push(@lines, "# Error correction");
+		push(@lines, "$opts{p}.ec.fq.gz:$opts{p}.raw.fmd");
+		push(@lines, "\t$fqs | \$(FERMI) correct -".(defined($opts{P})? 'p' : '')."t $opts{t} $opts{l} \$< - 2> \$@.log | gzip -1 > \$@\n");
 
-	push(@lines, "# Construct the FM-index for corrected sequences");
-	$pre = "$opts{p}.ec";
-	if (!defined($opts{B})) {
-		push(@lines, "$pre.fmd:$opts{p}.ec.fq.gz");
-		push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) ropebwt -a bcr -v3 -btf $pre.tmp - > \$@ 2> \$@.log", '');
-	} else {
-		push(@lines, "$pre.split.log:$opts{p}.ec.fq.gz");
-		push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $n_split 2> \$@\n");
-		&build_fmd(\@lines, $n_split, $pre, $opts{t});
+		push(@lines, "# Construct the FM-index for corrected sequences");
+		$pre = "$opts{p}.ec";
+		if (!defined($opts{B})) {
+			push(@lines, "$pre.fmd:$opts{p}.ec.fq.gz");
+			push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) ropebwt -a bcr -v3 -btf $pre.tmp - > \$@ 2> \$@.log", '');
+		} else {
+			push(@lines, "$pre.split.log:$opts{p}.ec.fq.gz");
+			push(@lines, "\t\$(FERMI) fltuniq \$< 2> $opts{p}.fltuniq.log | \$(FERMI) splitfa - $pre $n_split 2> \$@\n");
+			&build_fmd(\@lines, $n_split, $pre, $opts{t});
+		}
 	}
 
 	push(@lines, "# Generate unitigs");
