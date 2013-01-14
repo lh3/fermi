@@ -6,19 +6,20 @@
 
 int main_example(int argc, char *argv[])
 {
-	int c, do_ec = 0, skip_unitig = 0, ec_k = -1, unitig_k = -1;
+	int c, do_ec = 0, skip_unitig = 0, ec_k = -1, unitig_k = -1, do_clean = 0;
 	char *seq, *qual;
 	int64_t l;
-	while ((c = getopt(argc, argv, "eUk:l:")) >= 0) {
+	while ((c = getopt(argc, argv, "ceUk:l:")) >= 0) {
 		switch (c) {
 			case 'e': do_ec = 1; break;
 			case 'U': skip_unitig = 1; break;
 			case 'k': ec_k = atoi(optarg); break;
 			case 'l': unitig_k = atoi(optarg); break;
+			case 'c': do_clean = 1; break;
 		}
 	}
 	if (optind == argc) {
-		fprintf(stderr, "Usage: fermi example [-e] <in.fq>\n");
+		fprintf(stderr, "Usage: fermi example [-ceU] [-k ecKmer] [-l utgKmer] <in.fq>\n");
 		return 1;
 	}
 	l = fm6_api_readseq(argv[optind], &seq, &qual);
@@ -27,6 +28,12 @@ int main_example(int argc, char *argv[])
 		mag_t *g;
 		free(qual);
 		g = fm6_api_unitig(unitig_k, l, seq);
+		if (do_clean) {
+			magopt_t *opt = mag_init_opt();
+			opt->flag |= MOG_F_AGGRESSIVE | MOG_F_CLEAN;
+			mag_g_clean(g, opt);
+			free(opt);
+		}
 		mag_g_print(g);
 		mag_g_destroy(g);
 	} else {
