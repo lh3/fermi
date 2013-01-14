@@ -4,7 +4,11 @@
 #include "fermi.h"
 #include "mag.h"
 
+#ifdef FM_EXAMPLE_MAIN
+int main(int argc, char *argv[])
+#else
 int main_example(int argc, char *argv[])
+#endif
 {
 	int c, do_ec = 0, skip_unitig = 0, ec_k = -1, unitig_k = -1, do_clean = 0;
 	char *seq, *qual;
