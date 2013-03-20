@@ -671,6 +671,19 @@ int main_sub(int argc, char *argv[])
 	return 0;
 }
 
+int main_recode(int argc, char *argv[])
+{
+	rld_t *e;
+	if (argc == 1) {
+		fprintf(stderr, "Usage: fermi recode <in.rld>\n");
+		return 1;
+	}
+	e = rld_restore(argv[1]);
+	rld_dump(e, "-");
+	rld_destroy(e);
+	return 0;
+}
+
 static inline uint64_t popcount64(uint64_t y)
 {
 	y = y - ((y >> 1) & 0x5555555555555555ull);

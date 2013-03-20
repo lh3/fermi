@@ -24,6 +24,7 @@ int main_remap(int argc, char *argv[]);
 int main_scaf(int argc, char *argv[]);
 int main_contrast(int argc, char *argv[]);
 int main_bitand(int argc, char *argv[]);
+int main_recode(int argc, char *argv[]);
 
 int main_ropebwt(int argc, char *argv[]);
 int main_example(int argc, char *argv[]);
@@ -73,7 +74,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Command: build     Generate FM-Index\n");
 		fprintf(stderr, "         ropebwt   Alternative algorithms for constructing FM-index\n");
 		fprintf(stderr, "         chkbwt    Validate the FM-Index\n");
-		fprintf(stderr, "         merge     Merge multiple FM-Indexes\n");
+		fprintf(stderr, "         merge     Merge multiple FM-Indices\n");
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
 		fprintf(stderr, "         exact     Find exact matches\n");
 		fprintf(stderr, "         correct   Error correction\n");
@@ -85,6 +86,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         contrast  Compare two FMD-indices\n");
 		fprintf(stderr, "         bitand    Compute the intersection of bit arrays\n");
 		fprintf(stderr, "         sub       Extract sub-index with a bit array\n");
+		fprintf(stderr, "         recode    Recode FM-Index\n");
 		fprintf(stderr, "\n");
 		fprintf(stderr, "         splitfa   Split a FASTA/Q file\n");
 		fprintf(stderr, "         trimseq   Trim a FASTA/Q file\n");
@@ -110,6 +112,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "scaf") == 0) ret = main_scaf(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);
+	else if (strcmp(argv[1], "recode") == 0) ret = main_recode(argc-1, argv+1);
 	else if (strcmp(argv[1], "splitfa") == 0) ret = main_splitfa(argc-1, argv+1);
 	else if (strcmp(argv[1], "fltuniq") == 0) ret = main_fltuniq(argc-1, argv+1);
 	else if (strcmp(argv[1], "trimseq") == 0) ret = main_trimseq(argc-1, argv+1);
