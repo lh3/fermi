@@ -1,6 +1,6 @@
 /* The MIT License
 
-   Copyright (c) 2012 Heng Li <lh3@me.com>
+   Copyright (c) 2012-2013 Heng Li <lh3@me.com>
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -28,6 +28,9 @@
 
 #include <stdint.h>
 
+#define BCR_F_THR   0x1
+#define BCR_F_RLO   0x2
+
 struct bcr_s;
 typedef struct bcr_s bcr_t;
 
@@ -40,10 +43,10 @@ extern int bcr_verbose;
 extern "C" {
 #endif
 
-	bcr_t *bcr_init(int is_threaded, const char *tmpfn);
+	bcr_t *bcr_init(void);
 	void bcr_destroy(bcr_t *b);
 	void bcr_append(bcr_t *b, int len, const uint8_t *seq);
-	void bcr_build(bcr_t *b);
+	void bcr_build(bcr_t *b, int flag, const char *tmpfn);
 
 	bcritr_t *bcr_itr_init(const bcr_t *b);
 	const uint8_t *bcr_itr_next(bcritr_t *itr, int *l);

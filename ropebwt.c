@@ -16,8 +16,7 @@ enum algo_e { BPR, RBR, BCR };
 #define FLAG_ODD 0x4
 #define FLAG_BIN 0x8
 #define FLAG_TREE 0x10
-#define FLAG_THR 0x20
-#define FLAG_CUTN 0x40
+#define FLAG_CUTN 0x20
 
 static void insert1(int flag, int l, uint8_t *s, bprope6_t *bpr, bcr_t *bcr)
 {
@@ -54,7 +53,7 @@ int main_ropebwt(int argc, char *argv[])
 	kseq_t *ks;
 	enum algo_e algo = BPR;
 	int c, max_runs = 512, max_nodes = 64;
-	int flag = FLAG_FOR | FLAG_REV | FLAG_ODD;
+	int bcr_flag = 0, flag = FLAG_FOR | FLAG_REV | FLAG_ODD;
 
 	while ((c = getopt(argc, argv, "TFRObNo:r:n:ta:f:v:")) >= 0)
 		if (c == 'a') {
@@ -68,7 +67,8 @@ int main_ropebwt(int argc, char *argv[])
 		else if (c == 'T') flag |= FLAG_TREE;
 		else if (c == 'b') flag |= FLAG_BIN;
 		else if (c == 'N') flag |= FLAG_CUTN;
-		else if (c == 't') flag |= FLAG_THR;
+		else if (c == 't') bcr_flag |= BCR_F_THR;
+		else if (c == 's') bcr_flag |= BCR_F_RLO;
 		else if (c == 'r') max_runs = atoi(optarg);
 		else if (c == 'n') max_nodes= atoi(optarg);
 		else if (c == 'f') tmpfn = optarg;
@@ -83,6 +83,7 @@ int main_ropebwt(int argc, char *argv[])
 		fprintf(stderr, "         -o FILE    output file [stdout]\n");
 		fprintf(stderr, "         -f FILE    temporary sequence file name (bcr only) [null]\n");
 		fprintf(stderr, "         -v INT     verbose level (bcr only) [%d]\n", bcr_verbose);
+		fprintf(stderr, "         -s         sort reads into RLO order (bcr only)\n");
 		fprintf(stderr, "         -b         binary output (5+3 runs starting after 4 bytes)\n");
 		fprintf(stderr, "         -t         enable threading (bcr only)\n");
 		fprintf(stderr, "         -F         skip forward strand\n");
@@ -94,7 +95,7 @@ int main_ropebwt(int argc, char *argv[])
 	}
 
 	if (algo == BCR) {
-		bcr = bcr_init(flag&FLAG_THR, tmpfn);
+		bcr = bcr_init();
 		if (!(flag&FLAG_CUTN)) fprintf(stderr, "Warning: With bcr, an ambiguous base will be converted to a random base\n");
 	} else if (algo == BPR) bpr = bpr_init(max_nodes, max_runs);
 	fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "rb") : gzdopen(fileno(stdin), "rb");
@@ -149,7 +150,7 @@ int main_ropebwt(int argc, char *argv[])
 		bpr_destroy(bpr);
 	}
 	if (bcr) {
-		bcr_build(bcr);
+		bcr_build(bcr, bcr_flag, tmpfn);
 		print_bwt(bcritr_t, bcr_itr_init(bcr), bcr_itr_next, flag&FLAG_BIN, out);
 		bcr_destroy(bcr);
 	}

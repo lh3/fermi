@@ -1,3 +1,12 @@
+/*
+ * This is an in-memory implementation of the Bauer-Cox-Rosone (BCR) algorithms
+ * for constructing BWT for multiple short strings. It differs the orginal BCR
+ * in that this implementation: 1) keeps the partial BWTs in memory; 2)
+ * supports partial multi-threading (in the sense that not every step is
+ * parallelized) and 3) optionally sorts strings into reverse lexicographical
+ * order (RLO) while constructing BWT.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +20,12 @@ int bcr_verbose = 2;
 
 #ifndef kroundup32
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
+#endif
+
+#ifndef kmalloc
+#define kmalloc(type, p, size) if (((p) = (type)malloc((size))) == 0) fprintf(stderr, "[E::%s] fail to allocate %ld bytes\n", __func__, (long)(size))
+#define kcalloc(type, p, cnt, size) if (((p) = (type)calloc((cnt), (size))) == 0) fprintf(stderr, "[E::%s] fail to allocate %ld bytes\n", __func__, (long)(size))
+#define krealloc(type, p, p0, size) if (((p) = (type)realloc((p0), (size))) == 0) fprintf(stderr, "[E::%s] fail to allocate %ld bytes\n", __func__, (long)(size))
 #endif
 
 /**********************************************
@@ -92,7 +107,7 @@ static void rll_enc_finalize(rll_t *e, rllitr_t *itr)
 	for (e->l = 0, c = 0; c < 6; ++c) e->l += e->mc[c];
 }
 
-static inline int64_t rll_dec(const rll_t *e, rllitr_t *itr, int *c, int is_free)
+static inline int64_t rll_dec(rllitr_t *itr, int *c, int is_free)
 {
 	int64_t l;
 	if (*itr->q == 7) return -1;
@@ -118,7 +133,7 @@ static inline void rll_copy(rll_t *e, rllitr_t *itr, const rll_t *e0, rllitr_t *
 		rll_enc(e, itr, itr0->l, itr0->c); // write all pending symbols
 		k -= itr0->l;
 		for (; k > 0; k -= l) { // we always go into this loop because l0<k
-			l = rll_dec(e0, itr0, &c, 1);
+			l = rll_dec(itr0, &c, 1);
 			rll_enc(e, itr, k < l? k : l, c);
 		}
 		itr0->l = -k; itr0->c = c;
@@ -144,7 +159,7 @@ void ld_destroy(longdna_t *ld)
 	free(ld->a); free(ld);
 }
 
-inline void ld_set(longdna_t *h, int64_t x, int c)
+static inline void ld_set(longdna_t *h, int64_t x, int c)
 {
 	int k = x >> LD_SHIFT, l = x & LD_MASK;
 	if (k >= h->max) {
@@ -154,11 +169,11 @@ inline void ld_set(longdna_t *h, int64_t x, int c)
 		h->a = realloc(h->a, sizeof(void*) * h->max);
 		for (j = old_max; j < h->max; ++j) h->a[j] = 0;
 	}
-	if (h->a[k] == 0) h->a[k] = calloc(1<<LD_SHIFT>>5, 8);
+	if (h->a[k] == 0) kcalloc(uint64_t*, h->a[k], 1<<LD_SHIFT>>5, 8);
 	h->a[k][l>>5] |= (uint64_t)(c&3)<<((l&31)<<1); // NB: we cannot set the same position multiple times
 }
 
-inline int ld_get(longdna_t *h, int64_t x)
+static inline int ld_get(longdna_t *h, int64_t x)
 {
 	return h->a[x>>LD_SHIFT][(x&LD_MASK)>>5]>>((x&31)<<1)&3;
 }
@@ -185,7 +200,7 @@ longdna_t *ld_restore(FILE *fp)
 	for (i = 0; i < ld->max; ++i) {
 		fread(&x, sizeof(int), 1, fp);
 		if (x) {
-			ld->a[i] = malloc(x *8);
+			kmalloc(uint64_t*, ld->a[i], x * 8);
 			fread(ld->a[i], 8, x, fp);
 		}
 	}
@@ -197,7 +212,7 @@ longdna_t *ld_restore(FILE *fp)
  ******************/
 
 typedef struct {
-	uint64_t u, v; // $u: position; $v: seq_id:61, base:3
+	uint64_t u, v; // $u: position in partial BWT:61, base:3; $v: seq_id:48, seq_len:16
 } pair64_t;
 
 #define rstype_t pair64_t
@@ -249,10 +264,10 @@ void rs_sort(rstype_t *beg, rstype_t *end, int n_bits, int s)
 }
 
 /******************************
- *** Classify pair64_t::v&7 ***
+ *** Classify pair64_t::u&7 ***
  ******************************/
 
-void rs_classify_alt(rstype_t *beg, rstype_t *end, int64_t *ac)
+void rs_classify_alt(rstype_t *beg, rstype_t *end, int64_t *ac) // very similar to the first half of rs_sort()
 {
 	rsbucket_t *k, b[8], *be = b + 8;
 	for (k = b; k != be; ++k) k->b = beg + ac[k - b];
@@ -261,11 +276,11 @@ void rs_classify_alt(rstype_t *beg, rstype_t *end, int64_t *ac)
 	for (k = b; k != be;) {
 		if (k->b != k->e) {
 			rsbucket_t *l;
-			if ((l = b + ((*k->b).v&7)) != k) {
+			if ((l = b + ((*k->b).u&7)) != k) {
 				rstype_t tmp = *k->b, swap;
 				do {
 					swap = tmp; tmp = *l->b; *l->b++ = swap;
-					l = b + (tmp.v&7);
+					l = b + (tmp.u&7);
 				} while (l != k);
 				*k->b++ = tmp;
 			} else ++k->b;
@@ -291,6 +306,16 @@ static void bcr_gettime(double *rt, double *ct)
 	*rt = tp.tv_sec + tp.tv_usec * 1e-6;
 }
 
+static void liftrlimit() // increase the soft limit to hard limit
+{
+#ifdef __linux__
+	struct rlimit r;
+	getrlimit(RLIMIT_AS, &r);
+	if (r.rlim_cur < r.rlim_max) r.rlim_cur = r.rlim_max;
+	setrlimit(RLIMIT_AS, &r);
+#endif
+}
+
 /***********
  *** BCR ***
  ***********/
@@ -311,12 +336,11 @@ typedef struct {
 } worker_t;
 
 struct bcr_s {
-	int max_len, n_threads;
+	int max_len, n_threads, flag;
 	uint64_t n_seqs, m_seqs, c[6], tot;
 	uint16_t *len;
 	longdna_t **seq;
 	bucket_t bwt[6];
-	char *tmpfn; // temporary file name
 	volatile int proc_cnt; // for multi-threading
 	double rt0, ct0; // for timing
 };
@@ -326,15 +350,14 @@ typedef struct {
 	size_t mem;
 } bcrstat_t;
 
-bcr_t *bcr_init(int is_thr, const char *tmpfn)
+bcr_t *bcr_init()
 {
 	bcr_t *b;
 	int i;
+	liftrlimit();
 	b = calloc(1, sizeof(bcr_t));
 	bcr_gettime(&b->rt0, &b->ct0);
 	for (i = 0; i < 6; ++i) b->bwt[i].e = rll_init();
-	b->n_threads = is_thr? 4 : 0;
-	if (tmpfn) b->tmpfn = strdup(tmpfn);
 	return b;
 }
 
@@ -342,7 +365,7 @@ void bcr_destroy(bcr_t *b)
 {
 	int i;
 	for (i = 0; i < 6; ++i) rll_destroy(b->bwt[i].e);
-	free(b->len); free(b->seq); free(b->tmpfn);
+	free(b->len); free(b->seq);
 	free(b);
 }
 
@@ -355,7 +378,7 @@ size_t bcr_bwtmem(const bcr_t *b)
 	return mem;
 }
 
-void bcr_append(bcr_t *b, int len, const uint8_t *seq)
+void bcr_append(bcr_t *b, int len, const uint8_t *seq) // add a sequence
 {
 	int i;
 	assert(len >= 1 && len < 65536);
@@ -367,7 +390,7 @@ void bcr_append(bcr_t *b, int len, const uint8_t *seq)
 	}
 	if (b->n_seqs == b->m_seqs) {
 		b->m_seqs = b->m_seqs? b->m_seqs<<1 : 256;
-		b->len = realloc(b->len, b->m_seqs * 2);
+		krealloc(uint16_t*, b->len, b->len, b->m_seqs*2);
 	}
 	b->len[b->n_seqs] = len;
 	for (i = 0; i < len; ++i)
@@ -375,78 +398,106 @@ void bcr_append(bcr_t *b, int len, const uint8_t *seq)
 	++b->n_seqs;
 }
 
+/* In both BCR and BCR-RLO, we in theory only need to sort a<<61|x<<3|b, where
+ * $a is the symbol at the k-th column, $b the symbol at the (k-1)-th column
+ * and $x is the position in BWT(k-1). However, for parallelization, we break
+ * this sort into two: we sort by $a first in set_bwt() and then by k<<3|b in
+ * next_bwt(). In the implementation, we use two in-place radix sorts.
+ *
+ * It is actually possible to use one stable counting sort in the non-RLO mode
+ * and two counting sorts in the RLO mode. It will be faster than in-place
+ * radix sort. The price is we will need additional 16*n bytes for an auxiliary
+ * array given n reads, which is quite a lot for real data.
+ */
+
 static pair64_t *set_bwt(bcr_t *bcr, pair64_t *a, int pos)
 {
-	int64_t k, c[8], m;
+	int64_t k, c[8], ac[8], m;
 	int j, l;
+	// compute the absolute position in the new BWT
 	memset(c, 0, 64);
-	if (pos == 0) {
-		for (k = 0; k < bcr->n_seqs; ++k) {
-			pair64_t *u = &a[k];
-			u->u += c[u->v&7], ++c[u->v&7];
+	if (pos) { // a[k].u computed in next_bwt() doesn't consider symbols inserted to other buckets. We need to fix this in the following code block.
+		int b;
+		for (b = m = 0; b < 6; ++b) { // loop through each bucket
+			int64_t pc[8]; // partial counts
+			bucket_t *bwt = &bcr->bwt[b]; // the bucket
+			memcpy(pc, c, 64); // the accumulated counts prior to the current bucket
+			for (k = 0; k < bwt->n; ++k) {
+				pair64_t *u = &bwt->a[k];
+				if ((u->u&7) == 0) continue; // come to the beginning of a string; no need to consider it in the next round
+				u->u += pc[u->u&7]<<3; // correct for symbols inserted to other buckets
+				++c[u->u&7];
+				if (m == u - a) ++m;
+				else a[m++] = *u;
+			}
 		}
-	} else {
-		for (k = m = 0; k < bcr->n_seqs; ++k) {
-			pair64_t *u = &a[k];
-			if ((u->v&7) == 0) continue;
-			u->u += c[u->v&7], ++c[u->v&7];
-			if (m == k) ++m;
-			else a[m++] = a[k];
-		}
-		if (bcr->n_seqs < m) a = realloc(a, m * sizeof(pair64_t));
-		bcr->n_seqs = m;
-	}
+		// if (bcr->n_seqs > m) a = realloc(a, m * sizeof(pair64_t));
+		bcr->n_seqs = m; // $m is the new size of the $a array
+	} else c[0] = bcr->n_seqs;
+	for (k = 1, ac[0] = 0; k < 8; ++k) ac[k] = ac[k - 1] + c[k - 1]; // accumulative counts; NB: MUST BE "8"; otherwise rs_classify_alt() will fail
+	for (k = 0; k < bcr->n_seqs; ++k) a[k].u += ac[a[k].u&7]<<3;
+	// radix sort into each bucket; in the non-RLO mode, we can use a stable counting sort here and skip the other rs_sort() in next_bwt()
+	rs_classify_alt(a, a + bcr->n_seqs, ac); // This is a bottleneck.
+	for (j = 0; j < 6; ++j) bcr->bwt[j].a = a + ac[j];
+	// update counts: $bcr->bwt[j].c[l] equals the number of symbol $l prior to bucket $j; needed by next_bwt()
+	for (l = 0; l < 6; ++l)
+		for (j = 1, bcr->bwt[0].c[l] = 0; j < 6; ++j)
+			bcr->bwt[j].c[l] = bcr->bwt[j-1].c[l] + bcr->bwt[j-1].e->mc[l];
+	for (j = 0; j < 6; ++j) bcr->bwt[j].n = c[j], bcr->c[j] += ac[j];
 	bcr->tot += bcr->n_seqs;
-	for (j = 0; j < 6; ++j) bcr->bwt[j].n = c[j];
-	for (l = 0; l < 6; ++l) bcr->bwt[0].c[l] = 0;
-	for (j = 1; j < 6; ++j)
-		for (l = 0; l < 6; ++l)
-			bcr->bwt[j].c[l] = bcr->bwt[j-1].e->mc[l];
-	for (j = 1; j < 6; ++j)
-		for (l = 0; l < 6; ++l)
-			bcr->bwt[j].c[l] += bcr->bwt[j-1].c[l];
-	memmove(c + 1, c, 40);
-	for (k = 1, c[0] = 0; k < 8; ++k) c[k] += c[k - 1]; // NB: MUST BE "8"; otherwise rs_classify_alt() will fail
-	rs_classify_alt(a, a + bcr->n_seqs, c);
-	for (j = 0; j < 6; ++j)
-		bcr->c[j] += c[j], bcr->bwt[j].a = a + c[j];
-	for (k = 0; k < bcr->n_seqs; ++k) a[k].u += c[a[k].v&7];
 	return a;
 }
 
 static void next_bwt(bcr_t *bcr, int class, int pos)
 {
-	int64_t c[6], k, l;
+	int64_t k, l, beg, old_u, new_u, streak;
 	rllitr_t ir, iw;
 	bucket_t *bwt = &bcr->bwt[class];
 	rll_t *ew, *er = bwt->e;
 
 	if (bwt->n == 0) return;
-	for (k = bcr->tot, l = 0; k; k >>= 1, ++l);
-	if (class) rs_sort(bwt->a, bwt->a + bwt->n, 8, l > 7? l - 7 : 0);
-	for (k = 0; k < bwt->n; ++k) {
+	for (k = 0; k < bwt->n; ++k) { // compute the relative position in the old bucket
 		pair64_t *u = &bwt->a[k];
-		u->u -= k + bcr->c[class];
-		u->v = (u->v&~7ULL) | (pos >= (u->v>>3&0xffff)? 0 : ld_get(bcr->seq[pos], u->v>>19) + 1);
+		u->u = ((u->u>>3) - bcr->c[class])<<3 | (pos >= (u->v&0xffff)? 0 : ld_get(bcr->seq[pos], u->v>>16) + 1);
 	}
+	for (k = bcr->tot<<3, l = 0; k; k >>= 1, ++l);
+	rs_sort(bwt->a, bwt->a + bwt->n, 8, l > 7? l - 7 : 0); // sort by the absolute position in the new BWT
+	for (k = 1, beg = 0; k <= bwt->n; ++k)
+		if (k == bwt->n || bwt->a[k].u>>3 != bwt->a[k-1].u>>3) {
+			if (k - beg > 1) {
+				pair64_t *i, *u, *end = bwt->a + k, *start = &bwt->a[beg];
+				for (i = start + 1, u = start; i < end; ++i)
+					if ((u->u&7) == (i->u&7)) i->u = u->u;
+					else i->u += (i - start)<<3, u = i;
+			}
+			beg = k;
+		}
+	// insert the column to the existing BWT $er and write to $ew; $er will be destroyed gradually
 	ew = rll_init();
 	rll_itr_init(er, &ir);
 	rll_itr_init(ew, &iw);
-	memset(c, 0, 48);
-	for (k = l = 0; k < bwt->n; ++k) {
+	for (k = l = 0, streak = 0, old_u = new_u = -1; k < bwt->n; ++k) {
 		pair64_t *u = &bwt->a[k];
-		int a = u->v&7;
-		if (u->u > l) rll_copy(ew, &iw, er, &ir, u->u - l);
-		l = u->u;
-		rll_enc(ew, &iw, 1, a);
-		u->u = ((ew->mc[a] + iw.l - 1) - c[a]) + bcr->c[a] + bwt->c[a];
-		++c[a];
+		int a = u->u&7;
+		if (u->u != old_u) { // in the non-RLO mode, we always come to the following block
+			if (u->u>>3 > l) rll_copy(ew, &iw, er, &ir, (u->u>>3) - l); // copy u->u + streak - l symbols from the old BWT to the new
+			rll_enc(ew, &iw, 1, a); // write the current symbol in the new column
+			old_u = u->u;
+			new_u = u->u = ((ew->mc[a] + iw.l - 1) + bcr->c[a] + bwt->c[a])<<3 | a; // compute the incomplete position in the new BWT
+			streak = 0;
+		} else {
+			rll_enc(ew, &iw, 1, a); // write the current symbol in the new column
+			u->u = new_u;
+			++streak;
+		}
+		l = (old_u>>3) + streak + 1;
 	}
-	if (l < er->l) rll_copy(ew, &iw, er, &ir, er->l - l);
+	if (l - bwt->n < er->l) rll_copy(ew, &iw, er, &ir, er->l - (l - bwt->n));
 	rll_enc_finalize(ew, &iw);
 	rll_destroy(er);
 	bwt->e = ew;
 }
+
 static int worker_aux(worker_t *w)
 {
 	struct timespec req, rem;
@@ -457,55 +508,60 @@ static int worker_aux(worker_t *w)
 	return (w->bcr->max_len == w->pos);
 }
 
-static void *worker(void *data) { while (worker_aux(data) == 0); return 0; }
+static void *worker(void *data)
+{
+	while (worker_aux(data) == 0);
+	return 0;
+}
 
-void bcr_build(bcr_t *b)
+void bcr_build(bcr_t *b, int flag, const char *tmpfn)
 {
 	int64_t k;
-	int pos, c, i;
+	int pos, c, i, n_threads;
 	pair64_t *a;
 	FILE *tmpfp = 0;
 	double ct, rt;
 	pthread_t *tid = 0;
 	worker_t *w = 0;
 
+	b->flag = flag;
+	n_threads = (flag&BCR_F_THR)? 4 : 1;
 	bcr_gettime(&rt, &ct);
 	if (bcr_verbose >= 3) fprintf(stderr, "Read sequences into memory (%.3fs, %.3fs, %.3fM)\n", rt-b->rt0, ct-b->ct0, bcr_bwtmem(b)/1024./1024.);
-	b->m_seqs = b->n_seqs;
-	b->len = realloc(b->len, b->n_seqs * 2);
-	if (b->tmpfn) {
-		tmpfp = fopen(b->tmpfn, "wb");
+	if (tmpfn) { // dump the transposed sequences to a temporary file
+		tmpfp = fopen(tmpfn, "wb");
 		for (pos = 0; pos < b->max_len; ++pos) {
 			ld_dump(b->seq[pos], tmpfp);
 			ld_destroy(b->seq[pos]);
 		}
 		fclose(tmpfp);
-		tmpfp = fopen(b->tmpfn, "rb");
+		tmpfp = fopen(tmpfn, "rb");
 		bcr_gettime(&rt, &ct);
 		if (bcr_verbose >= 3) fprintf(stderr, "Saved sequences to the temporary file (%.3fs, %.3fs, %.3fM)\n", rt-b->rt0, ct-b->ct0, bcr_bwtmem(b)/1024./1024.);
 	}
-	if (b->n_threads > 1) {
-		tid = alloca(b->n_threads * sizeof(pthread_t)); // tid[0] is not used, as the worker 0 is launched by the master
-		w = alloca(b->n_threads * sizeof(worker_t));
-		memset(w, 0, b->n_threads * sizeof(worker_t));
-		for (i = 0; i < b->n_threads; ++i) w[i].class = i + 1, w[i].bcr = b;
-		for (i = 1; i < b->n_threads; ++i) pthread_create(&tid[i], 0, worker, &w[i]);
+	if (n_threads > 1) {
+		tid = alloca(n_threads * sizeof(pthread_t)); // tid[0] is not used, as the worker 0 is launched by the master
+		w = alloca(n_threads * sizeof(worker_t));
+		memset(w, 0, n_threads * sizeof(worker_t));
+		for (i = 0; i < n_threads; ++i) w[i].class = i + 1, w[i].bcr = b;
+		for (i = 1; i < n_threads; ++i) pthread_create(&tid[i], 0, worker, &w[i]);
 	}
-	a = malloc(b->n_seqs * 16);
-	for (k = 0; k < b->n_seqs; ++k) a[k].u = 0, a[k].v = k<<19|b->len[k]<<3;
-	free(b->len); b->len = 0;
-	for (pos = 0; pos <= b->max_len; ++pos) {
+	kmalloc(pair64_t*, a, b->n_seqs * 16);
+	for (k = 0; k < b->n_seqs; ++k) // keep the sequence lengths in the $a array: reduce memory and cache misses
+		a[k].u = (flag&BCR_F_RLO)? 0 : k<<3, a[k].v = k<<16|b->len[k];
+	free(b->len); b->len = 0; // we do not need $b->len now
+	for (pos = 0; pos <= b->max_len; ++pos) { // "==" to add the sentinels
 		a = set_bwt(b, a, pos);
 		if (pos != b->max_len && tmpfp) b->seq[pos] = ld_restore(tmpfp);
 		if (pos) {
-			if (b->n_threads > 1) {
-				for (c = 0; c < b->n_threads; ++c) {
+			if (n_threads > 1) {
+				for (c = 0; c < n_threads; ++c) {
 					volatile int *p = &w[c].toproc;
 					w[c].pos = pos;
 					while (!__sync_bool_compare_and_swap(p, 0, 1));
 				}
 				worker_aux(&w[0]);
-				while (!__sync_bool_compare_and_swap(&b->proc_cnt, b->n_threads, 0));
+				while (!__sync_bool_compare_and_swap(&b->proc_cnt, n_threads, 0));
 			} else for (c = 1; c <= 4; ++c) next_bwt(b, c, pos);
 		} else next_bwt(b, 0, pos);
 		if (pos != b->max_len) ld_destroy(b->seq[pos]);
@@ -515,9 +571,9 @@ void bcr_build(bcr_t *b)
 	free(a);
 	if (tmpfp) {
 		fclose(tmpfp);
-		unlink(b->tmpfn);
+		unlink(tmpfn);
 	}
-	for (i = 1; i < b->n_threads; ++i) pthread_join(tid[i], 0);
+	for (i = 1; i < n_threads; ++i) pthread_join(tid[i], 0);
 }
 
 /****************
