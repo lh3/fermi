@@ -42,6 +42,8 @@ extern "C" {
 	bprope6_t *bpr_init(int max_nodes, int max_runs);
 	// deallocate $rope
 	void bpr_destroy(bprope6_t *rope);
+	// insert $a after $x symbols in $rope and returns the number of $a ahead of $x
+	int64_t bpr_insert_symbol_rank(bprope6_t *rope, int a, int64_t x);
 	// insert $a after $x symbols in $rope and returns the position of the next insertion
 	int64_t bpr_insert_symbol(bprope6_t *rope, int a, int64_t x);
 	// insert a string $str of length $l to $rope; NB: a different input order results in a different rope

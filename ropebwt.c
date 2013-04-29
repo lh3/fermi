@@ -55,7 +55,7 @@ int main_ropebwt(int argc, char *argv[])
 	int c, max_runs = 512, max_nodes = 64;
 	int bcr_flag = 0, flag = FLAG_FOR | FLAG_REV | FLAG_ODD;
 
-	while ((c = getopt(argc, argv, "TFRObNo:r:n:ta:f:v:")) >= 0)
+	while ((c = getopt(argc, argv, "TFRObNo:r:n:ta:f:v:s")) >= 0)
 		if (c == 'a') {
 			if (strcmp(optarg, "bpr") == 0) algo = BPR;
 			else if (strcmp(optarg, "bcr") == 0) algo = BCR;

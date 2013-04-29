@@ -186,12 +186,10 @@ static inline node_t *split_node(bprope6_t *rope, node_t *u, node_t *v)
 	return v;
 }
 
-int64_t bpr_insert_symbol(bprope6_t *rope, int a, int64_t x)
+int64_t bpr_insert_symbol_rank(bprope6_t *rope, int a, int64_t x)
 { // insert $a after $x symbols in $rope and the returns the position of the next insertion
 	node_t *u = 0, *v = 0, *p = rope->root; // $v is the parent of $p; $u and $v are at the same level and $u is the first node in the bucket
-	int64_t y = 0, z;
-	int i;
-	for (i = 0, z = 0; i < a; ++i) z += rope->c[i];
+	int64_t y = 0, z = 0;
 	do { // top-down update. Searching and node splitting are done together in one pass.
 		if (p->n == rope->max_nodes) { // node is full; split
 			v = split_node(rope, u, v); // $v points to the parent of $p; when a new root is added, $v points to the root
@@ -209,9 +207,18 @@ int64_t bpr_insert_symbol(bprope6_t *rope, int a, int64_t x)
 		v = p; p = p->p; // descend
 	} while (!u->is_bottom);
 	++rope->c[a]; // $rope->c should be updated after the loop as adding a new root needs the old $rope->c counts
-	z += insert_to_leaf((uint8_t*)p, a, x - y, v->l, v->c) + 1;
+	z += insert_to_leaf((uint8_t*)p, a, x - y, v->l, v->c);
 	++v->c[a]; ++v->l; // this should be below insert_to_leaf(); otherwise insert_to_leaf() will not work
 	if (*(uint32_t*)p + 2 > rope->max_runs) split_node(rope, u, v);
+	return z;
+}
+
+int64_t bpr_insert_symbol(bprope6_t *rope, int a, int64_t x)
+{
+	int64_t z;
+	int c;
+	z = bpr_insert_symbol_rank(rope, a, x) + 1;
+	for (c = 0; c < a; ++c) z += rope->c[c];
 	return z;
 }
 
