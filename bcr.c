@@ -321,11 +321,13 @@ static void liftrlimit() // increase the soft limit to hard limit
  ***********/
 
 #include <pthread.h>
+#include "bprope6.h"
 #include "bcr.h"
 
 typedef struct {
-	rll_t *e;
-	int64_t n, c[6];
+	rll_t *e; // one of $e and $r must be NULL
+	bprope6_t *r;
+	int64_t n, c[6], mc[6]; // mc[] keeps the marginal symbol counts; c[] keeps the accumulative counts
 	pair64_t *a;
 } bucket_t;
 
@@ -353,18 +355,19 @@ typedef struct {
 bcr_t *bcr_init()
 {
 	bcr_t *b;
-	int i;
 	liftrlimit();
 	b = calloc(1, sizeof(bcr_t));
 	bcr_gettime(&b->rt0, &b->ct0);
-	for (i = 0; i < 6; ++i) b->bwt[i].e = rll_init();
 	return b;
 }
 
 void bcr_destroy(bcr_t *b)
 {
 	int i;
-	for (i = 0; i < 6; ++i) rll_destroy(b->bwt[i].e);
+	for (i = 0; i < 6; ++i) {
+		if (b->bwt[i].e) rll_destroy(b->bwt[i].e);
+		if (b->bwt[i].r) bpr_destroy(b->bwt[i].r);
+	}
 	free(b->len); free(b->seq);
 	free(b);
 }
@@ -374,7 +377,7 @@ size_t bcr_bwtmem(const bcr_t *b)
 	int i;
 	size_t mem = 0;
 	for (i = 0; i < 6; ++i)
-		mem += (size_t)b->bwt[i].e->n * RLL_BLOCK_SIZE;
+		mem += b->bwt[i].e? (size_t)b->bwt[i].e->n * RLL_BLOCK_SIZE : 0;
 	return mem;
 }
 
@@ -442,7 +445,7 @@ static pair64_t *set_bwt(bcr_t *bcr, pair64_t *a, int pos)
 	// update counts: $bcr->bwt[j].c[l] equals the number of symbol $l prior to bucket $j; needed by next_bwt()
 	for (l = 0; l < 6; ++l)
 		for (j = 1, bcr->bwt[0].c[l] = 0; j < 6; ++j)
-			bcr->bwt[j].c[l] = bcr->bwt[j-1].c[l] + bcr->bwt[j-1].e->mc[l];
+			bcr->bwt[j].c[l] = bcr->bwt[j-1].c[l] + bcr->bwt[j-1].mc[l];
 	for (j = 0; j < 6; ++j) bcr->bwt[j].n = c[j], bcr->c[j] += ac[j];
 	bcr->tot += bcr->n_seqs;
 	return a;
@@ -451,9 +454,7 @@ static pair64_t *set_bwt(bcr_t *bcr, pair64_t *a, int pos)
 static void next_bwt(bcr_t *bcr, int class, int pos)
 {
 	int64_t k, l, beg, old_u, new_u, streak;
-	rllitr_t ir, iw;
 	bucket_t *bwt = &bcr->bwt[class];
-	rll_t *ew, *er = bwt->e;
 
 	if (bwt->n == 0) return;
 	for (k = 0; k < bwt->n; ++k) { // compute the relative position in the old bucket
@@ -473,29 +474,49 @@ static void next_bwt(bcr_t *bcr, int class, int pos)
 			beg = k;
 		}
 	// insert the column to the existing BWT $er and write to $ew; $er will be destroyed gradually
-	ew = rll_init();
-	rll_itr_init(er, &ir);
-	rll_itr_init(ew, &iw);
-	for (k = l = 0, streak = 0, old_u = new_u = -1; k < bwt->n; ++k) {
-		pair64_t *u = &bwt->a[k];
-		int a = u->u&7;
-		if (u->u != old_u) { // in the non-RLO mode, we always come to the following block
-			if (u->u>>3 > l) rll_copy(ew, &iw, er, &ir, (u->u>>3) - l); // copy u->u + streak - l symbols from the old BWT to the new
-			rll_enc(ew, &iw, 1, a); // write the current symbol in the new column
-			old_u = u->u;
-			new_u = u->u = ((ew->mc[a] + iw.l - 1) + bcr->c[a] + bwt->c[a])<<3 | a; // compute the incomplete position in the new BWT
-			streak = 0;
-		} else {
-			rll_enc(ew, &iw, 1, a); // write the current symbol in the new column
-			u->u = new_u;
-			++streak;
+	if (bwt->e) { // BWT stored as plain rle
+		rllitr_t ir, iw;
+		rll_t *ew, *er = bwt->e;
+		ew = rll_init();
+		rll_itr_init(er, &ir);
+		rll_itr_init(ew, &iw);
+		for (k = l = 0, streak = 0, old_u = new_u = -1; k < bwt->n; ++k) {
+			pair64_t *u = &bwt->a[k];
+			int a = u->u&7;
+			if (u->u != old_u) { // in the non-RLO mode, we always come to the following block
+				if (u->u>>3 > l) rll_copy(ew, &iw, er, &ir, (u->u>>3) - l); // copy u->u + streak - l symbols from the old BWT to the new
+				rll_enc(ew, &iw, 1, a); // write the current symbol in the new column
+				old_u = u->u;
+				new_u = u->u = ((ew->mc[a] + iw.l - 1) + bcr->c[a] + bwt->c[a])<<3 | a; // compute the incomplete position in the new BWT
+				streak = 0;
+			} else {
+				rll_enc(ew, &iw, 1, a); // write the current symbol in the new column
+				u->u = new_u;
+				++streak;
+			}
+			l = (old_u>>3) + streak + 1;
 		}
-		l = (old_u>>3) + streak + 1;
+		if (l - bwt->n < er->l) rll_copy(ew, &iw, er, &ir, er->l - (l - bwt->n));
+		rll_enc_finalize(ew, &iw);
+		rll_destroy(er);
+		bwt->e = ew;
+		memcpy(bwt->mc, bwt->e->mc, 6 * 8);
+	} else { // BWT stored as rope
+		for (k = 0, streak = 0, old_u = new_u = -1; k < bwt->n; ++k) {
+			pair64_t *u = &bwt->a[k];
+			int a = u->u&7;
+			if (u->u != old_u) { // in the non-RLO mode, we always come to the following block
+				l = bpr_insert_symbol_rank(bwt->r, a, u->u>>3);
+				old_u = u->u;
+				new_u = u->u = (l + bcr->c[a] + bwt->c[a])<<3 | a; // compute the incomplete position in the new BWT
+				streak = 0;
+			} else {
+				bpr_insert_symbol_rank(bwt->r, a, (u->u>>3) + (++streak));
+				u->u = new_u;
+			}
+		}
+		bpr_get_cnt(bwt->r, bwt->mc);
 	}
-	if (l - bwt->n < er->l) rll_copy(ew, &iw, er, &ir, er->l - (l - bwt->n));
-	rll_enc_finalize(ew, &iw);
-	rll_destroy(er);
-	bwt->e = ew;
 }
 
 static int worker_aux(worker_t *w)
@@ -525,6 +546,8 @@ void bcr_build(bcr_t *b, int flag, const char *tmpfn)
 	worker_t *w = 0;
 
 	b->flag = flag;
+	if (b->flag&BCR_F_BPR) for (c = 0; c < 6; ++c) b->bwt[c].r = bpr_init(64, 512);
+	else for (c = 0; c < 6; ++c) b->bwt[c].e = rll_init();
 	n_threads = (flag&BCR_F_THR)? 4 : 1;
 	bcr_gettime(&rt, &ct);
 	if (bcr_verbose >= 3) fprintf(stderr, "Read sequences into memory (%.3fs, %.3fs, %.3fM)\n", rt-b->rt0, ct-b->ct0, bcr_bwtmem(b)/1024./1024.);
@@ -582,6 +605,7 @@ void bcr_build(bcr_t *b, int flag, const char *tmpfn)
 
 struct bcritr_s {
 	const bcr_t *b;
+	bpriter_t *r;
 	int c, i;
 };
 
@@ -590,24 +614,41 @@ bcritr_t *bcr_itr_init(const bcr_t *b)
 	bcritr_t *itr;
 	itr = calloc(1, sizeof(bcritr_t));
 	itr->b = b; itr->i = -1;
+	itr->r = b->bwt[0].r? bpr_iter_init(itr->b->bwt[0].r) : 0;
 	return itr;
+}
+
+void bcr_itr_destroy(bcritr_t *itr)
+{
+	free(itr->r); free(itr);
 }
 
 const uint8_t *bcr_itr_next(bcritr_t *itr, int *l)
 {
-	rll_t *e;
 	const uint8_t *s;
 	if (itr->c == 6) return 0;
-	++itr->i;
-	if (itr->i == itr->b->bwt[itr->c].e->n) {
-		if (++itr->c == 6) return 0;
-		itr->i = 0;
+	if (itr->b->bwt[0].r) { // bwt is stored as a rope
+		while ((s = bpr_iter_next(itr->r, l)) == 0) {
+			if (++itr->c == 6) {
+				free(itr->r); itr->r = 0;
+				return 0;
+			}
+			free(itr->r);
+			itr->r = bpr_iter_init(itr->b->bwt[itr->c].r);
+		}
+	} else { // bwt is stored as plain rle
+		rll_t *e;
+		++itr->i;
+		if (itr->i == itr->b->bwt[itr->c].e->n) {
+			if (++itr->c == 6) return 0;
+			itr->i = 0;
+		}
+		e = itr->b->bwt[itr->c].e;
+		s = e->z[itr->i];
+		if (itr->i == e->n - 1) {
+			for (*l = 0; *l < RLL_BLOCK_SIZE; ++*l)
+				if (s[*l] == 7) break;
+		} else *l = RLL_BLOCK_SIZE;
 	}
-	e = itr->b->bwt[itr->c].e;
-	s = e->z[itr->i];
-	if (itr->i == e->n - 1) {
-		for (*l = 0; *l < RLL_BLOCK_SIZE; ++*l)
-			if (s[*l] == 7) break;
-	} else *l = RLL_BLOCK_SIZE;
 	return s;
 }

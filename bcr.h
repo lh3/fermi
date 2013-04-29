@@ -30,6 +30,7 @@
 
 #define BCR_F_THR   0x1
 #define BCR_F_RLO   0x2
+#define BCR_F_BPR   0x4
 
 struct bcr_s;
 typedef struct bcr_s bcr_t;
@@ -49,6 +50,7 @@ extern "C" {
 	void bcr_build(bcr_t *b, int flag, const char *tmpfn);
 
 	bcritr_t *bcr_itr_init(const bcr_t *b);
+	void bcr_itr_destroy(bcritr_t *itr);
 	const uint8_t *bcr_itr_next(bcritr_t *itr, int *l);
 
 #ifdef __cplusplus

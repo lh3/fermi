@@ -120,6 +120,11 @@ struct bprope6_s {
 	mempool_t *node, *leaf;
 };
 
+void bpr_get_cnt(const bprope6_t *rope, int64_t c[6])
+{
+	memcpy(c, rope->c, 8 * 6);
+}
+
 static void print_node(const node_t *p) // recursively print the B+ rope in the Newick format
 {
 	if (p->is_bottom) {

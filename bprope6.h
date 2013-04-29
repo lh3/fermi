@@ -56,6 +56,8 @@ extern "C" {
 	const uint8_t *bpr_iter_next(bpriter_t *iter, int *n);
 	// memory used by the rope
 	int64_t bpr_mem(bprope6_t *rope);
+	// get marginal counts
+	void bpr_get_cnt(const bprope6_t *rope, int64_t c[6]);
 
 #ifdef __cplusplus
 }

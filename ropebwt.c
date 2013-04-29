@@ -55,7 +55,7 @@ int main_ropebwt(int argc, char *argv[])
 	int c, max_runs = 512, max_nodes = 64;
 	int bcr_flag = 0, flag = FLAG_FOR | FLAG_REV | FLAG_ODD;
 
-	while ((c = getopt(argc, argv, "TFRObNo:r:n:ta:f:v:s")) >= 0)
+	while ((c = getopt(argc, argv, "TFRObNo:r:n:ta:f:v:sB")) >= 0)
 		if (c == 'a') {
 			if (strcmp(optarg, "bpr") == 0) algo = BPR;
 			else if (strcmp(optarg, "bcr") == 0) algo = BCR;
@@ -69,6 +69,7 @@ int main_ropebwt(int argc, char *argv[])
 		else if (c == 'N') flag |= FLAG_CUTN;
 		else if (c == 't') bcr_flag |= BCR_F_THR;
 		else if (c == 's') bcr_flag |= BCR_F_RLO;
+		else if (c == 'B') bcr_flag |= BCR_F_BPR;
 		else if (c == 'r') max_runs = atoi(optarg);
 		else if (c == 'n') max_nodes= atoi(optarg);
 		else if (c == 'f') tmpfn = optarg;
@@ -83,8 +84,9 @@ int main_ropebwt(int argc, char *argv[])
 		fprintf(stderr, "         -o FILE    output file [stdout]\n");
 		fprintf(stderr, "         -f FILE    temporary sequence file name (bcr only) [null]\n");
 		fprintf(stderr, "         -v INT     verbose level (bcr only) [%d]\n", bcr_verbose);
-		fprintf(stderr, "         -s         sort reads into RLO order (bcr only)\n");
 		fprintf(stderr, "         -b         binary output (5+3 runs starting after 4 bytes)\n");
+		fprintf(stderr, "         -s         sort reads into RLO order (bcr only)\n");
+		fprintf(stderr, "         -B         use rope to keep partial BWT (bcr only)\n");
 		fprintf(stderr, "         -t         enable threading (bcr only)\n");
 		fprintf(stderr, "         -F         skip forward strand\n");
 		fprintf(stderr, "         -R         skip reverse strand\n");
