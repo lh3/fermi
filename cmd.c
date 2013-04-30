@@ -119,26 +119,36 @@ int main_chkbwt(int argc, char *argv[])
 	return 0;
 }
 
-static void print_i(const rld_t *e, uint64_t i, kstring_t *s)
+static void print_i(const rld_t *e, uint64_t i, kstring_t *s, int use_fm6)
 {
 	int j;
 	uint64_t k;
-	k = fm_retrieve(e, i, s);
-	for (j = s->l - 1; j >= 0; --j)
-		putchar("$ACGTN"[(int)s->s[j]]);
-	printf("\t%ld\n", (long)k);
+	if (!use_fm6) {
+		k = fm_retrieve(e, i, s);
+		for (j = s->l - 1; j >= 0; --j)
+			putchar("$ACGTN"[(int)s->s[j]]);
+		printf("\t%ld\n", (long)k);
+	} else {
+		fmintv_t k2;
+		int is_contained;
+		k = fm6_retrieve(e, i, s, &k2, &is_contained);
+		for (j = s->l - 1; j >= 0; --j)
+			putchar("$ACGTN"[(int)s->s[j]]);
+		printf("\t%ld\t%ld\t%ld\t%ld\n", (long)k, (long)k2.x[0], (long)k2.x[1], (long)k2.x[2]);
+	}
 }
 
 int main_unpack(int argc, char *argv[])
 {
 	rld_t *e;
-	int c, n, m, use_mmap = 0;
+	int c, n, m, use_mmap = 0, use_fm6 = 0;
 	uint64_t i, *list;
 	kstring_t s;
 	s.m = s.l = 0; s.s = 0;
 	n = m = 0; list = 0;
-	while ((c = getopt(argc, argv, "Mi:")) >= 0) {
+	while ((c = getopt(argc, argv, "M6i:")) >= 0) {
 		switch (c) {
+			case '6': use_fm6 = 1; break;
 			case 'i':
 				if (n == m) {
 					m = m? m<<1 : 16;
@@ -160,10 +170,10 @@ int main_unpack(int argc, char *argv[])
 	if (n) {
 		for (i = 0; (int)i < n; ++i)
 			if (list[i] < e->mcnt[1])
-				print_i(e, list[i], &s);
+				print_i(e, list[i], &s, use_fm6);
 	} else {
 		for (i = 0; i < e->mcnt[1]; ++i)
-			print_i(e, i, &s);
+			print_i(e, i, &s, use_fm6);
 	}
 	rld_destroy(e);
 	free(s.s);
@@ -185,14 +195,11 @@ int main_unitig(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1, min_match = 30;
 	rld_t *e;
-	uint64_t *sorted = 0;
-	char *fn_sorted = 0;
 	while ((c = getopt(argc, argv, "Ml:t:r:")) >= 0) {
 		switch (c) {
 			case 'l': min_match = atoi(optarg); break;
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
-			case 'r': fn_sorted = strdup(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
@@ -200,17 +207,11 @@ int main_unitig(int argc, char *argv[])
 		fprintf(stderr, "Usage:   fermi unitig [options] <reads.fmd>\n\n");
 		fprintf(stderr, "Options: -l INT      min match [%d]\n", min_match);
 		fprintf(stderr, "         -t INT      number of threads [1]\n");
-		fprintf(stderr, "         -r FILE     rank file [null]\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	if (fn_sorted) {
-		sorted = load_sorted(e->mcnt[1], fn_sorted);
-		free(fn_sorted);
-	}
-	fm6_unitig(e, min_match, n_threads, sorted);
-	free(sorted);
+	fm6_unitig(e, min_match, n_threads);
 	rld_destroy(e);
 	return 0;
 }

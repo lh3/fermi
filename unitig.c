@@ -19,19 +19,12 @@ static inline void set_bit(uint64_t *bits, uint64_t x)
 	__sync_fetch_and_or(p, z);
 }
 
-static inline void set_bits(uint64_t *bits, const fmintv_t *p, const uint64_t *sorted)
+static inline void set_bits(uint64_t *bits, const fmintv_t *p)
 {
 	uint64_t k;
-	if (sorted) {
-		for (k = 0; k < p->x[2]; ++k) {
-			set_bit(bits, sorted[p->x[0] + k]>>2);
-			set_bit(bits, sorted[p->x[1] + k]>>2);
-		}
-	} else {
-		for (k = 0; k < p->x[2]; ++k) {
-			set_bit(bits, p->x[0] + k);
-			set_bit(bits, p->x[1] + k);
-		}
+	for (k = 0; k < p->x[2]; ++k) {
+		set_bit(bits, p->x[0] + k);
+		set_bit(bits, p->x[1] + k);
 	}
 }
 
@@ -65,7 +58,6 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 
 typedef struct {
 	const rld_t *e;
-	const uint64_t *sorted;
 	int min_match;
 	fmintv_v a[2], nei;
 	fm32s_v cat;
@@ -92,7 +84,7 @@ int fm6_is_contained(const rld_t *e, int min_match, const kstring_t *s, fmintv_t
 
 int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *nei, // input and output variables
 				fmintv_v *prev, fmintv_v *curr, fm32s_v *cat,                        // temporary arrays
-				uint64_t *used, const uint64_t *sorted)                              // optional info
+				uint64_t *used)                                                      // optional info
 {
 	int ori_l = s->l, j, i, c, rbeg, is_forked = 0;
 	fmintv_v *swap;
@@ -121,7 +113,7 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 						for (i = j; i < prev->n && cat->a[i] == cat0; ++i) cat->a[i] = -1; // mask out other intervals of the same cat
 						kv_push(fmintv_t, *nei, ok0); // keep in the neighbor vector
 						continue; // no need to go through for(c); do NOT set "used" as this neighbor may be rejected later
-					} else if (used) set_bits(used, &ok0, sorted); // the read is contained in another read; mark it as used
+					} else if (used) set_bits(used, &ok0); // the read is contained in another read; mark it as used
 				}
 			} // ~if(ok[0].x[2])
 			if (cat->a[j] < 0) continue; // no need to proceed if we have finished this path
@@ -180,7 +172,7 @@ int fm6_get_nei(const rld_t *e, int min_match, int beg, kstring_t *s, fmintv_v *
 
 static int try_right(aux_t *a, int beg, kstring_t *s)
 {
-	return fm6_get_nei(a->e, a->min_match, beg, s, &a->nei, &a->a[0], &a->a[1], &a->cat, a->used, a->sorted);
+	return fm6_get_nei(a->e, a->min_match, beg, s, &a->nei, &a->a[0], &a->a[1], &a->cat, a->used);
 }
 
 static int check_left_simple(aux_t *a, int beg, int rbeg, const kstring_t *s)
@@ -194,7 +186,7 @@ static int check_left_simple(aux_t *a, int beg, int rbeg, const kstring_t *s)
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			fmintv_t *p = &prev->a[j];
 			fm6_extend(a->e, p, ok, 1);
-			if (ok[0].x[2]) set_bits(a->used, &ok[0], a->sorted); // some reads end here; they must be contained in a longer read
+			if (ok[0].x[2]) set_bits(a->used, &ok[0]); // some reads end here; they must be contained in a longer read
 			if (ok[0].x[2] + ok[(int)s->s[i]].x[2] != p->x[2]) return -1; // potential backward bifurcation
 			kv_push(fmintv_t, *curr, ok[(int)s->s[i]]);
 		}
@@ -248,7 +240,7 @@ static int unitig_unidir(aux_t *a, kstring_t *s, kstring_t *cov, int beg0, uint6
 			break;
 		}
 		*end = a->nei.a[0].x[1];
-		set_bits(a->used, &a->nei.a[0], a->sorted); // successful extension
+		set_bits(a->used, &a->nei.a[0]); // successful extension
 		++n_reads;
 		if (cov->m < s->m) ks_resize(cov, s->m);
 		cov->l = s->l; cov->s[cov->l] = 0;
@@ -274,22 +266,24 @@ static void copy_nei(ku128_v *dst, const fmintv_v *src)
 static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_t end[2], ku128_v nei[2], int *n_reads)
 {
 	fmintv_t intv0;
-	int seed_len, ret, is_loop;
+	int seed_len, ret, is_loop, contained;
 	int64_t k;
 	size_t i;
 
 	*n_reads = nei[0].n = nei[1].n = 0;
-	if (a->sorted && (a->used[seed>>6]>>(seed&0x3f)&1)) return -2; // used
+	k = a->e->mcnt[1] - 1 - seed;
+	if (a->used[k>>6]>>(k&0x3f)&1) return -2; // used
 	// retrieve the sequence pointed by seed
-	k = fm_retrieve(a->e, seed, s);
+	k = fm6_retrieve(a->e, seed, s, &intv0, &contained);
 	seq_reverse(s->l, (uint8_t*)s->s);
 	seed_len = s->l;
+	// check contained status
+	if (intv0.x[2] > 1 && k != intv0.x[0]) return -3; // duplicated, but not the first
+	set_bits(a->used, &intv0);
+	if (contained) return -3; // contained
 	// check length, containment and if used before
 	if (s->l <= a->min_match) return -1; // too short
-	if (!a->sorted && (a->used[k>>6]>>(k&0x3f)&1)) return -2; // used
 	ret = fm6_is_contained(a->e, a->min_match, s, &intv0, &a->a[0]);
-	set_bits(a->used, &intv0, a->sorted); // mark the reads as used
-	if (ret < 0) return -3; // contained
 	*n_reads = 1;
 	// initialize the coverage string
 	if (cov->m < s->m) ks_resize(cov, s->m);
@@ -316,9 +310,9 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	return 0;
 }
 
-static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, const uint64_t *sorted, magv_v *nodes)
+static void unitig_core(const rld_t *e, int min_match, int start, int step, uint64_t *used, uint64_t *bend, uint64_t *visited, magv_v *nodes)
 {
-	uint64_t i, j;
+	uint64_t i;
 	int max_l = 0;
 	aux_t a;
 	kstring_t str, cov, out;
@@ -328,31 +322,29 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 	memset(&a, 0, sizeof(aux_t));
 	memset(&z, 0, sizeof(magv_t));
 	str.l = str.m = cov.l = cov.m = out.l = out.m = 0; str.s = cov.s = out.s = 0;
-	a.e = e; a.sorted = sorted; a.min_match = min_match; a.used = used; a.bend = bend;
+	a.e = e; a.min_match = min_match; a.used = used; a.bend = bend;
 	// the core loop
-	for (j = start; j <= e->mcnt[1]>>2; j += step) {
-		for (i = j<<2|1; i < (j<<2) + 4 && i < e->mcnt[1]; i += 2) {
-			if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.nsr) >= 0) { // then we keep the unitig
-				uint64_t *p[2], x[2];
-				p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
-				p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
-				if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
-				z.len = str.l;
-				if (max_l < str.m) {
-					max_l = str.m;
-					z.seq = realloc(z.seq, max_l);
-					z.cov = realloc(z.cov, max_l);
-				}
-				memcpy(z.seq, str.s, z.len);
-				memcpy(z.cov, cov.s, z.len + 1);
-				if (nodes) { // keep in the nodes array
-					magv_t *q;
-					kv_pushp(magv_t, *nodes, &q);
-					mag_v_copy_to_empty(q, &z);
-				} else { // print out
-					mag_v_write(&z, &out);
-					fputs(out.s, stdout);
-				}
+	for (i = start; i < e->mcnt[1]; i += step) {
+		if (unitig1(&a, i, &str, &cov, z.k, z.nei, &z.nsr) >= 0) { // then we keep the unitig
+			uint64_t *p[2], x[2];
+			p[0] = visited + (z.k[0]>>6); x[0] = 1LLU<<(z.k[0]&0x3f);
+			p[1] = visited + (z.k[1]>>6); x[1] = 1LLU<<(z.k[1]&0x3f);
+			if ((__sync_fetch_and_or(p[0], x[0])&x[0]) || (__sync_fetch_and_or(p[1], x[1])&x[1])) continue;
+			z.len = str.l;
+			if (max_l < str.m) {
+				max_l = str.m;
+				z.seq = realloc(z.seq, max_l);
+				z.cov = realloc(z.cov, max_l);
+			}
+			memcpy(z.seq, str.s, z.len);
+			memcpy(z.cov, cov.s, z.len + 1);
+			if (nodes) { // keep in the nodes array
+				magv_t *q;
+				kv_pushp(magv_t, *nodes, &q);
+				mag_v_copy_to_empty(q, &z);
+			} else { // print out
+				mag_v_write(&z, &out);
+				fputs(out.s, stdout);
 			}
 		}
 	}
@@ -364,18 +356,17 @@ static void unitig_core(const rld_t *e, int min_match, int start, int step, uint
 typedef struct {
 	uint64_t *used, *bend, *visited;
 	const rld_t *e;
-	const uint64_t *sorted;
 	int min_match, start, step;
 } worker_t;
 
 static void *worker(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	unitig_core(w->e, w->min_match, w->start, w->step, w->used, w->bend, w->visited, w->sorted, 0);
+	unitig_core(w->e, w->min_match, w->start, w->step, w->used, w->bend, w->visited, 0);
 	return 0;
 }
 
-int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sorted)
+int fm6_unitig(const rld_t *e, int min_match, int n_threads)
 {
 	uint64_t *used, *bend, *visited;
 	pthread_t *tid;
@@ -397,7 +388,6 @@ int fm6_unitig(const rld_t *e, int min_match, int n_threads, const uint64_t *sor
 		ww->min_match = min_match;
 		ww->start = j;
 		ww->step = n_threads;
-		ww->sorted = sorted;
 		ww->used = used; ww->bend = bend; ww->visited = visited;
 	}
 	for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker, w + j);
@@ -426,7 +416,7 @@ mag_t *fm6_api_unitig(int min_match, int64_t l, char *seq)
 	bend    = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	visited = (uint64_t*)xcalloc((e->mcnt[1] + 63)/64, 8);
 	g = calloc(1, sizeof(mag_t));
-	unitig_core(e, min_match, 0, 1, used, bend, visited, 0, &g->v);
+	unitig_core(e, min_match, 0, 1, used, bend, visited, &g->v);
 	mag_g_build_hash(g);
 	free(used); free(bend); free(visited);
 	rld_destroy(e);
