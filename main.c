@@ -19,7 +19,6 @@ int main_correct(int argc, char *argv[]);
 int main_unitig(int argc, char *argv[]);
 int main_clean(int argc, char *argv[]);
 int main_cnt2qual(int argc, char *argv[]);
-int main_seqsort(int argc, char *argv[]);
 int main_remap(int argc, char *argv[]);
 int main_scaf(int argc, char *argv[]);
 int main_contrast(int argc, char *argv[]);
@@ -78,11 +77,10 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         unpack    Retrieve DNA sequences\n");
 		fprintf(stderr, "         exact     Find exact matches\n");
 		fprintf(stderr, "         correct   Error correction\n");
-		fprintf(stderr, "         seqrank   Compute the rank of sequences\n");
 		fprintf(stderr, "         unitig    Construct unitigs\n");
 		fprintf(stderr, "         clean     Clean the graph\n");
 		fprintf(stderr, "         remap     Compute the coverage and PE coverage\n");
-		fprintf(stderr, "         scaf      Generate scaftigs\n");
+		fprintf(stderr, "         scaf      Generate scaftigs (not working)\n");
 		fprintf(stderr, "         contrast  Compare two FMD-indices\n");
 		fprintf(stderr, "         bitand    Compute the intersection of bit arrays\n");
 		fprintf(stderr, "         sub       Extract sub-index with a bit array\n");
@@ -105,8 +103,6 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "merge") == 0) ret = main_merge(argc-1, argv+1);
 	else if (strcmp(argv[1], "sub") == 0) ret = main_sub(argc-1, argv+1);
 	else if (strcmp(argv[1], "cnt2qual") == 0) ret = main_cnt2qual(argc-1, argv+1);
-	else if (strcmp(argv[1], "seqsort") == 0) ret = main_seqsort(argc-1, argv+1);
-	else if (strcmp(argv[1], "seqrank") == 0) ret = main_seqsort(argc-1, argv+1); // an alias of seqsort
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
 	else if (strcmp(argv[1], "remap") == 0) ret = main_remap(argc-1, argv+1);
 	else if (strcmp(argv[1], "scaf") == 0) ret = main_scaf(argc-1, argv+1);
