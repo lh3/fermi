@@ -567,12 +567,11 @@ int main_scaf(int argc, char *argv[])
 
 int main_contrast(int argc, char *argv[])
 {
-	extern void fm6_contrast(rld_t *const e[2], int k, int min_occ, int n_threads, uint64_t *sub[2]);
-	extern int64_t fm6_sub_conv(int64_t n_seqs, uint64_t *sub, const uint64_t *rank);
+	extern uint64_t *fm6_contrast(const rld_t *eref, const rld_t *eqry, int k, int min_occ, int n_threads);
 
-	int c, min_occ = 3, k = 55, n_threads = 1, i;
-	uint64_t *sub[2], n_seqs[2], *rank;
-	rld_t *e[2];
+	int c, min_occ = 3, k = 55, n_threads = 1;
+	uint64_t *sub, n_seqs;
+	rld_t *eref, *eqry;
 
 	while ((c = getopt(argc, argv, "k:o:t:")) >= 0) {
 		switch (c) {
@@ -581,38 +580,24 @@ int main_contrast(int argc, char *argv[])
 		case 't': n_threads = atoi(optarg); break;
 		}
 	}
-	if (optind + 6 > argc) {
-		fprintf(stderr, "\nUsage:   fermi contrast <idx1.fmd> <idx1.rank> <1-2.sub> <idx2.fmd> <idx2.rank> <2-1.sub>\n\n");
+	if (optind + 2 > argc) {
+		fprintf(stderr, "\nUsage:   fermi contrast <ref.fmd> <query.fmd>\n\n");
 		fprintf(stderr, "Options: -o INT    minimum occurrence [%d]\n", min_occ);
 		fprintf(stderr, "         -t INT    number of threads [%d]\n", n_threads);
 		fprintf(stderr, "         -k INT    k-mer length [%d]\n\n", k);
 		return 1;
 	}
 
-	e[0] = rld_restore(argv[optind+0]);
-	e[1] = rld_restore(argv[optind+3]);
-	fm6_contrast(e, k, min_occ, n_threads, sub);
-	n_seqs[0] = e[0]->mcnt[1];
-	n_seqs[1] = e[1]->mcnt[1];
-	rld_destroy(e[0]);
-	rld_destroy(e[1]);
-
-	rank = malloc((n_seqs[0] > n_seqs[1]? n_seqs[0] : n_seqs[1]) * 8);
-	for (i = 0; i < 2; ++i) {
-		FILE *fp;
-		uint64_t n_sel;
-		fp = fopen(argv[optind+i*3+1], "rb");
-		fread(rank, 8, n_seqs[i], fp);
-		fclose(fp);
-		n_sel = fm6_sub_conv(n_seqs[i], sub[i], rank);
-		fprintf(stderr, "[M::%s] %ld reads selected from %s\n", __func__, (long)n_sel, argv[optind+i*3]);
-		fp = fopen(argv[optind+i*3+2], "wb");
-		fwrite(&n_seqs[i], 8, 1, fp);
-		fwrite(sub[i], 8, (n_seqs[i] + 63) / 64, fp);
-		fclose(fp);
-		free(sub[i]);
-	}
-	free(rank);
+	eref = rld_restore(argv[optind+0]);
+	eqry = rld_restore(argv[optind+1]);
+	sub = fm6_contrast(eref, eqry, k, min_occ, n_threads);
+	n_seqs = eqry->mcnt[1];
+	rld_destroy(eref);
+	rld_destroy(eqry);
+	fwrite(&n_seqs, 8, 1, stdout);
+	fwrite(sub, 8, (n_seqs + 63) / 64, stdout);
+	fflush(stdout);
+	free(sub);
 	return 0;
 }
 
