@@ -14,10 +14,15 @@ static int SUF_LEN, SUF_NUM;
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
 
-#define solid_hash(a) ((a)>>2)
-#define solid_eq(a, b) ((a)>>2 == (b)>>2)
+typedef struct {
+	uint32_t x;
+	uint8_t y;
+} __attribute__ ((__packed__)) solid1_t;
+
+#define solid_hash(a) ((a).x>>2)
+#define solid_eq(a, b) ((a).x>>2 == (b).x>>2)
 #include "khash.h"
-KHASH_INIT(solid, uint32_t, uint8_t, 1, solid_hash, solid_eq)
+KHASH_INIT(solid, solid1_t, char, 0, solid_hash, solid_eq)
 typedef khash_t(solid) shash_t;
 
 static double g_tc, g_tr;
@@ -34,7 +39,7 @@ static void compute_SUF(int suf_len)
 
 static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmintv_t *suf_intv, shash_t *solid, int64_t cnt[2])
 {
-	int i, ret, shift = (opt->w - len - 1) * 2;
+	int i, shift = (opt->w - len - 1) * 2;
 	kstring_t str;
 	fmintv_v stack;
 	fmintv_t ok[6], ik;
@@ -54,9 +59,9 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 		str.l = (ik.info>>4) - len;
 		if (str.l) str.s[str.l - 1] = ik.info&0xf;
 		if (ik.info>>4 == opt->w) { // keep the k-mer
+			solid1_t zz;
 			uint32_t key;
-			int max_c;
-			khint_t k;
+			int max_c, absent;
 			uint64_t max, rest;
 			double r;
 			for (c = 1, max = 0, max_c = 6; c <= 4; ++c)
@@ -70,9 +75,9 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 			if (rest <= 7 && r >= opt->min_occ) ++cnt[1];
 			for (i = 0, key = 0; i < str.l; ++i)
 				key = (uint32_t)str.s[i]<<shift | key>>2;
-			key = key<<2 | (max_c - 1);
-			k = kh_put(solid, solid, key, &ret);
-			kh_val(solid, k) = (int)(r + .499) << 3 | (rest < 7? rest : 7);
+			zz.x = key<<2 | (max_c - 1);
+			zz.y = (int)(r + .499) << 3 | (rest < 7? rest : 7);
+			kh_put(solid, solid, zz, &absent);
 		} else { // descend
 			for (c = 4; c >= 1; --c) { // ambiguous bases are skipped
 				if (ok[c].x[2] >= opt->min_occ) {
@@ -139,6 +144,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	while (fa->heap.n) {
 		const shash_t *h;
 		khint_t k;
+		solid1_t zz;
 		// get the best so far
 		z = fa->heap.a[0];
 		fa->heap.a[0] = kv_pop(fa->heap);
@@ -154,12 +160,13 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 		if (q < 3) q = 3;
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
-		k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
+		zz.x = z.x >> (SUF_LEN<<1) << 2;
+		k = kh_get(solid, h, zz);
 		++*n_query;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			no_hits = 0;
-			if (s->s[i] != (kh_key(h, k)&3) + 1) { // the read base is different from the best base
-				int v = kh_val(h, k); // recall that v is packed as - "(best_depth/rest_depth)<<3 | rest_depth" or "best_detph<<3 | 0"
+			if (s->s[i] != (kh_key(h, k).x&3) + 1) { // the read base is different from the best base
+				int v = kh_key(h, k).y; // recall that v is packed as - "(best_depth/rest_depth)<<3 | rest_depth" or "best_detph<<3 | 0"
 				int tmp, penalty, max = (v&7)? (v&7) * (v>>3) : v>>3; // max is the approximate depth of the best base
 				// compute the penalty for the best stack path
 				penalty = (max - (v&7)) * DIFF_FACTOR;
@@ -173,21 +180,22 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty < q))
 					save_state(fa, &z, s->s[i] - 1, penalty, shift, 1); // the read path
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty > q)
-					save_state(fa, &z, kh_key(h, k)&3, q, shift, 1); // the stack path
+					save_state(fa, &z, kh_key(h, k).x&3, q, shift, 1); // the stack path
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				int i0 = i;
-				int v = kh_val(h, k), occ_last = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
+				int v = kh_key(h, k).y, occ_last = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
 				if ((v&7) <= 0 && opt->step > 1) {
 					while (i0 > 0) {
 						for (i = (z.y&0xffff) - 1, l = 0; i >= 1 && l < opt->step && s->s[i] < 5; --i, ++l)
 							z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
 						if (s->s[i] == 5) break;
 						h = solid[z.x & (SUF_NUM - 1)];
-						k = kh_get(solid, h, z.x>>(SUF_LEN<<1)<<2);
+						zz.x = z.x >> (SUF_LEN<<1) << 2;
+						k = kh_get(solid, h, zz);
 						++*n_query;
-						if (k != kh_end(h) && s->s[i] == (kh_key(h, k)&3) + 1) { // in the hash table and the read base is the best
-							int v = kh_val(h, k), occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
+						if (k != kh_end(h) && s->s[i] == (kh_key(h, k).x&3) + 1) { // in the hash table and the read base is the best
+							int v = kh_key(h, k).y, occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
 							if ((v&7) <= 1 && occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
 								z.y = z.y>>16<<16 | (i + 1);
 								z0 = z; i0 = i;

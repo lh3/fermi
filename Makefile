@@ -27,7 +27,7 @@ rld.o:rld.c rld.h
 build.o:build.c fermi.h rld.h
 exact.o:exact.c fermi.h rld.h kstring.h kvec.h
 unitig.o:unitig.c fermi.h rld.h kstring.h kvec.h
-correct.o:correct.c fermi.h rld.h kvec.h kseq.h
+correct.o:correct.c fermi.h rld.h kvec.h kseq.h khash.h
 smem.o:smem.c fermi.h rld.h kvec.h
 merge.o:merge.c fermi.h rld.h ksort.h
 sub.o:sub.c fermi.h rld.h
