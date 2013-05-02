@@ -1,11 +1,16 @@
 #ifndef INTHASH_H
 #define INTHASH_H
 
+#include <stdint.h>
+
+#define ihval_t uint8_t
+
 typedef struct {
 	volatile int lock;
 	uint8_t b_key, b_val, b_tbl, b_idx;
 	uint32_t n_elem;
 	uint32_t *h;
+	ihval_t *v;
 } inthash_t;
 
 #ifdef __cplusplus
@@ -22,7 +27,7 @@ extern "C" {
 
 #define ih_destroy(ih) do { free((ih)->h); free(ih); } while (0)
 
-static inline uint64_t ih_dec(const inthash_t *ih, const uint32_t *p)
+static inline uint64_t ih_key(const inthash_t *ih, const uint32_t *p)
 {
 	uint64_t x;
 	x = *p >> ih->b_val & ((1U<<ih->b_idx) - 1);

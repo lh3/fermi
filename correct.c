@@ -7,32 +7,31 @@
 #include "priv.h"
 #include "kvec.h"
 #include "kstring.h"
-
-static int SUF_LEN, SUF_NUM;
+#include "inthash.h"
 
 #include <zlib.h>
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
 
-#define solid_hash(a) ((a)>>2)
-#define solid_eq(a, b) ((a)>>2 == (b)>>2)
-#include "khash.h"
-KHASH_INIT(solid, uint32_t, uint8_t, 1, solid_hash, solid_eq)
-typedef khash_t(solid) shash_t;
+#define IH_VBITS 10
+#define IH_IBITS 5
+#define IH_TBITS 13
+#define MAX_KMER 25
 
 static double g_tc, g_tr;
+static int SUF_LEN, SUF_NUM;
 
 static void compute_SUF(int suf_len)
 {
-	SUF_LEN   = suf_len;
-	SUF_NUM   = 1<<(SUF_LEN<<1);
+	SUF_LEN = suf_len;
+	SUF_NUM = 1<<(SUF_LEN<<1);
 }
 
 /***********************
  * Collect good k-mers *
  ***********************/
 
-static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmintv_t *suf_intv, shash_t *solid, int64_t cnt[2])
+static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmintv_t *suf_intv, inthash_t *solid, int64_t cnt[2])
 {
 	int i, ret, shift = (opt->w - len - 1) * 2;
 	kstring_t str;
@@ -54,6 +53,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 		str.l = (ik.info>>4) - len;
 		if (str.l) str.s[str.l - 1] = ik.info&0xf;
 		if (ik.info>>4 == opt->w) { // keep the k-mer
+			const uint32_t *p;
 			uint32_t key;
 			int max_c;
 			khint_t k;
@@ -70,9 +70,8 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 			if (rest <= 7 && r >= opt->min_occ) ++cnt[1];
 			for (i = 0, key = 0; i < str.l; ++i)
 				key = (uint32_t)str.s[i]<<shift | key>>2;
-			key = key<<2 | (max_c - 1);
-			k = kh_put(solid, solid, key, &ret);
-			kh_val(solid, k) = (int)(r + .499) << 3 | (rest < 7? rest : 7);
+			p = ih_put(solid, key); 
+			*p |= (int)(r + .499) << 5 | (rest < 7? rest : 7) << 2 | (max_c - 1); // set value
 		} else { // descend
 			for (c = 4; c >= 1; --c) { // ambiguous bases are skipped
 				if (ok[c].x[2] >= opt->min_occ) {
@@ -118,7 +117,7 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, 
 #define MIN_OCC       5
 #define MIN_OCC_RATIO 0.8
 
-static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa, uint64_t *n_query)
+static int ec_fix1(const fmecopt_t *opt, inthash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa, uint64_t *n_query)
 {
 	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0, qsum, no_hits = 1, score_diff;
 	ku128_t z, rst[2];
@@ -137,7 +136,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	kv_push(ku128_t, fa->heap, z);
 	// traverse
 	while (fa->heap.n) {
-		const shash_t *h;
+		const inthash_t *h;
 		khint_t k;
 		// get the best so far
 		z = fa->heap.a[0];
@@ -219,7 +218,7 @@ static int ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, ch
 	return qsum | score_diff<<18 | no_hits<<17;
 }
 
-static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
+static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, inthash_t *const* solid, int n_seqs, char **seq, char **qual, int *info)
 {
 	int i, j, ret0, ret1, n_lower;
 	uint64_t n_query = 0;
@@ -262,7 +261,7 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 typedef struct {
 	const rld_t *e;
 	const fmecopt_t *opt;
-	shash_t **solid;
+	inthash_t **solid;
 	int64_t cnt[2];
 	int n_seqs, tid;
 	uint32_t *seqs;
@@ -283,7 +282,7 @@ static void *worker1(void *data)
 typedef struct {
 	const rld_t *e;
 	const fmecopt_t *opt;
-	shash_t *const* solid;
+	inthash_t *const* solid;
 	int n_seqs, *info;
 	char **seq, **qual;
 	uint64_t n_query;
@@ -300,13 +299,11 @@ static void *worker2(void *data)
  * The key portal *
  ******************/
 
-#define MAX_KMER 27
-
 int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_threads)
 {
-	int j, n_threads;
+	int j, n_threads, suf_len;
 	int64_t i, cnt[2];
-	shash_t **solid;
+	inthash_t **solid;
 	pthread_t *tid;
 	pthread_attr_t attr;
 
@@ -316,14 +313,18 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] set k-mer length to %d\n", __func__, opt->w);
 	}
-	compute_SUF(opt->w > 15? opt->w - 15 : 1);
+	// estimate the suffix length
+	suf_len = ((opt->w<<1) - (IH_TBITS + 32 - IH_IBITS - IH_VBITS) + 1) >> 1;
+	if (suf_len < 1) suf_len = 1;
+	compute_SUF(suf_len);
 	// initialize "solid" and "tid"
 	assert(_n_threads <= SUF_NUM);
 	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	solid = calloc(SUF_NUM, sizeof(void*));
-	for (j = 0; j < SUF_NUM; ++j) solid[j] = kh_init(solid);
+	for (j = 0; j < SUF_NUM; ++j)
+		solid[j] = ih_init((opt->w - suf_len) << 1, IH_IBITS, IH_VBITS);
 	cnt[0] = cnt[1] = 0;
 
 	{ // initialize and launch worker1
@@ -468,10 +469,11 @@ int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 	int j, *info;
 	rld_t *e;
 	fmecopt_t opt;
-	shash_t **solid;
+	inthash_t **solid;
 	char **seq2, **qual2;
 	fmintv_t *top;
 
+	assert(0);
 	// set correction parameters
 	opt.w = kmer > 0? kmer : 19;
 	opt.min_occ = 3;
