@@ -14,12 +14,23 @@ static int SUF_LEN, SUF_NUM;
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
 
+static inline uint32_t hash_32(uint32_t key)
+{
+	key += ~(key << 15);
+	key ^=  (key >> 10);
+	key +=  (key << 3);
+	key ^=  (key >> 6);
+	key += ~(key << 11);
+	key ^=  (key >> 16);
+	return key;
+}
+
 typedef struct {
 	uint32_t x;
 	uint8_t y;
 } __attribute__ ((__packed__)) solid1_t;
 
-#define solid_hash(a) ((a).x>>2)
+#define solid_hash(a) hash_32((a).x>>2)
 #define solid_eq(a, b) ((a).x>>2 == (b).x>>2)
 #include "khash.h"
 KHASH_INIT(solid, solid1_t, char, 0, solid_hash, solid_eq)

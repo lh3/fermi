@@ -280,6 +280,7 @@ int main_correct(int argc, char *argv[])
 		fprintf(stderr, "         -C FLOAT    max fraction of corrected bases [%.2f]\n", opt.max_corr);
 		fprintf(stderr, "         -l INT      trim read down to INT bp; 0 to disable [0]\n");
 		fprintf(stderr, "         -s INT      step size for the jumping heuristic; 0 to disable [%d]\n", opt.step);
+		fprintf(stderr, "         -p          the input is paired\n");
 		fprintf(stderr, "         -K          keep bad/unfixable reads\n");
 		fprintf(stderr, "\n");
 		return 1;
