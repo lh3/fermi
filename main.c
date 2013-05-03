@@ -22,6 +22,7 @@ int main_cnt2qual(int argc, char *argv[]);
 int main_remap(int argc, char *argv[]);
 int main_scaf(int argc, char *argv[]);
 int main_contrast(int argc, char *argv[]);
+int main_occflt(int argc, char *argv[]);
 int main_bitand(int argc, char *argv[]);
 int main_recode(int argc, char *argv[]);
 
@@ -82,6 +83,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         remap     Compute the coverage and PE coverage\n");
 		fprintf(stderr, "         scaf      Generate scaftigs (not working)\n");
 		fprintf(stderr, "         contrast  Compare two FMD-indices\n");
+		fprintf(stderr, "         occflt    Filter reads containing k-mer with few occurrences\n");
 		fprintf(stderr, "         bitand    Compute the intersection of bit arrays\n");
 		fprintf(stderr, "         sub       Extract sub-index with a bit array\n");
 		fprintf(stderr, "         recode    Recode FM-Index\n");
@@ -116,6 +118,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "cg2cofq") == 0) ret = main_cg2cofq(argc-1, argv+1);
 	else if (strcmp(argv[1], "example") == 0) ret = main_example(argc-1, argv+1);
 	else if (strcmp(argv[1], "contrast") == 0) ret = main_contrast(argc-1, argv+1);
+	else if (strcmp(argv[1], "occflt") == 0) ret = main_occflt(argc-1, argv+1);
 	else if (strcmp(argv[1], "bitand") == 0) ret = main_bitand(argc-1, argv+1);
 	else if (strcmp(argv[1], "ropebwt") == 0) ret = main_ropebwt(argc-1, argv+1);
 //	else if (strcmp(argv[1], "test") == 0) ret = main_test(argc-1, argv+1);

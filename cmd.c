@@ -602,6 +602,40 @@ int main_contrast(int argc, char *argv[])
 	return 0;
 }
 
+int main_occflt(int argc, char *argv[])
+{
+	extern uint64_t *fm6_contrast(const rld_t *eref, const rld_t *eqry, int k, int min_occ, int n_threads);
+
+	int c, min_occ = 2, k = 55, n_threads = 1;
+	uint64_t *sub, n_seqs;
+	rld_t *e;
+
+	while ((c = getopt(argc, argv, "k:o:t:")) >= 0) {
+		switch (c) {
+		case 'k': k = atoi(optarg); break;
+		case 'o': min_occ = atoi(optarg); break;
+		case 't': n_threads = atoi(optarg); break;
+		}
+	}
+	if (optind + 1 > argc) {
+		fprintf(stderr, "\nUsage:   fermi occflt <reads.fmd>\n\n");
+		fprintf(stderr, "Options: -o INT    minimum occurrence [%d]\n", min_occ);
+		fprintf(stderr, "         -t INT    number of threads [%d]\n", n_threads);
+		fprintf(stderr, "         -k INT    k-mer length [%d]\n\n", k);
+		return 1;
+	}
+
+	e = rld_restore(argv[optind]);
+	sub = fm6_contrast(0, e, k, min_occ, n_threads);
+	n_seqs = e->mcnt[1];
+	rld_destroy(e);
+	fwrite(&n_seqs, 8, 1, stdout);
+	fwrite(sub, 8, (n_seqs + 63) / 64, stdout);
+	fflush(stdout);
+	free(sub);
+	return 0;
+}
+
 int main_sub(int argc, char *argv[])
 {
 	int c, n_threads = 1, is_comp = 0;

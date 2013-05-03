@@ -78,6 +78,33 @@ static void contrast_core(const rld_t *eref, const rld_t *eqry, uint64_t *sub, i
 	free(stack[0].a); free(stack[1].a); free(tstack.a);
 }
 
+static void occflt_core(const rld_t *e, uint64_t *sub, int kmer, int min_occ, int suf_len, int suf)
+{
+	fmintv_v stack, tstack;
+	fmintv_t ik, ok[6];
+
+	kv_init(tstack); kv_init(stack);
+	ik = descend(e, suf_len, suf);
+	ik.info = suf_len;
+	kv_push(fmintv_t, stack, ik);
+	while (stack.n) {
+		ik = kv_pop(stack);
+		if (ik.info < kmer) {
+			int c;
+			fm6_extend(e, &ik, ok, 1);
+			for (c = 1; c <= 4; ++c) {
+				if (ok[c].x[2] < min_occ) {
+					collect_tips(e, sub, &ok[c], &tstack);
+					continue;
+				}
+				ok[c].info = ik.info + 1;
+				kv_push(fmintv_t, stack, ok[c]);
+			}
+		}
+	}
+	free(stack.a); free(tstack.a);
+}
+
 typedef struct {
 	int tid, n_suf, k, min_occ;
 	uint32_t *suf;
@@ -90,7 +117,8 @@ static void *worker(void *data)
 	worker_t *w = (worker_t*)data;
 	int i;
 	for (i = 0; i < w->n_suf; ++i)
-		contrast_core(w->eref, w->eqry, w->sub, w->k, w->min_occ, SUF_LEN, w->suf[i]);
+		if (!w->eref) occflt_core(w->eqry, w->sub, w->k, w->min_occ, SUF_LEN, w->suf[i]);
+		else contrast_core(w->eref, w->eqry, w->sub, w->k, w->min_occ, SUF_LEN, w->suf[i]);
 	return 0;
 }
 
