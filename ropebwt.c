@@ -17,6 +17,7 @@ enum algo_e { BPR, RBR, BCR };
 #define FLAG_BIN 0x8
 #define FLAG_TREE 0x10
 #define FLAG_CUTN 0x20
+#define FLAG_DROPN 0x40
 
 static void insert1(int flag, int l, uint8_t *s, bprope6_t *bpr, bcr_t *bcr)
 {
@@ -55,7 +56,7 @@ int main_ropebwt(int argc, char *argv[])
 	int c, max_runs = 512, max_nodes = 64;
 	int bcr_flag = 0, flag = FLAG_FOR | FLAG_REV | FLAG_ODD;
 
-	while ((c = getopt(argc, argv, "TFRObNo:r:n:ta:f:v:sB")) >= 0)
+	while ((c = getopt(argc, argv, "TFRODbNo:r:n:ta:f:v:sB")) >= 0)
 		if (c == 'a') {
 			if (strcmp(optarg, "bpr") == 0) algo = BPR;
 			else if (strcmp(optarg, "bcr") == 0) algo = BCR;
@@ -67,6 +68,7 @@ int main_ropebwt(int argc, char *argv[])
 		else if (c == 'T') flag |= FLAG_TREE;
 		else if (c == 'b') flag |= FLAG_BIN;
 		else if (c == 'N') flag |= FLAG_CUTN;
+		else if (c == 'D') flag |= FLAG_DROPN;
 		else if (c == 't') bcr_flag |= BCR_F_THR;
 		else if (c == 's') bcr_flag |= BCR_F_RLO;
 		else if (c == 'B') bcr_flag |= BCR_F_BPR;
@@ -90,6 +92,7 @@ int main_ropebwt(int argc, char *argv[])
 		fprintf(stderr, "         -t         enable threading (bcr only)\n");
 		fprintf(stderr, "         -F         skip forward strand\n");
 		fprintf(stderr, "         -R         skip reverse strand\n");
+		fprintf(stderr, "         -D         drop reads containing ambiguous bases\n");
 		fprintf(stderr, "         -N         cut at ambiguous bases\n");
 		fprintf(stderr, "         -O         suppress end trimming when forward==reverse\n");
 		fprintf(stderr, "         -T         print the tree stdout (bpr only)\n\n");
@@ -98,7 +101,7 @@ int main_ropebwt(int argc, char *argv[])
 
 	if (algo == BCR) {
 		bcr = bcr_init();
-		if (!(flag&FLAG_CUTN)) fprintf(stderr, "Warning: With bcr, an ambiguous base will be converted to a random base\n");
+		if (!(flag&FLAG_CUTN) && !(flag&FLAG_DROPN)) fprintf(stderr, "Warning: With bcr, an ambiguous base will be converted to a random base\n");
 	} else if (algo == BPR) bpr = bpr_init(max_nodes, max_runs);
 	fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "rb") : gzdopen(fileno(stdin), "rb");
 	ks = kseq_init(fp);
@@ -111,14 +114,17 @@ int main_ropebwt(int argc, char *argv[])
 			int l;
 			uint8_t *s;
 			for (j = l = 0, s = t; j < ks->seq.l; ++j) {
-				if (t[j] == 5 && (flag&FLAG_CUTN)) {
+				if (t[j] == 5) {
 					if (l) insert1(flag, l, s, bpr, bcr);
 					s = t + l + 1; l = 0;
 				} else ++l;
 			}
 			if (l) insert1(flag, l, s, bpr, bcr);
 		} else {
-			if (algo == BCR) // BCR cannot handle ambiguous bases
+			if (flag & FLAG_DROPN) {
+				for (j = 0; j < ks->seq.l && t[j] < 5; ++j)
+				if (j != ks->seq.l) continue;
+			} else if (algo == BCR) // BCR cannot handle ambiguous bases
 				for (j = 0; j < ks->seq.l; ++j) // convert an ambiguous base to a random base
 					if (t[j] == 5) t[j] = (lrand48()&3) + 1;
 			insert1(flag, ks->seq.l, t, bpr, bcr);
