@@ -119,13 +119,13 @@ int main_ropebwt(int argc, char *argv[])
 			for (j = l = 0, s = t; j < ks->seq.l; ++j) {
 				if (t[j] == 5) {
 					if (l >= min_len) insert1(flag, l, s, bpr, bcr);
-					s = t + l + 1; l = 0;
+					s = t + j + 1; l = 0;
 				} else ++l;
 			}
 			if (l >= min_len) insert1(flag, l, s, bpr, bcr);
 		} else {
 			if (flag & FLAG_DROPN) {
-				for (j = 0; j < ks->seq.l && t[j] < 5; ++j)
+				for (j = 0; j < ks->seq.l && t[j] < 5; ++j);
 				if (j != ks->seq.l) continue;
 			} else if (algo == BCR) // BCR cannot handle ambiguous bases
 				for (j = 0; j < ks->seq.l; ++j) // convert an ambiguous base to a random base

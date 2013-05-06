@@ -396,10 +396,8 @@ void bcr_append(bcr_t *b, int len, const uint8_t *seq) // add a sequence
 		krealloc(uint16_t*, b->len, b->len, b->m_seqs*2);
 	}
 	b->len[b->n_seqs] = len;
-	for (i = 0; i < len; ++i) {
+	for (i = 0; i < len; ++i)
 		ld_set(b->seq[i], b->n_seqs, seq[len - 1 - i] - 1);
-		++b->c[seq[len - 1 - i]];
-	}
 	++b->n_seqs;
 }
 
@@ -547,9 +545,6 @@ void bcr_build(bcr_t *b, int flag, const char *tmpfn)
 	pthread_t *tid = 0;
 	worker_t *w = 0;
 
-	if (bcr_verbose >= 3)
-		fprintf(stderr, "Count of symbols: (%ld, %ld, %ld, %ld, %ld)\n", (long)b->n_seqs, (long)b->c[1], (long)b->c[2], (long)b->c[3], (long)b->c[4]);
-	memset(b->c, 0, 6 * 8);
 	b->flag = flag;
 	if (b->flag&BCR_F_BPR) for (c = 0; c < 6; ++c) b->bwt[c].r = bpr_init(64, 512);
 	else for (c = 0; c < 6; ++c) b->bwt[c].e = rll_init();
