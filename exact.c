@@ -169,3 +169,40 @@ fmintv_t *fm6_traverse(const rld_t *e, int depth)
 	free(stack.a);
 	return rst;
 }
+
+void fm6_unpack_rlo(const rld_t *e)
+{
+	fmintv_t ik, ok[6];
+	fmintv_v stack;
+	kstring_t str, rev;
+
+	str.l = str.m = rev.l = rev.m = 0; str.s = rev.s = 0;
+	kv_init(stack);
+	ik.x[0] = ik.x[1] = 0; ik.x[2] = e->mcnt[1]; ik.info = 0<<3|0;
+	kv_push(fmintv_t, stack, ik);
+	while (stack.n) {
+		int c, i;
+		int64_t k;
+		ik = kv_pop(stack);
+		ks_resize(&str, (ik.info>>3) + 1);
+		str.l = ik.info>>3;
+		kputc("$ACGTN"[ik.info&7], &str);
+		fm6_extend(e, &ik, ok, 1);
+		if (ok[0].x[2]) {
+			ks_resize(&rev, str.m);
+			for (i = 0; i < str.l - 1; ++i)
+				rev.s[str.l-2-i] = str.s[i+1];
+			rev.s[str.l-1] = 0;
+			for (k = 0; k < ok[0].x[2]; ++k) {
+				fputs(rev.s, stdout);
+				fprintf(stdout, "\t%ld\t%ld\t%ld\n", (long)ok[0].x[0], (long)ok[0].x[1], (long)ok[0].x[2]);
+			}
+		}
+		for (c = 5; c >= 1; --c) {
+			if (ok[c].x[2] == 0) continue;
+			ok[c].info = ((ik.info>>3) + 1) << 3 | c;
+			kv_push(fmintv_t, stack, ok[c]);
+		}
+	}
+	free(stack.a); free(str.s); free(rev.s);
+}

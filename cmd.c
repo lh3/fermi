@@ -141,13 +141,14 @@ static void print_i(const rld_t *e, uint64_t i, kstring_t *s, int use_fm6)
 int main_unpack(int argc, char *argv[])
 {
 	rld_t *e;
-	int c, n, m, use_mmap = 0, use_fm6 = 0;
+	int c, n, m, use_mmap = 0, use_fm6 = 0, use_rlo = 0;
 	uint64_t i, *list;
 	kstring_t s;
 	s.m = s.l = 0; s.s = 0;
 	n = m = 0; list = 0;
-	while ((c = getopt(argc, argv, "M6i:")) >= 0) {
+	while ((c = getopt(argc, argv, "Mr6i:")) >= 0) {
 		switch (c) {
+			case 'r': use_rlo = 1; break;
 			case '6': use_fm6 = 1; break;
 			case 'i':
 				if (n == m) {
@@ -167,7 +168,9 @@ int main_unpack(int argc, char *argv[])
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	if (n) {
+	if (use_rlo) {
+		fm6_unpack_rlo(e);
+	} else if (n) {
 		for (i = 0; (int)i < n; ++i)
 			if (list[i] < e->mcnt[1])
 				print_i(e, list[i], &s, use_fm6);

@@ -34,4 +34,6 @@ void fm_reverse_fmivec(fmintv_v *p);
 
 uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, int *contained);
 
+void fm6_unpack_rlo(const rld_t *e);
+
 #endif
