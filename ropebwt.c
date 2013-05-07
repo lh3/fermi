@@ -85,6 +85,7 @@ int main_ropebwt(int argc, char *argv[])
 	if (is_short) {
 		algo = BCR;
 		flag = FLAG_FOR | FLAG_REV | FLAG_ODD | FLAG_RLD | FLAG_CUTN;
+		bcr_flag = BCR_F_THR | BCR_F_RLO;
 		min_len = 25;
 		bcr_verbose = 3;
 	}
