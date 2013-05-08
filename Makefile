@@ -2,7 +2,7 @@ CC=			gcc
 CFLAGS=		-g -Wall -O2
 DFLAGS=		#-D_USE_RLE6 #-DNDEBUG
 OBJS=		utils.o seq.o ksa.o ksa64.o rld.o exact.o merge.o sub.o correct.o \
-			build.o smem.o unitig.o cmp.o cmd.o example.o bfs.o \
+			build.o smem.o unitig.o dfs.o cmd.o example.o bfs.o \
 			ksw.o mag.o bubble.o scaf.o bcr.o bprope6.o ropebwt.o
 PROG=		fermi
 INCLUDES=	
@@ -35,7 +35,7 @@ cmd.o:cmd.c fermi.h rld.h kseq.h
 mag.o:mag.c mag.h kseq.h
 bubble.o:bubble.c mag.h ksw.h
 scaf.o:scaf.c mag.h rld.h fermi.h kvec.h khash.h ksw.h
-cmp.o:cmp.c rld.h fermi.h kvec.h
+dfs.o:dfs.c rld.h fermi.h kvec.h
 main.o:main.c fermi.h
 
 clean:

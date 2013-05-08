@@ -2,6 +2,15 @@
 #include "fermi.h"
 #include "rld.h"
 
+/*
+ * This file is experimental. It is not used in fermi. The major concern with
+ * BFS is that given m reads of total length n, BFS requires approximately
+ * 16m+n/4 bytes of working space. For highly compressible data sets (e.g.
+ * human high-coverage data), we may need ~80GB of working space, which is too
+ * much. Unless we can entropy compress the working space, DFS is the way to
+ * go, although it has other problems.
+ */
+
 typedef struct {
 	uint64_t k:63, f:1;
 	uint64_t l:56, d:8;
