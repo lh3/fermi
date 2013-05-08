@@ -93,6 +93,7 @@ static void occflt_core(const rld_t *e, uint64_t *sub, int kmer, int min_occ, in
 			int c;
 			fm6_extend(e, &ik, ok, 1);
 			for (c = 1; c <= 4; ++c) {
+				if (ok[c].x[2] == 0) continue;
 				if (ok[c].x[2] < min_occ) {
 					collect_tips(e, sub, &ok[c], &tstack);
 					continue;
