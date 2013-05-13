@@ -108,7 +108,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 
 typedef struct {
 	ku128_v heap;
-	fm64_v stack;
+	ku128_v stack;
 } fixaux_t;
 
 #define F_NOHIT     0x1
@@ -116,16 +116,18 @@ typedef struct {
 #define F_CHECKED   0x4
 #define F_CORRECTED 0x8
 
-static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, int shift, int flag)
+static inline void save_state(fixaux_t *fa, const ku128_t *p, int len, int c, int score, int shift, int flag)
 {
-	ku128_t w;
+	ku128_t w, *q;
 	if (score < 0) score = 0;
 	if (c >= 4) c = 0;
 	w.x = (uint64_t)c<<shift | p->x>>2;
 	// the structure of w.y - score:16, pos_in_stack:32, seq_pos:16
 	w.y = (uint64_t)((p->y>>48) + score)<<48 | fa->stack.n<<16 | ((p->y&0xffff) - 1);
 	// structure of a stack element - read_pos:16, dummy:12, flag:4, base:3, parent_pos_in_stack:29
-	kv_push(uint64_t, fa->stack, ((p->y&0xffff) - 1)<<48 | (uint64_t)flag<<32 | (uint32_t)c<<29 | (uint32_t)(p->y>>16));
+	kv_pushp(ku128_t, fa->stack, &q);
+	q->x = (uint64_t)flag<<32 | (uint32_t)c<<29 | (uint32_t)(p->y>>16);
+	q->y = ((p->y&0xffff) - 1) << 32 | ((p->y&0xffff) - 1 + len);
 	kv_push(ku128_t, fa->heap, w);
 	ks_heapup_128y(fa->heap.n, fa->heap.a);
 }
@@ -155,15 +157,15 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 
 	memset(es, 0, sizeof(ecstat1_t));
 	if (s->l <= opt->w) return;
-	// get the initial k-mer
 	fa->heap.n = fa->stack.n = 0;
 	z.x = z.y = 0;
+	kv_push(ku128_t, fa->stack, z);
+	// get the initial k-mer
 	for (i = s->l - 1, l = 0; i > 0 && l < opt->w; --i)
 		if (s->s[i] == 5) z.x = 0, l = 0;
 		else z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2, ++l;
 	if (i == 0) return; // no good k-mer
 	// the first element in the heap
-	kv_push(uint64_t, fa->stack, 0);
 	z.y = i + 1;
 	kv_push(ku128_t, fa->heap, z);
 	// traverse
@@ -182,6 +184,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		}
 		if (n_rst && (int)(z.y>>48) > (int)(rst[0].y>>48) + MAX_SC_DIFF) break;
 		i = (z.y&0xffff) - 1;
+		//printf("%d\n", i);
 		q = qual[i] - 33 < MAX_QUAL? qual[i] - 33 : MAX_QUAL;
 		if (q < 3) q = 3;
 		// check the hash table
@@ -190,6 +193,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		k = kh_get(solid, h, zz);
 		++es->n_hash_qry;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
+			//printf("hit!\n");
 			++es->n_hash_hit;
 			if (s->s[i] != (kh_key(h, k).x&3) + 1) { // the read base is different from the best base
 				int v = kh_key(h, k).y; // recall that v is packed as - "(best_depth/rest_depth)<<3 | rest_depth" or "best_detph<<3 | 0"
@@ -204,12 +208,12 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 				if (penalty < 1) penalty = 1;
 				// if we have too many possibilities, keep the better path among the two
 				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty < q))
-					save_state(fa, &z, s->s[i] - 1, penalty, shift, F_CHECKED); // the read path
+					save_state(fa, &z, opt->w + 1, s->s[i] - 1, penalty, shift, F_CHECKED); // the read path
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty > q)
-					save_state(fa, &z, kh_key(h, k).x&3, q, shift, F_CHECKED|F_CORRECTED); // the stack path
+					save_state(fa, &z, opt->w + 1, kh_key(h, k).x&3, q, shift, F_CHECKED|F_CORRECTED); // the stack path
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
-				int i0 = i;
+				int i0 = i, i00 = i;
 				int v = kh_key(h, k).y, occ_last = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
 				if ((v&7) <= 0 && opt->step > 1) {
 					while (i0 > 0) {
@@ -231,30 +235,33 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 						} else break;
 					}
 				}
-				save_state(fa, &z0, s->s[i0] - 1, 0, shift, F_BEST);
+				save_state(fa, &z0, i00 - i0 + opt->w + 1, s->s[i0] - 1, 0, shift, F_BEST);
 			}
-		} else save_state(fa, &z, s->s[i] - 1, MISS_PENALTY + (MAX_QUAL - q), shift, F_NOHIT);
+		} else save_state(fa, &z, 0, s->s[i] - 1, MISS_PENALTY + (MAX_QUAL - q), shift, F_NOHIT);
 	}
 	assert(n_rst == 1 || n_rst == 2);
 	es->min_penalty = rst[0].y >> 48;
 	es->pen_diff = n_rst == 1? MAX_SC_DIFF : (int)(rst[1].y>>48) - (int)(rst[0].y>>48);
 	assert(es->pen_diff >= 0);
 	es->pen_diff = es->pen_diff < MAX_SC_DIFF? es->pen_diff : MAX_SC_DIFF;
-	if (es->min_penalty == 0) return; // no corrections are made
+	if (es->min_penalty == 0) { // no corrections are made
+		es->l_cov = s->l + 1 - opt->w;
+		return;
+	}
 	// backtrack
 	l = (uint32_t)(rst[0].y>>16);
 	while (l) {
-		int c = (uint32_t)fa->stack.a[l]>>29;
-		int flag = fa->stack.a[l]>>32 & 0xff;
-		i = fa->stack.a[l]>>48;
+		int c = (uint32_t)fa->stack.a[l].x>>29;
+		int flag = fa->stack.a[l].x>>32 & 0xff;
+		i = fa->stack.a[l].y>>32;
+		printf("%d,[%d,%d),%d\n", l, i, (int)fa->stack.a[l].y, flag&F_NOHIT);
 		if (s->s[i] - 1 != c) { // a correction is made
 			assert(flag & F_CORRECTED);
 			s->s[i] = c + 1;
 		}
-		l = fa->stack.a[l] & 0x1fffffff; // take the lowest 29 bits, the parent position in the stack
-		if (l && !(flag & F_NOHIT) && (fa->stack.a[l]>>32 & F_NOHIT))
-			es->l_cov += i - (fa->stack.a[l]>>48);
+		l = fa->stack.a[l].x & 0x1fffffff; // take the lowest 29 bits, the parent position in the stack
 	}
+	printf("l_cov=%d\n", es->l_cov);
 }
 
 typedef struct {
