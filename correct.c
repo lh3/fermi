@@ -465,8 +465,9 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 							__func__, (long)id, cputime() - g_tc, realtime() - g_tr, (double)n_query / n_seq);
 				for (k = pre_id; k < id; ++k) {
 					int tmp = 0;
-					ecinfo1_t *info = &w->info[w->n_seqs];
+					ecinfo1_t *info;
 					w = &w2[k%n_threads];
+					info = &w->info[w->n_seqs];
 					out.l = 0;
 					kputc('@', &out); kputl(k, &out);
 					kputc('_', &out); kputw(info->no_hit, &out);
