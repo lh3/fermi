@@ -249,7 +249,6 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		l = rst[0].y>>20&0xfffffff;
 		while (l) {
 			int c = (uint32_t)fa->stack.a[l].x>>28;
-			int flag = fa->stack.a[l].x>>32 & 0xff;
 			i = fa->stack.a[l].y>>32;
 			assert(i >= beg);
 			es->l_cov += i < end? i - beg : end - beg;
