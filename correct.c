@@ -135,7 +135,7 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int len, int c, in
 #define RATIO_FACTOR  10
 #define DIFF_FACTOR   13
 #define MAX_HEAP      256
-#define MAX_SC_DIFF   255 
+#define MAX_SC_DIFF   60
 #define MAX_QUAL      40
 #define MISS_PENALTY  10
 #define MIN_OCC       5
@@ -184,16 +184,15 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		}
 		if (n_rst && (int)(z.y>>48) > (int)(rst[0].y>>48) + MAX_SC_DIFF) break;
 		i = (z.y&0xfffff) - 1;
-		//printf("%d\n", i);
 		q = qual[i] - 33 < MAX_QUAL? qual[i] - 33 : MAX_QUAL;
 		if (q < 3) q = 3;
+		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->s[i]], q);
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
 		zz.x = z.x >> (SUF_LEN<<1) << 2;
 		k = kh_get(solid, h, zz);
 		++es->n_hash_qry;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
-			//printf("hit!\n");
 			++es->n_hash_hit;
 			if (s->s[i] != (kh_key(h, k).x&3) + 1) { // the read base is different from the best base
 				int v = kh_key(h, k).y; // recall that v is packed as - "(best_depth/rest_depth)<<3 | rest_depth" or "best_detph<<3 | 0"
@@ -211,6 +210,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 					save_state(fa, &z, opt->w + 1, s->s[i] - 1, penalty, shift, F_CHECKED); // the read path
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty > q)
 					save_state(fa, &z, opt->w + 1, kh_key(h, k).x&3, q, shift, F_CHECKED|F_CORRECTED); // the stack path
+				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->s[i]], q, "ACGT"[kh_key(h, k).x&3], penalty);
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				int i0 = i, i00 = i;
@@ -227,6 +227,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 						es->n_hash_hit += (k != kh_end(h));
 						if (k != kh_end(h) && s->s[i] == (kh_key(h, k).x&3) + 1) { // in the hash table and the read base is the best
 							int v = kh_key(h, k).y, occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
+							if (fm_verbose >= 5) fprintf(stderr, "jump\ti=%d\t%c%d\t%d\n", i, "$ACGTN"[(int)s->s[i]], qual[i]-33, occ);
 							if ((v&7) <= 1 && occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
 								z.y = z.y>>20<<20 | (i + 1);
 								z0 = z; i0 = i;
@@ -253,7 +254,6 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 			assert(i >= beg);
 			es->l_cov += i < end? i - beg : end - beg;
 			beg = i; end = (int)fa->stack.a[l].y;
-			//printf("%d,[%d,%d),%d\n", l, i, (int)fa->stack.a[l].y, flag&F_NOHIT);
 			if (s->s[i] - 1 != c) s->s[i] = c + 1; // correct
 			l = fa->stack.a[l].x & 0xfffffff; // take the lowest 28 bits, the parent position in the stack
 		}
@@ -287,6 +287,7 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 			str.s[j] = seq_nt6_table[(int)str.s[j]];
 		seq_revcomp6(str.l, (uint8_t*)str.s); // to the reverse complement strand
 		seq_reverse(str.l, (uint8_t*)qual[i]);
+		if (fm_verbose >= 5) fprintf(stderr, "=== index %d, forward ===\n", i);
 		ec_fix1(opt, solid, &str, qual[i], &fa, &es[0]); // 0x7fff0000 if no correction; 0xffff if too short
 		n_query += es[0].n_hash_qry;
 		l_cov = es[0].l_cov;
@@ -294,6 +295,7 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 		seq_reverse(str.l, (uint8_t*)qual[i]); // back to the forward strand
 		seq_revcomp6(str.l, (uint8_t*)str.s);
 		if (es[0].n_hash_qry) { // then we need to correct in the reverse direction
+			if (fm_verbose >= 5) fprintf(stderr, "=== index %d, reverse ===\n", i);
 			ec_fix1(opt, solid, &str, qual[i], &fa, &es[1]);
 			n_query += es[1].n_hash_qry;
 			ii->pen_diff = ii->pen_diff < es[1].pen_diff? ii->pen_diff : es[1].pen_diff;
