@@ -179,11 +179,10 @@ typedef khint_t khiter_t;
 #define kfree(P) free(P)
 #endif
 
-static const double __ac_HASH_UPPER = 0.77;
-
 #define __KHASH_TYPE(name, khkey_t, khval_t) \
 	typedef struct { \
-		khint_t n_buckets, size, n_occupied, upper_bound; \
+		khint_t n_buckets, size, n_occupied; \
+		volatile int lock; \
 		khint32_t *flags; \
 		khkey_t *keys; \
 		khval_t *vals; \
@@ -238,7 +237,7 @@ static const double __ac_HASH_UPPER = 0.77;
 		{																\
 			kroundup32(new_n_buckets); 									\
 			if (new_n_buckets < 4) new_n_buckets = 4;					\
-			if (h->size >= (khint_t)(new_n_buckets * __ac_HASH_UPPER + 0.5)) j = 0;	/* requested size is too small */ \
+			if (h->size >= (new_n_buckets>>1) + (new_n_buckets>>2)) j = 0;	/* requested size is too small */ \
 			else { /* hash table size to be changed (shrink or expand); rehash */ \
 				new_flags = (khint32_t*)kmalloc(__ac_fsize(new_n_buckets) * sizeof(khint32_t));	\
 				if (!new_flags) return -1;								\
@@ -290,14 +289,13 @@ static const double __ac_HASH_UPPER = 0.77;
 			h->flags = new_flags;										\
 			h->n_buckets = new_n_buckets;								\
 			h->n_occupied = h->size;									\
-			h->upper_bound = (khint_t)(h->n_buckets * __ac_HASH_UPPER + 0.5); \
 		}																\
 		return 0;														\
 	}																	\
 	SCOPE khint_t kh_put_##name(kh_##name##_t *h, khkey_t key, int *ret) \
 	{																	\
 		khint_t x;														\
-		if (h->n_occupied >= h->upper_bound) { /* update the hash table */ \
+		if (h->n_occupied >= (h->n_buckets>>2) + (h->n_buckets>>1)) { /* update the hash table */ \
 			if (h->n_buckets > (h->size<<1)) {							\
 				if (kh_resize_##name(h, h->n_buckets - 1) < 0) { /* clear "deleted" elements */ \
 					*ret = -1; return h->n_buckets;						\
