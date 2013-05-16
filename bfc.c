@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <zlib.h>
 #include "khash.h"
 #include "kseq.h"
@@ -54,6 +55,34 @@ static inline uint64_t bfc_hash(uint64_t key, uint64_t mask)
 	key = (key ^ (key >> 24)) & mask;
 	key = (key + ~(key << 27)) & mask;
 	key = (key ^ (key >> 31)) & mask;
+	return key;
+}
+
+static inline uint64_t bfc_hash_inv(uint64_t key, uint64_t mask)
+{ // for inversion, see also: http://naml.us/blog/tag/invertible
+	uint64_t tmp;
+
+	tmp = (key ^ key >> 31) & mask;
+	key = (key ^ tmp >> 31) & mask;
+
+	tmp = (key - (~key << 27)) & mask;
+	key = (key - (~tmp << 27) + 1) & mask;
+
+	tmp = (key ^ key >> 24) & mask;
+	key = (key ^ tmp >> 24) & mask;
+
+	tmp = (key - (key << 13)) & mask;
+	tmp = (key - (tmp << 13)) & mask;
+	tmp = (key - (tmp << 13)) & mask;
+	key = (key - (tmp << 13)) & mask;
+
+	tmp = (key ^ key >> 22) & mask;
+	tmp = (key ^ tmp >> 22) & mask;
+	key = (key ^ tmp >> 22) & mask;
+
+	tmp = (key - (~key << 32)) & mask;
+	key = (key - (~tmp << 32) + 1) & mask;
+
 	return key;
 }
 
@@ -124,7 +153,7 @@ typedef struct {
 	void **h;
 } bfc_hash_t;
 
-bfc_hash_t *bfc_init(int k, int ba_bits)
+bfc_hash_t *bfc_hash_init(int k, int ba_bits)
 {
 	bfc_hash_t *b;
 	int nh, i;
@@ -138,7 +167,7 @@ bfc_hash_t *bfc_init(int k, int ba_bits)
 	return b;
 }
 
-void bfc_destroy(bfc_hash_t *b)
+void bfc_hash_destroy(bfc_hash_t *b)
 {
 	int i, nh;
 	nh = b->k > 32? 1<<(b->k-32) : 1;
@@ -149,18 +178,26 @@ void bfc_destroy(bfc_hash_t *b)
 	free(b);
 }
 
-void bfc_put(bfc_hash_t *b, uint64_t x)
+uint64_t bfc_hash_count1(const bfc_hash_t *b)
 {
-	uint64_t hx, bmask = (1ULL << b->a->n_bits) - 1;
+	int i, nh = b->k > 32? 1<<(b->k-32) : 1;
+	uint64_t size = 0;
+	for (i = 0; i < nh; ++i)
+		size += kh_size((khash_t(km1)*)b->h[i]);
+	return size;
+}
+
+void bfc_hash_put(bfc_hash_t *b, uint64_t x)
+{
+	uint64_t bmask = (1ULL << b->a->n_bits) - 1;
 	khash_t(km1) *h;
 	int r = 0;
 	kmer1_t tmp;
 	khint_t k;
 
-	hx = bfc_hash(x, (1ULL<<b->k) - 1);
-	r += ba_set(b->a, x & bmask);
-	r += ba_set(b->a, hx & bmask);
+	r += ba_set(b->a, bfc_hash(x, (1ULL<<b->k) - 1) & bmask);
 	r += ba_set(b->a, bfc_hash2(x) & bmask);
+	r += ba_set(b->a, bfc_hash_inv(x, (1ULL<<b->k) - 1) & bmask);
 	if (r < 3) return;
 	tmp.x = (uint32_t)x; tmp.y = 0;
 	h = (khash_t(km1)*)b->h[x>>32];
@@ -205,8 +242,8 @@ static void add_seq1(const bfc_opt_t *opt, bfc_hash_t *h, int l, const uint8_t *
 			f = (f<<2 | s[i]) & mask; // forward
 			r = r>>2 | (uint64_t)(3-s[i])<<shift; // reverse
 			if (++k >= opt->k+1 && q[i] >= opt->min_q) {
-				bfc_put(h, f);
-				bfc_put(h, r);
+				bfc_hash_put(h, f);
+				bfc_hash_put(h, r);
 			}
 		} else k = 0;
 	}
@@ -270,7 +307,7 @@ bfc_hash_t *bfc_collect(const bfc_opt_t *opt, const char *fn)
 	ko = kopen(fn, &fd);
 	fp = gzdopen(fd, "r");
 	ks = kseq_init(fp);
-	h = bfc_init((opt->k + 1) * 2, opt->ba_bits);
+	h = bfc_hash_init((opt->k + 1) * 2, opt->ba_bits);
 	n = m = tot_len = 0;
 	seq = 0;
 	while (kseq_read(ks) >= 0) {
@@ -296,6 +333,7 @@ bfc_hash_t *bfc_collect(const bfc_opt_t *opt, const char *fn)
 	kseq_destroy(ks);
 	gzclose(fp);
 	kclose(ko);
+	fprintf(stderr, "[M::%s] collected approximately %ld non-unique k-mers\n", __func__, (long)bfc_hash_count1(h));
 	return h;
 }
 
@@ -305,15 +343,18 @@ int main(int argc, char *argv[])
 	bfc_opt_t opt;
 	bfc_hash_t *h;
 
-	while ((c = getopt(argc, argv, "")) >= 0) {
+	bfc_opt_init(&opt);
+	while ((c = getopt(argc, argv, "k:t:b:")) >= 0) {
+		if (c == 'k') opt.k = atoi(optarg);
+		else if (c == 't') opt.n_threads = atoi(optarg);
+		else if (c == 'b') opt.ba_bits = atoi(optarg);
 	}
 
 	if (optind + 1 > argc) {
 		return 1;
 	}
 
-	bfc_opt_init(&opt);
 	h = bfc_collect(&opt, argv[optind]);
-	bfc_destroy(h);
+	bfc_hash_destroy(h);
 	return 0;
 }
