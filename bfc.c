@@ -7,6 +7,8 @@
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
+#define _BFC_LOCK 2
+
 #ifndef _BFC_EXT_TABLE
 static unsigned char seq_nt6_table[128] = {
     0, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,  5, 5, 5, 5,
@@ -58,34 +60,6 @@ static inline uint64_t bfc_hash(uint64_t key, uint64_t mask)
 	return key;
 }
 
-static inline uint64_t bfc_hash_inv(uint64_t key, uint64_t mask)
-{ // for inversion, see also: http://naml.us/blog/tag/invertible
-	uint64_t tmp;
-
-	tmp = (key ^ key >> 31) & mask;
-	key = (key ^ tmp >> 31) & mask;
-
-	tmp = (key - (~key << 27)) & mask;
-	key = (key - (~tmp << 27) + 1) & mask;
-
-	tmp = (key ^ key >> 24) & mask;
-	key = (key ^ tmp >> 24) & mask;
-
-	tmp = (key - (key << 13)) & mask;
-	tmp = (key - (tmp << 13)) & mask;
-	tmp = (key - (tmp << 13)) & mask;
-	key = (key - (tmp << 13)) & mask;
-
-	tmp = (key ^ key >> 22) & mask;
-	tmp = (key ^ tmp >> 22) & mask;
-	key = (key ^ tmp >> 22) & mask;
-
-	tmp = (key - (~key << 32)) & mask;
-	key = (key - (~tmp << 32) + 1) & mask;
-
-	return key;
-}
-
 static inline uint64_t bfc_hash2(uint64_t key)
 {
 	key = (~key) + (key << 21); // key = (key << 21) - key - 1;
@@ -102,45 +76,62 @@ static inline uint64_t bfc_hash2(uint64_t key)
  *** Large bit array ***
  ***********************/
 
-#define BF_SHIFT 20
-#define BF_MASK  ((1<<BF_SHIFT) - 1)
+#define BF_SHIFT 12
+
+typedef struct {
+	volatile int lock;
+	uint64_t *a;
+} barray1_t;
 
 typedef struct {
 	int n, n_bits;
-	uint64_t **a;
+	uint64_t mask;
+	barray1_t *a;
 } barray_t;
 
 static inline barray_t *ba_init(int n_bits)
 {
 	int i;
 	barray_t *ba;
+	if (n_bits < BF_SHIFT + 6) n_bits = BF_SHIFT + 6;
 	ba = calloc(1, sizeof(barray_t));
 	ba->n_bits = n_bits;
-	ba->n = ((1<<n_bits) + (1<<BF_SHIFT) - 1) >> BF_SHIFT;
-	ba->a = calloc(ba->n, sizeof(void*));
+	ba->n = 1 << BF_SHIFT;
+	ba->a = calloc(ba->n, sizeof(barray1_t));
 	for (i = 0; i < ba->n; ++i)
-		ba->a[i] = calloc(1<<BF_SHIFT>>6, 8);
+		ba->a[i].a = calloc(1 << (n_bits - BF_SHIFT - 6), 8);
+	ba->mask = (1ULL << (n_bits - BF_SHIFT)) - 1;
 	return ba;
 }
 
 static inline void ba_destroy(barray_t *ba)
 {
 	int i;
-	for (i = 0; i < ba->n; ++i) free(ba->a[i]);
+	for (i = 0; i < ba->n; ++i) free(ba->a[i].a);
 	free(ba->a); free(ba);
 }
 
 static inline int ba_set(barray_t *ba, uint64_t x)
 {
-	uint64_t *p = &ba->a[x>>BF_SHIFT][(x&BF_MASK)>>6];
-	uint64_t r, z = 1ULL<<(x&63);
-	r = __sync_fetch_and_or(p, z);
-	return r>>(x&63)&1;
-}
+	barray1_t *b1 = &ba->a[x >> (ba->n_bits - BF_SHIFT)];
+	uint64_t *p, z, y;
+	x &= ba->mask;
+	y = 1ULL << (x&63);
+	p = &b1->a[x>>6];
+	if (*p & y) return 1;
 
-static inline int ba_get(const barray_t *ba, uint64_t x)
-{
-	return ba->a[x>>BF_SHIFT][(x&BF_MASK)>>6]>>(x&63)&1;
+#if _BFC_LOCK == 1
+	z = __sync_fetch_and_or(p, y);
+#elif _BFC_LOCK == 2
+	for (z = *p; !__sync_bool_compare_and_swap(p, z, z|y); z = *p);
+#else
+	while (__sync_lock_test_and_set(&b1->lock, 1));
+	z = *p;
+	*p |= y;
+	__sync_lock_release(&b1->lock);
+#endif
+
+	return z >> (x&63) & 1;
 }
 
 /************************
@@ -197,11 +188,10 @@ void bfc_hash_put(bfc_hash_t *b, uint64_t x)
 
 	r += ba_set(b->a, bfc_hash(x, (1ULL<<b->k) - 1) & bmask);
 	r += ba_set(b->a, bfc_hash2(x) & bmask);
-	r += ba_set(b->a, bfc_hash_inv(x, (1ULL<<b->k) - 1) & bmask);
-	if (r < 3) return;
+	if (r < 2) return;
 	tmp.x = (uint32_t)x; tmp.y = 0;
 	h = (khash_t(km1)*)b->h[x>>32];
-	while (__sync_lock_test_and_set(&h->lock, 1)) while (h->lock);
+	while (__sync_lock_test_and_set(&h->lock, 1));
 	k = kh_put(km1, h, tmp, &r);
 	if (kh_key(h, k).y < 255) ++kh_key(h, k).y;
 	__sync_lock_release(&h->lock);
