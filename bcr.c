@@ -149,14 +149,17 @@ static inline void rll_copy(rll_t *e, rllitr_t *itr, const rll_t *e0, rllitr_t *
 
 typedef struct {
 	int max;
-	uint64_t **a;
+	uint64_t **a, **N;
 } longdna_t; // to allocate, simply call calloc()
 
 void ld_destroy(longdna_t *ld)
 {
 	int j;
-	for (j = 0; j < ld->max; ++j) free(ld->a[j]);
-	free(ld->a); free(ld);
+	for (j = 0; j < ld->max; ++j) {
+		free(ld->a[j]);
+		free(ld->N[j]);
+	}
+	free(ld->a); free(ld->N); free(ld);
 }
 
 static inline void ld_set(longdna_t *h, int64_t x, int c)
@@ -167,27 +170,42 @@ static inline void ld_set(longdna_t *h, int64_t x, int c)
 		h->max = k + 1;
 		kroundup32(h->max);
 		h->a = realloc(h->a, sizeof(void*) * h->max);
-		for (j = old_max; j < h->max; ++j) h->a[j] = 0;
+		h->N = realloc(h->N, sizeof(void*) * h->max);
+		for (j = old_max; j < h->max; ++j) h->a[j] = h->N[j] = 0;
 	}
-	if (h->a[k] == 0) kcalloc(uint64_t*, h->a[k], 1<<LD_SHIFT>>5, 8);
-	h->a[k][l>>5] |= (uint64_t)(c&3)<<((l&31)<<1); // NB: we cannot set the same position multiple times
+	if (c < 4) { // A/C/G/T
+		if (h->a[k] == 0) kcalloc(uint64_t*, h->a[k], 1<<LD_SHIFT>>5, 8);
+		h->a[k][l>>5] |= (uint64_t)c<<((l&31)<<1); // NB: we cannot set the same position multiple times
+	} else { // N
+		if (h->N[k] == 0) kcalloc(uint64_t*, h->N[k], 1<<LD_SHIFT>>6, 8);
+		h->N[k][l>>6] |= 1ULL<<(l&63);
+	}
 }
 
 static inline int ld_get(longdna_t *h, int64_t x)
 {
-	return h->a[x>>LD_SHIFT][(x&LD_MASK)>>5]>>((x&31)<<1)&3;
+	int N, c;
+	c = h->a[x>>LD_SHIFT][(x&LD_MASK)>>5]>>((x&31)<<1)&3;
+	N = h->N[x>>LD_SHIFT]? h->N[x>>LD_SHIFT][(x&LD_MASK)>>6]>>(x&63)&1 : 0;
+	return N? 4 : c;
 }
 
 void ld_dump(const longdna_t *ld, FILE *fp)
 {
 	int i, x, zero = 0;
 	fwrite(&ld->max, sizeof(int), 1, fp);
-	for (i = 0; i < ld->max; ++i)
-		if (ld->a[i]) {
+	for (i = 0; i < ld->max; ++i) {
+		if (ld->a[i]) { // non-ambiguous bases
 			x = 1<<LD_SHIFT>>5;
 			fwrite(&x, sizeof(int), 1, fp);
 			fwrite(ld->a[i], 8, 1<<LD_SHIFT>>5, fp);
 		} else fwrite(&zero, sizeof(int), 1, fp);
+		if (ld->N[i]) { // ambiguous bases
+			x = 1<<LD_SHIFT>>6;
+			fwrite(&x, sizeof(int), 1, fp);
+			fwrite(ld->N[i], 8, 1<<LD_SHIFT>>6, fp);
+		} else fwrite(&zero, sizeof(int), 1, fp);
+	}
 }
 
 longdna_t *ld_restore(FILE *fp)
@@ -197,11 +215,17 @@ longdna_t *ld_restore(FILE *fp)
 	ld = calloc(1, sizeof(longdna_t));
 	fread(&ld->max, sizeof(int), 1, fp);
 	ld->a = calloc(ld->max, sizeof(void*));
+	ld->N = calloc(ld->max, sizeof(void*));
 	for (i = 0; i < ld->max; ++i) {
 		fread(&x, sizeof(int), 1, fp);
-		if (x) {
+		if (x) { // non-ambiguous bases
 			kmalloc(uint64_t*, ld->a[i], x * 8);
 			fread(ld->a[i], 8, x, fp);
+		}
+		fread(&x, sizeof(int), 1, fp);
+		if (x) { // ambiguous bases
+			kmalloc(uint64_t*, ld->N[i], x * 8);
+			fread(ld->N[i], 8, x, fp);
 		}
 	}
 	return ld;
@@ -548,7 +572,7 @@ void bcr_build(bcr_t *b, int flag, const char *tmpfn)
 	b->flag = flag;
 	if (b->flag&BCR_F_BPR) for (c = 0; c < 6; ++c) b->bwt[c].r = bpr_init(64, 512);
 	else for (c = 0; c < 6; ++c) b->bwt[c].e = rll_init();
-	n_threads = (flag&BCR_F_THR)? 4 : 1;
+	n_threads = (flag&BCR_F_THR)? 5 : 1;
 	bcr_gettime(&rt, &ct);
 	if (bcr_verbose >= 3) fprintf(stderr, "Read sequences into memory (%.3fs, %.3fs, %.3fM)\n", rt-b->rt0, ct-b->ct0, bcr_bwtmem(b)/1024./1024.);
 	if (tmpfn) { // dump the transposed sequences to a temporary file
@@ -585,7 +609,7 @@ void bcr_build(bcr_t *b, int flag, const char *tmpfn)
 				}
 				worker_aux(&w[0]);
 				while (!__sync_bool_compare_and_swap(&b->proc_cnt, n_threads, 0));
-			} else for (c = 1; c <= 4; ++c) next_bwt(b, c, pos);
+			} else for (c = 1; c <= 5; ++c) next_bwt(b, c, pos);
 		} else next_bwt(b, 0, pos);
 		if (pos != b->max_len) ld_destroy(b->seq[pos]);
 		bcr_gettime(&rt, &ct);

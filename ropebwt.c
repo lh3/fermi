@@ -84,7 +84,7 @@ int main_ropebwt(int argc, char *argv[])
 	
 	if (is_short) {
 		algo = BCR;
-		flag = FLAG_FOR | FLAG_REV | FLAG_ODD | FLAG_RLD | FLAG_CUTN;
+		flag = FLAG_FOR | FLAG_REV | FLAG_ODD | FLAG_RLD;// | FLAG_CUTN;
 		bcr_flag = BCR_F_THR | BCR_F_RLO;
 		min_len = 25;
 		bcr_verbose = 3;
@@ -115,10 +115,8 @@ int main_ropebwt(int argc, char *argv[])
 		return 1;
 	}
 
-	if (algo == BCR) {
-		bcr = bcr_init();
-		if (!(flag&FLAG_CUTN) && !(flag&FLAG_DROPN)) fprintf(stderr, "Warning: With bcr, an ambiguous base will be converted to a random base\n");
-	} else if (algo == BPR) bpr = bpr_init(max_nodes, max_runs);
+	if (algo == BCR) bcr = bcr_init();
+	else if (algo == BPR) bpr = bpr_init(max_nodes, max_runs);
 	fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "rb") : gzdopen(fileno(stdin), "rb");
 	ks = kseq_init(fp);
 	while (kseq_read(ks) >= 0) {
@@ -141,9 +139,7 @@ int main_ropebwt(int argc, char *argv[])
 			if (flag & FLAG_DROPN) {
 				for (j = 0; j < ks->seq.l && t[j] < 5; ++j);
 				if (j != ks->seq.l) continue;
-			} else if (algo == BCR) // BCR cannot handle ambiguous bases
-				for (j = 0; j < ks->seq.l; ++j) // convert an ambiguous base to a random base
-					if (t[j] == 5) t[j] = (lrand48()&3) + 1;
+			}
 			insert1(flag, ks->seq.l, t, bpr, bcr);
 		}
 	}
