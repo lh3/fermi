@@ -602,13 +602,16 @@ void bcr_build(bcr_t *b, int flag, const char *tmpfn)
 		if (pos != b->max_len && tmpfp) b->seq[pos] = ld_restore(tmpfp);
 		if (pos) {
 			if (n_threads > 1) {
+				struct timespec req, rem;
+				req.tv_sec = 0; req.tv_nsec = 1000000;
 				for (c = 0; c < n_threads; ++c) {
 					volatile int *p = &w[c].toproc;
 					w[c].pos = pos;
 					while (!__sync_bool_compare_and_swap(p, 0, 1));
 				}
 				worker_aux(&w[0]);
-				while (!__sync_bool_compare_and_swap(&b->proc_cnt, n_threads, 0));
+				while (!__sync_bool_compare_and_swap(&b->proc_cnt, n_threads, 0))
+					nanosleep(&req, &rem);
 			} else for (c = 1; c <= 5; ++c) next_bwt(b, c, pos);
 		} else next_bwt(b, 0, pos);
 		if (pos != b->max_len) ld_destroy(b->seq[pos]);
