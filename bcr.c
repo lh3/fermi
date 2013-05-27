@@ -483,7 +483,10 @@ static void next_bwt(bcr_t *bcr, int class, int pos)
 	if (bwt->n == 0) return;
 	for (k = 0; k < bwt->n; ++k) { // compute the relative position in the old bucket
 		pair64_t *u = &bwt->a[k];
-		u->u = ((u->u>>3) - bcr->c[class])<<3 | (pos >= (u->v&0xffff)? 0 : ld_get(bcr->seq[pos], u->v>>16) + 1);
+		int c;
+		c = pos >= (u->v&0xffff)? 0 : ld_get(bcr->seq[pos], u->v>>16) + 1;
+		c = c >= 1 && c <= 4? 5 - c : c; // complement $c. This is for RLO. $c will be complemented back later after sorting
+		u->u = ((u->u>>3) - bcr->c[class])<<3 | c;
 	}
 	for (k = bcr->tot<<3, l = 0; k; k >>= 1, ++l);
 	rs_sort(bwt->a, bwt->a + bwt->n, 8, l > 7? l - 7 : 0); // sort by the absolute position in the new BWT
@@ -507,6 +510,7 @@ static void next_bwt(bcr_t *bcr, int class, int pos)
 		for (k = l = 0, streak = 0, old_u = new_u = -1; k < bwt->n; ++k) {
 			pair64_t *u = &bwt->a[k];
 			int a = u->u&7;
+			a = a >= 1 && a <= 4? 5 - a : a; // complement back
 			if (u->u != old_u) { // in the non-RLO mode, we always come to the following block
 				if (u->u>>3 > l) rll_copy(ew, &iw, er, &ir, (u->u>>3) - l); // copy u->u + streak - l symbols from the old BWT to the new
 				rll_enc(ew, &iw, 1, a); // write the current symbol in the new column
@@ -529,6 +533,7 @@ static void next_bwt(bcr_t *bcr, int class, int pos)
 		for (k = 0, streak = 0, old_u = new_u = -1; k < bwt->n; ++k) {
 			pair64_t *u = &bwt->a[k];
 			int a = u->u&7;
+			a = a >= 1 && a <= 4? 5 - a : a; // complement back
 			if (u->u != old_u) { // in the non-RLO mode, we always come to the following block
 				l = bpr_insert_symbol_rank(bwt->r, a, u->u>>3);
 				old_u = u->u;

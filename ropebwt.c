@@ -118,7 +118,7 @@ int main_ropebwt(int argc, char *argv[])
 		int j;
 		uint8_t *t = (uint8_t*)ks->seq.s;
 		for (j = 0; j < ks->seq.l; ++j)
-			t[j] = t[j] < 128? seq_nt6_table[t[j]] : 5;
+			t[j] = t[j] > 0 && t[j] < 128? seq_nt6_table[t[j]] : 5;
 		if (flag & FLAG_DROPN) {
 			for (j = 0; j < ks->seq.l && t[j] < 5; ++j);
 			if (j != ks->seq.l) continue;
