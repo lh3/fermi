@@ -185,7 +185,7 @@ static inline void ld_set(longdna_t *h, int64_t x, int c)
 static inline int ld_get(longdna_t *h, int64_t x)
 {
 	int N, c;
-	c = h->a[x>>LD_SHIFT][(x&LD_MASK)>>5]>>((x&31)<<1)&3;
+	c = h->a[x>>LD_SHIFT]? h->a[x>>LD_SHIFT][(x&LD_MASK)>>5]>>((x&31)<<1)&3 : 0;
 	N = h->N[x>>LD_SHIFT]? h->N[x>>LD_SHIFT][(x&LD_MASK)>>6]>>(x&63)&1 : 0;
 	return N? 4 : c;
 }
@@ -198,12 +198,12 @@ void ld_dump(const longdna_t *ld, FILE *fp)
 		if (ld->a[i]) { // non-ambiguous bases
 			x = 1<<LD_SHIFT>>5;
 			fwrite(&x, sizeof(int), 1, fp);
-			fwrite(ld->a[i], 8, 1<<LD_SHIFT>>5, fp);
+			fwrite(ld->a[i], 8, x, fp);
 		} else fwrite(&zero, sizeof(int), 1, fp);
 		if (ld->N[i]) { // ambiguous bases
 			x = 1<<LD_SHIFT>>6;
 			fwrite(&x, sizeof(int), 1, fp);
-			fwrite(ld->N[i], 8, 1<<LD_SHIFT>>6, fp);
+			fwrite(ld->N[i], 8, x, fp);
 		} else fwrite(&zero, sizeof(int), 1, fp);
 	}
 }
