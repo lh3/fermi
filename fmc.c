@@ -38,8 +38,10 @@ void fmc_opt_init(fmcopt_t *opt)
 	opt->multi_thres = 10;
 	opt->diff_factor = 13;
 	opt->chunk_size = 1<<26;
-	opt->ratio_factor = .8;
+	opt->ratio_factor = 10.;
 }
+
+#define MAX_Q 60
 
 static inline ecrst_t ec_recommend(const fmcopt_t *opt, const fmintv_t k[6], int base, int qual)
 {
@@ -57,7 +59,7 @@ static inline ecrst_t ec_recommend(const fmcopt_t *opt, const fmintv_t k[6], int
 	max1 += max0;
 	if (max0 == sum) { // no other types of bases
 		q = max0 * opt->diff_factor;
-		q = q < 60? q : 60;
+		q = q < MAX_Q? q : MAX_Q;
 		if (base == b0) r.q0 = qual > q? qual : q;
 		else if (q <= qual) r.q0 = qual - q;
 		else r.b0 = b0, r.q0 = q - qual, r.ec = 1;
@@ -70,6 +72,7 @@ static inline ecrst_t ec_recommend(const fmcopt_t *opt, const fmintv_t k[6], int
 		tmp = (int)(opt->ratio_factor * max0 / (sum - max0) + .499);
 		q = q < tmp? q : tmp;
 		q = q > 1? q : 1;
+		q = q < MAX_Q? q : MAX_Q;
 		if (base != b0) {
 			if (base != b1) {
 				q1 = (max1 - (sum - max1)) * opt->diff_factor;
@@ -78,6 +81,7 @@ static inline ecrst_t ec_recommend(const fmcopt_t *opt, const fmintv_t k[6], int
 				tmp = sum != max1? (int)(opt->ratio_factor * max1 / (sum - max1) + .499) : 60;
 				q1 = q1 < tmp? q1 : tmp;
 				q1 = q1 > 1? q1 : 1;
+				q1 = q1 < MAX_Q? q1 : MAX_Q;
 				if (q1 > qual) {
 					r.b0 = b0; r.q0 = q1 - qual;
 					r.b1 = b1; r.q1 = q;
@@ -99,9 +103,9 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 	fmintv_v *swap;
 	fmintv6_t ok;
 	
+	fprintf(stderr, "x=%d\n", x);
 	fm6_set_intv(e, seq[x], ik);
 	ik.info = x + 1;
-
 	for (i = x + 1; i < l_seq; ++i) { // forward search
 		c = fm6_comp(seq[i]);
 		fm6_extend(e, &ik, ok.k, 0); // forward extension
@@ -110,6 +114,7 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 			kv_push(fmintv_t, *curr, ik);
 			if (i - x >= opt->min_l) {
 				r = ec_recommend(opt, ok.k, c, qual[i]);
+				fprintf(stderr, "%d %c=>%c%d\n", i, "$TGCAN"[c], "$TGCAN"[r.b0], r.q0);
 				if (r.ec == 1 && r.q0 > opt->for_qthres)
 					c = r.b0, seq[i] = fm6_comp(c);
 			}
@@ -140,7 +145,7 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 			}
 		}
 		if (cq > opt->rev_qthres) seq[i] = c = cc;
-		for (j = 0; j < prev->n; ++j) { // update $curr
+		for (j = 0, curr->n = 0; j < prev->n; ++j) { // update $curr
 			fmintv_t *ok = tmp->a[j].k;
 			if (ok[c].x[2] >= opt->min_occ && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2])) {
 				ok[c].info = prev->a[j].info;
@@ -150,6 +155,7 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 		if (curr->n == 0) break;
 		swap = curr; curr = prev; prev = swap;
 	}
+	fprintf(stderr, "ret=%d\n", ret);
 
 	return ret;
 }
@@ -218,7 +224,7 @@ static void batch_process(const fmcopt_t *opt, const rld_t *e, int64_t tot, int 
 		ww->opt = opt;
 		ww->step = opt->n_threads;
 		ww->start = j;
-		ww->len = len; ww->seq = seq; ww->qual = qual;
+		ww->n = n; ww->len = len; ww->seq = seq; ww->qual = qual;
 	}
 	for (j = 0; j < opt->n_threads; ++j) pthread_create(&tid[j], 0, worker, w + j);
 	for (j = 0; j < opt->n_threads; ++j) pthread_join(tid[j], 0);

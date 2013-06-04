@@ -25,6 +25,7 @@ int main_contrast(int argc, char *argv[]);
 int main_occflt(int argc, char *argv[]);
 int main_bitand(int argc, char *argv[]);
 int main_recode(int argc, char *argv[]);
+int main_fmc(int argc, char *argv[]);
 
 int main_ropebwt(int argc, char *argv[]);
 int main_example(int argc, char *argv[]);
@@ -132,6 +133,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "occflt") == 0) ret = main_occflt(argc-1, argv+1);
 	else if (strcmp(argv[1], "bitand") == 0) ret = main_bitand(argc-1, argv+1);
 	else if (strcmp(argv[1], "ropebwt") == 0) ret = main_ropebwt(argc-1, argv+1);
+	else if (strcmp(argv[1], "fmc") == 0) ret = main_fmc(argc-1, argv+1);
 	else if (strcmp(argv[1], "test") == 0) ret = main_test(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
