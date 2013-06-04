@@ -106,7 +106,7 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 	fprintf(stderr, "x=%d\n", x);
 	fm6_set_intv(e, seq[x], ik);
 	ik.info = x + 1;
-	for (i = x + 1; i < l_seq; ++i) { // forward search
+	for (i = x + 1, curr->n = 0; i < l_seq; ++i) { // forward search
 		c = fm6_comp(seq[i]);
 		fm6_extend(e, &ik, ok.k, 0); // forward extension
 		if (ok.k[c].x[2] != ik.x[2]) { // change of interval size
@@ -114,7 +114,7 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 			kv_push(fmintv_t, *curr, ik);
 			if (i - x >= opt->min_l) {
 				r = ec_recommend(opt, ok.k, c, qual[i]);
-				fprintf(stderr, "%d %c=>%c%d\n", i, "$TGCAN"[c], "$TGCAN"[r.b0], r.q0);
+				fprintf(stderr, "F %d %c=>%c%d\n", i, "$TGCAN"[c], "$TGCAN"[r.b0], r.q0);
 				if (r.ec == 1 && r.q0 > opt->for_qthres)
 					c = r.b0, seq[i] = fm6_comp(c);
 			}
@@ -131,7 +131,7 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 
 	for (i = x - 1; i >= 0; --i) { // backward search
 		int cc, cq;
-		cc = c = seq[i];
+		c = seq[i];
 		kv_resize(fmintv6_t, *tmp, prev->n);
 		tmp->n = prev->n;
 		for (j = 0; j < prev->n; ++j) // collect all the intervals at the current position
@@ -144,6 +144,7 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 				if (r.ec == 1 && cq < r.q0) cc = r.b0, cq = r.q0;
 			}
 		}
+		if (cq) fprintf(stderr, "R %d %c=>%c%d\n", i, "$ACGTN"[c], "$ACGTN"[cc], cq);
 		if (cq > opt->rev_qthres) seq[i] = c = cc;
 		for (j = 0, curr->n = 0; j < prev->n; ++j) { // update $curr
 			fmintv_t *ok = tmp->a[j].k;
