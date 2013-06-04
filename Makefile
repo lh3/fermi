@@ -3,7 +3,7 @@ CFLAGS=		-g -Wall -O2
 DFLAGS=		#-D_USE_RLE6 #-DNDEBUG
 OBJS=		utils.o seq.o ksa.o ksa64.o rld.o exact.o merge.o sub.o correct.o \
 			build.o smem.o unitig.o dfs.o cmd.o example.o bfs.o \
-			ksw.o mag.o bubble.o scaf.o bcr.o bprope6.o ropebwt.o
+			ksw.o mag.o bubble.o scaf.o bcr.o bprope6.o ropebwt.o fmc.o
 PROG=		fermi
 INCLUDES=	
 LIBS=		-lpthread -lm -lz
