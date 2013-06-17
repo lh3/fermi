@@ -13,7 +13,7 @@ typedef struct {
 	int for_qthres, rev_qthres;
 	int multi_thres;
 	int chunk_size;
-	int diff_factor;
+	int max_pen, max_d, diff_factor;
 	double ratio_factor;
 } fmcopt_t;
 
@@ -23,103 +23,128 @@ typedef struct {
 
 typedef struct { size_t n, m; fmintv6_t *a; } fmintv6_v;
 
-typedef struct {
-	uint32_t b0:3, b1:3, ec:2, q0:8, q1:8;
-} ecrst_t;
-
 void fmc_opt_init(fmcopt_t *opt)
 {
 	memset(opt, 0, sizeof(fmcopt_t));
+	opt->chunk_size = 1<<26;
 	opt->n_threads = 1;
 	opt->min_l = 23;
-	opt->min_occ = 4;
+	opt->min_occ = 6;
 	opt->for_qthres = 30;
 	opt->rev_qthres = 20;
 	opt->multi_thres = 10;
+
+	opt->max_pen = 60;
+	opt->max_d = 7;
 	opt->diff_factor = 13;
-	opt->chunk_size = 1<<26;
 	opt->ratio_factor = 10.;
 }
 
-#define MAX_Q 60
-
-static inline ecrst_t ec_recommend(const fmcopt_t *opt, const fmintv_t k[6], int base, int qual)
+static inline void ec_cns_gen(const fmcopt_t *opt, const fmintv_t k[6], uint8_t q[4])
 {
-	int c, q, b0, b1;
-	int64_t sum, max0, max1;
-	ecrst_t r;
-
-	r.b0 = base; r.ec = 0; r.b1 = 0; r.q0 = r.q1 = 0;
-	b0 = b1 = 0; max0 = max1 = sum = 0;
+	int c;
+	int64_t sum = 0;
+	for (c = 1; c <= 4; ++c) sum += k[c].x[2];
 	for (c = 1; c <= 4; ++c) {
-		if (k[c].x[2] > max0) max1 = max0, b1 = b0, max0 = k[c].x[2], b0 = c;
-		else if (k[c].x[2] > max1) max1 = k[c].x[2], b1 = c;
-		sum += k[c].x[2];
+		int64_t d0, d1;
+		d0 = k[c].x[2]; d1 = sum - d0;
+		if (d0 < d1) {
+			int p, r;
+			p = ((d1 < opt->max_d? d1 : opt->max_d) - d0) * opt->diff_factor;
+			p = p > 1? p : 1;
+			p = p < opt->max_pen? p : opt->max_pen;
+			r = d0? (int)(opt->ratio_factor * d1 / d0 + .499) : opt->max_pen;
+			q[c-1] = p < r? p : r;
+		} else q[c-1] = 0;
 	}
-	max1 += max0;
-	if (max0 == sum) { // no other types of bases
-		q = max0 * opt->diff_factor;
-		q = q < MAX_Q? q : MAX_Q;
-		if (base == b0) r.q0 = qual > q? qual : q;
-		else if (q <= qual) r.q0 = qual - q;
-		else r.b0 = b0, r.q0 = q - qual, r.ec = 1;
-	} else { // in the following, max0 < sum
-		int tmp, q1;
-		// q0
-		q = (max0 - (sum - max0)) * opt->diff_factor;
-		tmp = (7 - (sum - max0)) * opt->diff_factor;
-		q = q < tmp? q : tmp;
-		tmp = (int)(opt->ratio_factor * max0 / (sum - max0) + .499);
-		q = q < tmp? q : tmp;
-		q = q > 1? q : 1;
-		q = q < MAX_Q? q : MAX_Q;
-		if (base != b0) {
-			if (base != b1) {
-				q1 = (max1 - (sum - max1)) * opt->diff_factor;
-				tmp = (7 - (sum - max1)) * opt->diff_factor;
-				q1 = q1 < tmp? q1 : tmp;
-				tmp = sum != max1? (int)(opt->ratio_factor * max1 / (sum - max1) + .499) : 60;
-				q1 = q1 < tmp? q1 : tmp;
-				q1 = q1 > 1? q1 : 1;
-				q1 = q1 < MAX_Q? q1 : MAX_Q;
-				if (q1 > qual) {
-					r.b0 = b0; r.q0 = q1 - qual;
-					r.b1 = b1; r.q1 = q;
-					r.ec = 2;
-				} else r.q0 = qual - q1;
-			} else {
-				if (q <= qual) r.q0 = qual - q;
-				else r.b0 = b0, r.q0 = q - qual, r.ec = 1;
-			}
-		} else r.q0 = qual > q? qual : q;
-	}
-	return r;
 }
 
-int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, uint8_t *qual, int x, fmintv_v *prev, fmintv_v *curr, fmintv6_v *tmp)
+static inline void ec_cns_upd(uint8_t q[4], const uint8_t q1[4], int is_comp)
+{
+	int c;
+	if (is_comp) {
+		for (c = 0; c < 4; ++c)
+			q[c] = q[c] < q1[3-c]? q[c] : q1[3-c];
+	} else {
+		for (c = 0; c < 4; ++c)
+			q[c] = q[c] < q1[c]? q[c] : q1[c];
+	}
+}
+
+static inline int ec_cns_call(const uint8_t q[4], int base, int qual)
+{
+	int min, min_c, min2, c, iq[4];
+	for (c = 0; c < 4; ++c) iq[c] = q[c];
+	if (base >= 0 && base <= 3) iq[base] -= qual;
+	for (c = 0, min_c = -1, min = min2 = 255; c < 4; ++c)
+		if (min > iq[c]) min2 = min, min = iq[c], min_c = c;
+		else if (min2 > iq[c]) min2 = iq[c];
+	return min_c << 8 | (min2 - min);
+}
+
+typedef struct {
+	uint8_t pen[4];
+	uint8_t ob, oq, eb, eq;
+} ecseq_t;
+
+static ecseq_t *ec_seq_gen(int l_seq, const uint8_t *seq, const uint8_t *qual)
+{
+	int i;
+	ecseq_t *s;
+	s = calloc(l_seq, sizeof(ecseq_t));
+	for (i = 0; i < l_seq; ++i) {
+		uint32_t *p = (uint32_t*)s[i].pen;
+		*p = 0xffffffffU;
+		s[i].ob = seq[i]; s[i].eq = s[i].oq = qual[i];
+	}
+	return s;
+}
+
+static void ec_seq_rev(int l_seq, ecseq_t *seq)
+{
+	int i;
+	for (i = 0; i < l_seq>>1; ++i) {
+		ecseq_t tmp, *s = &seq[i], *t = &seq[l_seq - 1 - i];
+		tmp = *s; *s = *t; *t = tmp;
+	}
+	for (i = 0; i < l_seq; ++i) {
+		ecseq_t *si = &seq[i];
+		uint32_t *p = (uint32_t*)si->pen;
+		si->ob = fm6_comp(si->ob); si->eb = fm6_comp(si->eb);
+		*p = (*p & 0x0000FFFFU) << 16 | *p >> 16;
+		*p = (*p & 0x00FF00FFU) << 8  | (*p & 0xFF00FF00U) >> 8;
+	}
+}
+
+int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, ecseq_t *seq, int x, fmintv_v *prev, fmintv_v *curr, fmintv6_v *tmp)
 { // this function is similar to fm6_smem1_core()
-	int i, j, c, ret;
+	int i, j, ret;
 	fmintv_t ik;
 	fmintv_v *swap;
 	fmintv6_t ok;
-	
-	fprintf(stderr, "x=%d\n", x);
-	fm6_set_intv(e, seq[x], ik);
+
+	//fprintf(stderr, "x=%d\n", x);
+	fm6_set_intv(e, seq[x].ob, ik);
 	ik.info = x + 1;
 	for (i = x + 1, curr->n = 0; i < l_seq; ++i) { // forward search
-		c = fm6_comp(seq[i]);
+		ecseq_t *si = &seq[i];
+		int c;
 		fm6_extend(e, &ik, ok.k, 0); // forward extension
+		if (i - x >= opt->min_l) { // then check the multi-alignment
+			int call;
+			uint8_t q[4];
+			ec_cns_gen(opt, ok.k, q);
+			ec_cns_upd(si->pen, q, 1);
+			call = ec_cns_call(si->pen, fm6_comp(si->ob) - 1, si->oq);
+			//fprintf(stderr, "[F,%d,%c]\tpen[4]={%d,%d,%d,%d}\teb=%c\teq=%d\n", i, "$ACGTN"[si->ob], q[0], q[1], q[2], q[3], "ACGT"[call>>8], call&0xff);
+			si->eb = (call >> 8) + 1;
+			si->eq = call & 0xff;
+		}
+		c = si->eb? si->eb : si->ob;
+		c = fm6_comp(c);
 		if (ok.k[c].x[2] != ik.x[2]) { // change of interval size
-			ecrst_t r;
 			kv_push(fmintv_t, *curr, ik);
-			if (i - x >= opt->min_l) {
-				r = ec_recommend(opt, ok.k, c, qual[i]);
-				fprintf(stderr, "F %d %c=>%c%d\n", i, "$TGCAN"[c], "$TGCAN"[r.b0], r.q0);
-				if (r.ec == 1 && r.q0 > opt->for_qthres)
-					c = r.b0, seq[i] = fm6_comp(c);
-			}
 			if (ok.k[c].x[2] < opt->min_occ) break;
-			// TODO: should I consider ambiguous bases more carefully?
 		}
 		ik = ok.k[c]; ik.info = i + 1;
 	}
@@ -130,22 +155,26 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 	swap = curr; curr = prev; prev = swap;
 
 	for (i = x - 1; i >= 0; --i) { // backward search
-		int cc, cq;
-		c = seq[i];
+		ecseq_t *si = &seq[i];
+		int c, call, is_ec;
 		kv_resize(fmintv6_t, *tmp, prev->n);
 		tmp->n = prev->n;
 		for (j = 0; j < prev->n; ++j) // collect all the intervals at the current position
 			fm6_extend(e, &prev->a[j], tmp->a[j].k, 1);
-		cc = 0; cq = 0;
-		for (j = 0; j < prev->n; ++j) { // check if we need to make a correction
+		for (is_ec = 0, j = 0; j < prev->n; ++j) { // check if we need to make a correction
 			if (prev->a[j].info - i >= opt->min_l) {
-				ecrst_t r;
-				r = ec_recommend(opt, tmp->a[j].k, c, qual[i]);
-				if (r.ec == 1 && cq < r.q0) cc = r.b0, cq = r.q0;
+				uint8_t q[4];
+				ec_cns_gen(opt, tmp->a[j].k, q);
+				ec_cns_upd(si->pen, q, 0);
+				is_ec = 1;
 			}
 		}
-		if (cq) fprintf(stderr, "R %d %c=>%c%d\n", i, "$ACGTN"[c], "$ACGTN"[cc], cq);
-		if (cq > opt->rev_qthres) seq[i] = c = cc;
+		if (is_ec) {
+			call = ec_cns_call(si->pen, si->ob - 1, si->oq);
+			si->eb = (call >> 8) + 1;
+			si->eq = call & 0xff;
+		}
+		c = si->eb? si->eb : si->ob;
 		for (j = 0, curr->n = 0; j < prev->n; ++j) { // update $curr
 			fmintv_t *ok = tmp->a[j].k;
 			if (ok[c].x[2] >= opt->min_occ && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2])) {
@@ -156,21 +185,30 @@ int fm6_ec2_core(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, u
 		if (curr->n == 0) break;
 		swap = curr; curr = prev; prev = swap;
 	}
-	fprintf(stderr, "ret=%d\n", ret);
+	//fprintf(stderr, "ret=%d\n", ret);
 
 	return ret;
 }
 
 static int fm6_ec2_corr1(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t *seq, uint8_t *qual, fmintv_v *prev, fmintv_v *curr, fmintv6_v *tmp)
 {
-	int x = 0;
-	while ((x = fm6_ec2_core(opt, e, l_seq, seq, qual, x, prev, curr, tmp)) < l_seq);
-	seq_revcomp6(l_seq, seq);
-	seq_reverse(l_seq, qual);
+	int x;
+	ecseq_t *s;
+	s = ec_seq_gen(l_seq, seq, qual);
+	// error correction
 	x = 0;
-	while ((x = fm6_ec2_core(opt, e, l_seq, seq, qual, x, prev, curr, tmp)) < l_seq);
-	seq_revcomp6(l_seq, seq);
-	seq_reverse(l_seq, qual);
+	while ((x = fm6_ec2_core(opt, e, l_seq, s, x, prev, curr, tmp)) < l_seq);
+	ec_seq_rev(l_seq, s);
+	x = 0;
+	while ((x = fm6_ec2_core(opt, e, l_seq, s, x, prev, curr, tmp)) < l_seq);
+	ec_seq_rev(l_seq, s);
+	// modify $seq and $qual
+	for (x = 0; x < l_seq; ++x) {
+		ecseq_t *sx = &s[x];
+		seq[x] = sx->eb == 0 || sx->ob == sx->eb? "$ACGTN"[sx->ob] : "$acgtn"[sx->eb];
+		qual[x] = sx->eq + 33;
+	}
+	free(s);
 	return 0;
 }
 
@@ -201,10 +239,6 @@ static void *worker(void *data)
 			qual[j] -= 33;
 		}
 		fm6_ec2_corr1(w->opt, w->e, len, seq, qual, &prev, &curr, &tmp);
-		for (j = 0; j < len; ++j) {
-			seq[j] = "$ACGTN"[seq[j]];
-			qual[j] += 33;
-		}
 	}
 	free(prev.a); free(curr.a); free(tmp.a);
 	return 0;
