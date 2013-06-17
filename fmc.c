@@ -206,7 +206,7 @@ static int fm6_ec2_corr1(const fmcopt_t *opt, const rld_t *e, int l_seq, uint8_t
 	for (x = 0; x < l_seq; ++x) {
 		ecseq_t *sx = &s[x];
 		seq[x] = sx->eb == 0 || sx->ob == sx->eb? "$ACGTN"[sx->ob] : "$acgtn"[sx->eb];
-		qual[x] = sx->eq + 33;
+		qual[x] = sx->oq + 33;
 	}
 	free(s);
 	return 0;
