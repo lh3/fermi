@@ -164,20 +164,52 @@ static inline void ec_cal_penalty(const solid1_t *p, int penalty[2], int base)
 	} else penalty[0] = penalty[1] = 0;
 }
 
-static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa, ecstat1_t *es)
+typedef struct {
+	uint8_t ob, oq, cb, cq;
+} ecbase_t;
+
+typedef kvec_t(ecbase_t) ecseq_t;
+
+static void ec_seq_gen(ecseq_t *s, int l_seq, char *seq, char *qual)
+{
+	int i;
+	kv_resize(ecbase_t, *s, l_seq);
+	s->n = l_seq;
+	for (i = 0; i < l_seq; ++i) {
+		ecbase_t *b = &s->a[i];
+		b->ob = b->cb = seq_nt6_table[(int)seq[i]];
+		b->oq = qual[i] - 33;
+		b->cq = 0;
+	}
+}
+
+static void ec_seq_rev(ecseq_t *s)
+{
+	int i;
+	for (i = 0; i < s->n>>1; ++i) {
+		ecbase_t tmp;
+		tmp = s->a[i]; s->a[i] = s->a[s->n - 1 - i]; s->a[s->n - 1 - i] = tmp;
+	}
+	for (i = 0; i < s->n; ++i) {
+		s->a[i].ob = fm6_comp(s->a[i].ob);
+		s->a[i].cb = fm6_comp(s->a[i].cb);
+	}
+}
+
+static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fixaux_t *fa, ecstat1_t *es)
 {
 	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0;
 	ku128_t z, rst[2];
 
 	memset(es, 0, sizeof(ecstat1_t));
-	if (s->l <= opt->w) return;
+	if (s->n <= opt->w) return;
 	fa->heap.n = fa->stack.n = 0;
 	z.x = z.y = 0;
 	kv_push(ku128_t, fa->stack, z);
 	// get the initial k-mer
-	for (i = s->l - 1, l = 0; i > 0 && l < opt->w; --i)
-		if (s->s[i] == 5) z.x = 0, l = 0;
-		else z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2, ++l;
+	for (i = s->n - 1, l = 0; i > 0 && l < opt->w; --i)
+		if (s->a[i].cb == 5) z.x = 0, l = 0;
+		else z.x = (uint64_t)(s->a[i].cb-1)<<shift | z.x>>2, ++l;
 	if (i == 0) return; // no good k-mer
 	// the first element in the heap
 	z.y = i + 1;
@@ -198,9 +230,9 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		}
 		if (n_rst && (int)(z.y>>48) > (int)(rst[0].y>>48) + MAX_SC_DIFF) break;
 		i = (z.y&0xfffff) - 1;
-		q = qual[i] - 33 < MAX_QUAL? qual[i] - 33 : MAX_QUAL;
+		q = s->a[i].oq < MAX_QUAL? s->a[i].oq : MAX_QUAL;
 		if (q < 3) q = 3;
-		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->s[i]], q);
+		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->a[i].cb], q);
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
 		solid_set_key(&zz, z.x >> (SUF_LEN<<1));
@@ -208,16 +240,16 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		++es->n_hash_qry;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			++es->n_hash_hit;
-			if (s->s[i] != kh_key(h, k).b1 + 1) { // the read base is different from the best base
+			if (s->a[i].cb != kh_key(h, k).b1 + 1) { // the read base is different from the best base
 				solid1_t *p = &kh_key(h, k);
 				int penalty[2];
-				ec_cal_penalty(p, penalty, s->s[i] - 1);
+				ec_cal_penalty(p, penalty, s->a[i].cb - 1);
 				// if we have too many possibilities, keep the better path among the two
-				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty[0] < q))
-					save_state(fa, &z, opt->w + 1, s->s[i] - 1, penalty[0], shift, F_CHECKED); // the read path
-				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty[0] > q)
+				if (s->a[i].cb != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty[0] < q))
+					save_state(fa, &z, opt->w + 1, s->a[i].cb - 1, penalty[0], shift, F_CHECKED); // the read path
+				if (s->a[i].cb == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty[0] > q)
 					save_state(fa, &z, opt->w + 1, p->b1, q, shift, F_CHECKED|F_CORRECTED); // the stack path
-				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->s[i]], q, "ACGT"[p->b1], penalty[0]);
+				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->a[i].cb], q, "ACGT"[p->b1], penalty[0]);
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				solid1_t *p = &kh_key(h, k);
@@ -225,18 +257,18 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 				int occ_last = p->d2? p->d2 * (p->ratio+1) : p->ratio;
 				if (p->d2 <= 0 && opt->step > 1) {
 					while (i0 > 0) {
-						for (i = (z.y&0xfffff) - 1, l = 0; i >= 1 && l < opt->step && s->s[i] < 5; --i, ++l)
-							z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
-						if (s->s[i] == 5) break;
+						for (i = (z.y&0xfffff) - 1, l = 0; i >= 1 && l < opt->step && s->a[i].cb < 5; --i, ++l)
+							z.x = (uint64_t)(s->a[i].cb-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
+						if (s->a[i].cb == 5) break;
 						h = solid[z.x & (SUF_NUM - 1)];
 						solid_set_key(&zz, z.x >> (SUF_LEN<<1));
 						k = kh_get(solid, h, zz);
 						++es->n_hash_qry;
 						es->n_hash_hit += (k != kh_end(h));
-						if (k != kh_end(h) && s->s[i] == kh_key(h, k).b1 + 1) { // in the hash table and the read base is the best
+						if (k != kh_end(h) && s->a[i].cb == kh_key(h, k).b1 + 1) { // in the hash table and the read base is the best
 							solid1_t *p = &kh_key(h, k);
 							int occ = p->d2? p->d2 * (p->ratio+1) : p->ratio; // occ is the occurrences of the k-mer
-							if (fm_verbose >= 5) fprintf(stderr, "jump\ti=%d\t%c%d\t%d\n", i, "$ACGTN"[(int)s->s[i]], qual[i]-33, occ);
+							if (fm_verbose >= 5) fprintf(stderr, "jump\ti=%d\t%c%d\t%d\n", i, "$ACGTN"[(int)s->a[i].cb], s->a[i].oq, occ);
 							if (p->d2 <= 1 && occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
 								z.y = z.y>>20<<20 | (i + 1);
 								z0 = z; i0 = i;
@@ -245,9 +277,9 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 						} else break;
 					}
 				}
-				save_state(fa, &z0, i00 - i0 + opt->w + 1, s->s[i0] - 1, 0, shift, F_BEST);
+				save_state(fa, &z0, i00 - i0 + opt->w + 1, s->a[i0].cb - 1, 0, shift, F_BEST);
 			}
-		} else save_state(fa, &z, 0, s->s[i] - 1, MISS_PENALTY + (MAX_QUAL - q), shift, F_NOHIT);
+		} else save_state(fa, &z, 0, s->a[i].cb - 1, MISS_PENALTY + (MAX_QUAL - q), shift, F_NOHIT);
 	}
 	assert(n_rst == 1 || n_rst == 2);
 	es->min_penalty = rst[0].y >> 48;
@@ -263,11 +295,11 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 			assert(i >= beg);
 			es->l_cov += i < end? i - beg : end - beg;
 			beg = i; end = (int)fa->stack.a[l].y;
-			if (s->s[i] - 1 != c) s->s[i] = c + 1; // correct
+			if (s->a[i].cb - 1 != c) s->a[i].cb = c + 1; // correct
 			l = fa->stack.a[l].x & 0xfffffff; // take the lowest 28 bits, the parent position in the stack
 		}
 		es->l_cov += end - beg;
-	} else es->l_cov = s->l; // no corrections are made
+	} else es->l_cov = s->n; // no corrections are made
 }
 
 typedef struct {
@@ -278,53 +310,48 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 {
 	int i;
 	uint64_t n_query = 0;
-	kstring_t str;
+	ecseq_t s;
 	fixaux_t fa;
 
+	kv_init(s);
 	memset(&fa, 0, sizeof(fixaux_t));
-	str.s = 0; str.l = str.m = 0;
 	for (i = 0; i < n_seqs; ++i) {
 		char *si = seq[i], *qi = qual[i];
-		int l_cov, j;
+		int l_cov;
 		ecinfo1_t *ii = &info[i];
 		ecstat1_t es[2];
 
 		memset(es, 0, sizeof(ecstat1_t) * 2);
-		str.l = 0;
-		kputs(si, &str);
-		for (j = 0; j < str.l; ++j)
-			str.s[j] = seq_nt6_table[(int)str.s[j]];
-		seq_revcomp6(str.l, (uint8_t*)str.s); // to the reverse complement strand
-		seq_reverse(str.l, (uint8_t*)qual[i]);
+		ec_seq_gen(&s, strlen(si), si, qi);
+		ec_seq_rev(&s);
 		if (fm_verbose >= 5) fprintf(stderr, "=== index %d, forward ===\n", i);
-		ec_fix1(opt, solid, &str, qual[i], &fa, &es[0]); // 0x7fff0000 if no correction; 0xffff if too short
+		ec_fix1(opt, solid, &s, &fa, &es[0]); // 0x7fff0000 if no correction; 0xffff if too short
 		n_query += es[0].n_hash_qry;
 		l_cov = es[0].l_cov;
 		ii->pen_diff = es[0].pen_diff;
-		seq_reverse(str.l, (uint8_t*)qual[i]); // back to the forward strand
-		seq_revcomp6(str.l, (uint8_t*)str.s);
+		ec_seq_rev(&s);
 		if (es[0].n_hash_qry) { // then we need to correct in the reverse direction
 			if (fm_verbose >= 5) fprintf(stderr, "=== index %d, reverse ===\n", i);
-			ec_fix1(opt, solid, &str, qual[i], &fa, &es[1]);
+			ec_fix1(opt, solid, &s, &fa, &es[1]);
 			n_query += es[1].n_hash_qry;
 			ii->pen_diff = ii->pen_diff < es[1].pen_diff? ii->pen_diff : es[1].pen_diff;
 			l_cov = l_cov > es[1].l_cov? l_cov : es[1].l_cov;
 		}
 		if (es[0].n_hash_hit || es[1].n_hash_hit) {
 			int j, n_corr = 0, q_corr = 0;
-			for (j = 0; j < str.l; ++j) {
-				int is_diff = (seq_nt6_table[(int)si[j]] != str.s[j]);
-				si[j] = is_diff? "$acgtn"[(int)str.s[j]] : "$ACGTN"[(int)str.s[j]];
+			for (j = 0; j < s.n; ++j) {
+				int is_diff = (s.a[j].ob != s.a[j].cb);
+				si[j] = is_diff? "$acgtn"[(int)s.a[j].cb] : "$ACGTN"[(int)s.a[j].cb];
 				n_corr += is_diff;
 				q_corr += is_diff? qi[j] - 33 : 0;
 			}
 			ii->no_hit = 0;
 			ii->q_corr = q_corr < 255? q_corr : 255;
-			ii->p_cov = (int)(100. * l_cov / str.l + .499);
-			ii->p_corr = (int)(100. * n_corr / str.l + .499);
+			ii->p_cov = (int)(100. * l_cov / s.n + .499);
+			ii->p_corr = (int)(100. * n_corr / s.n + .499);
 		} else ii->no_hit = 1;
 	}
-	free(str.s);
+	free(s.a);
 	free(fa.heap.a); free(fa.stack.a);
 	return n_query;
 }
