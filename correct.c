@@ -19,8 +19,8 @@ typedef struct {
 	uint16_t low:4, b1:2, b2:2, ratio:5, d2:3;
 } __attribute__ ((__packed__)) solid1_t;
 
-#define solid_hash(a) __ac_Wang_hash((a).high>>2)
-#define solid_eq(a, b) ((a).high>>2 == (b).high>>2)
+#define solid_hash(a) (__ac_Wang_hash((a).high)^(a).low)
+#define solid_eq(a, b) ((a).high == (b).high && (a).low == (b).low)
 #include "khash.h"
 KHASH_INIT(solid, solid1_t, char, 0, solid_hash, solid_eq)
 typedef khash_t(solid) shash_t;
@@ -74,7 +74,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 			if (rest <= 7 && r >= opt->min_occ) ++cnt[1];
 			for (i = 0, key = 0; i < str.l; ++i)
 				key = (uint64_t)str.s[i]<<shift | key>>2;
-			zz.high = key<<2;
+			zz.high = key>>4; zz.low = key & 0xf;
 			zz.b1 = max_c - 1; zz.b2 = max_c2 - 1;
 			zz.d2 = rest < 7? rest : 7;
 			zz.ratio = (int)(r + .499);
@@ -180,7 +180,8 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->s[i]], q);
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
-		zz.high = z.x >> (SUF_LEN<<1) << 2;
+		zz.high = z.x >> (SUF_LEN<<1) >> 4;
+		zz.low  = z.x >> (SUF_LEN<<1) & 0xf;
 		k = kh_get(solid, h, zz);
 		++es->n_hash_qry;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
@@ -213,7 +214,8 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 							z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
 						if (s->s[i] == 5) break;
 						h = solid[z.x & (SUF_NUM - 1)];
-						zz.high = z.x >> (SUF_LEN<<1) << 2;
+						zz.high = z.x >> (SUF_LEN<<1) >> 4;
+						zz.low  = z.x >> (SUF_LEN<<1) & 0xf;
 						k = kh_get(solid, h, zz);
 						++es->n_hash_qry;
 						es->n_hash_hit += (k != kh_end(h));
@@ -375,7 +377,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] set k-mer length to %d\n", __func__, opt->w);
 	}
-	compute_SUF(opt->w > 15? opt->w - 15 : 1);
+	compute_SUF(opt->w > 18? opt->w - 18 : 1);
 	// initialize "solid" and "tid"
 	assert(_n_threads <= SUF_NUM);
 	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
