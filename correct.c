@@ -145,6 +145,25 @@ typedef struct {
 	int l_cov;
 } ecstat1_t;
 
+static inline void ec_cal_penalty(const solid1_t *p, int penalty[2], int base)
+{
+	if (p->b1 != base) {
+		int tmp, d1 = p->d2? p->d2 * p->ratio : p->ratio;
+		penalty[0] = ((d1 < 7? d1 : 7) - p->d2) * DIFF_FACTOR;
+		tmp = p->d2? p->ratio * RATIO_FACTOR : 10000;
+		penalty[0] = tmp < penalty[0]? tmp : penalty[0];
+		penalty[0] = penalty[0] > 1? penalty[0] : 1;
+		if (p->b2 != base) {
+			d1 += p->d2 - p->d3;
+			penalty[1] = ((d1 < 7? d1 : 7) - p->d3) * DIFF_FACTOR;
+			tmp = p->d3? (int)((double)d1 / p->d3 * RATIO_FACTOR + .499) : 10000;
+			penalty[1] = tmp < penalty[1]? tmp : penalty[1];
+			penalty[1] = penalty[1] > 1? penalty[1] : 1;
+			//penalty[0] += penalty[1];
+		} else penalty[1] = 0;
+	} else penalty[0] = penalty[1] = 0;
+}
+
 static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, char *qual, fixaux_t *fa, ecstat1_t *es)
 {
 	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0;
@@ -191,21 +210,14 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 			++es->n_hash_hit;
 			if (s->s[i] != kh_key(h, k).b1 + 1) { // the read base is different from the best base
 				solid1_t *p = &kh_key(h, k);
-				int tmp, penalty, max = p->d2? p->d2 * p->ratio : p->ratio; // max is the approximate depth of the best base
-				// compute the penalty for the best stack path
-				penalty = (max - p->d2) * DIFF_FACTOR;
-				if (max - p->d2 < 1) penalty = 1;
-				tmp = p->d2? p->ratio * RATIO_FACTOR : 10000;
-				if (tmp < penalty) penalty = tmp;
-				tmp = (7 - p->d2) * DIFF_FACTOR;
-				if (tmp < penalty) penalty = tmp;
-				if (penalty < 1) penalty = 1;
+				int penalty[2];
+				ec_cal_penalty(p, penalty, s->s[i] - 1);
 				// if we have too many possibilities, keep the better path among the two
-				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty < q))
-					save_state(fa, &z, opt->w + 1, s->s[i] - 1, penalty, shift, F_CHECKED); // the read path
-				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty > q)
+				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty[0] < q))
+					save_state(fa, &z, opt->w + 1, s->s[i] - 1, penalty[0], shift, F_CHECKED); // the read path
+				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty[0] > q)
 					save_state(fa, &z, opt->w + 1, p->b1, q, shift, F_CHECKED|F_CORRECTED); // the stack path
-				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->s[i]], q, "ACGT"[p->b1], penalty);
+				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->s[i]], q, "ACGT"[p->b1], penalty[0]);
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				solid1_t *p = &kh_key(h, k);
