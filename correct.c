@@ -14,24 +14,13 @@ static int SUF_LEN, SUF_NUM;
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
 
-static inline uint32_t hash_32(uint32_t key)
-{
-	key += ~(key << 15);
-	key ^=  (key >> 10);
-	key +=  (key << 3);
-	key ^=  (key >> 6);
-	key += ~(key << 11);
-	key ^=  (key >> 16);
-	return key;
-}
-
 typedef struct {
-	uint32_t x;
-	uint8_t y;
+	uint32_t high;
+	uint16_t low:4, b1:2, b2:2, ratio:5, d2:3;
 } __attribute__ ((__packed__)) solid1_t;
 
-#define solid_hash(a) hash_32((a).x>>2)
-#define solid_eq(a, b) ((a).x>>2 == (b).x>>2)
+#define solid_hash(a) __ac_Wang_hash((a).high>>2)
+#define solid_eq(a, b) ((a).high>>2 == (b).high>>2)
 #include "khash.h"
 KHASH_INIT(solid, solid1_t, char, 0, solid_hash, solid_eq)
 typedef khash_t(solid) shash_t;
@@ -71,13 +60,12 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 		if (str.l) str.s[str.l - 1] = ik.info&0xf;
 		if (ik.info>>4 == opt->w) { // keep the k-mer
 			solid1_t zz;
-			uint32_t key;
-			int max_c, absent;
-			uint64_t max, rest;
+			int max_c, max_c2, absent;
+			uint64_t max, max2, rest, key;
 			double r;
-			for (c = 1, max = 0, max_c = 6; c <= 4; ++c)
-				if (ok[c].x[2] > max)
-					max = ok[c].x[2], max_c = c;
+			for (c = 1, max = max2 = 0, max_c = max_c2 = 6; c <= 4; ++c)
+				if (ok[c].x[2] > max) max2 = max, max_c2 = max_c, max = ok[c].x[2], max_c = c;
+				else if (ok[c].x[2] > max2) max2 = ok[c].x[2], max_c2 = c;
 			if (max < opt->min_occ) continue; // then in the following max_c<6
 			++cnt[0];
 			rest = ik.x[2] - max - ok[0].x[2] - ok[5].x[2];
@@ -85,10 +73,13 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 			if (r > 31.) r = 31.; // we have maximally 5 bits of information (i.e. [0,31])
 			if (rest <= 7 && r >= opt->min_occ) ++cnt[1];
 			for (i = 0, key = 0; i < str.l; ++i)
-				key = (uint32_t)str.s[i]<<shift | key>>2;
-			zz.x = key<<2 | (max_c - 1);
-			zz.y = (int)(r + .499) << 3 | (rest < 7? rest : 7);
+				key = (uint64_t)str.s[i]<<shift | key>>2;
+			zz.high = key<<2;
+			zz.b1 = max_c - 1; zz.b2 = max_c2 - 1;
+			zz.d2 = rest < 7? rest : 7;
+			zz.ratio = (int)(r + .499);
 			kh_put(solid, solid, zz, &absent);
+			assert(absent);
 		} else { // descend
 			for (c = 4; c >= 1; --c) { // ambiguous bases are skipped
 				if (ok[c].x[2] >= opt->min_occ) {
@@ -189,46 +180,48 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->s[i]], q);
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
-		zz.x = z.x >> (SUF_LEN<<1) << 2;
+		zz.high = z.x >> (SUF_LEN<<1) << 2;
 		k = kh_get(solid, h, zz);
 		++es->n_hash_qry;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
 			++es->n_hash_hit;
-			if (s->s[i] != (kh_key(h, k).x&3) + 1) { // the read base is different from the best base
-				int v = kh_key(h, k).y; // recall that v is packed as - "(best_depth/rest_depth)<<3 | rest_depth" or "best_detph<<3 | 0"
-				int tmp, penalty, max = (v&7)? (v&7) * (v>>3) : v>>3; // max is the approximate depth of the best base
+			if (s->s[i] != kh_key(h, k).b1 + 1) { // the read base is different from the best base
+				solid1_t *p = &kh_key(h, k);
+				int tmp, penalty, max = p->d2? p->d2 * p->ratio : p->ratio; // max is the approximate depth of the best base
 				// compute the penalty for the best stack path
-				penalty = (max - (v&7)) * DIFF_FACTOR;
-				if (max - (v&7) < 1) penalty = 1;
-				tmp = (v&7)? (v>>3) * RATIO_FACTOR : 10000;
+				penalty = (max - p->d2) * DIFF_FACTOR;
+				if (max - p->d2 < 1) penalty = 1;
+				tmp = p->d2? p->ratio * RATIO_FACTOR : 10000;
 				if (tmp < penalty) penalty = tmp;
-				tmp = (7 - (v&7)) * DIFF_FACTOR;
+				tmp = (7 - p->d2) * DIFF_FACTOR;
 				if (tmp < penalty) penalty = tmp;
 				if (penalty < 1) penalty = 1;
 				// if we have too many possibilities, keep the better path among the two
 				if (s->s[i] != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty < q))
 					save_state(fa, &z, opt->w + 1, s->s[i] - 1, penalty, shift, F_CHECKED); // the read path
 				if (s->s[i] == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty > q)
-					save_state(fa, &z, opt->w + 1, kh_key(h, k).x&3, q, shift, F_CHECKED|F_CORRECTED); // the stack path
-				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->s[i]], q, "ACGT"[kh_key(h, k).x&3], penalty);
+					save_state(fa, &z, opt->w + 1, p->b1, q, shift, F_CHECKED|F_CORRECTED); // the stack path
+				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->s[i]], q, "ACGT"[p->b1], penalty);
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
+				solid1_t *p = &kh_key(h, k);
 				int i0 = i, i00 = i;
-				int v = kh_key(h, k).y, occ_last = (v&7)? (v&7) * ((v>>3)+1) : v>>3;
-				if ((v&7) <= 0 && opt->step > 1) {
+				int occ_last = p->d2? p->d2 * (p->ratio+1) : p->ratio;
+				if (p->d2 <= 0 && opt->step > 1) {
 					while (i0 > 0) {
 						for (i = (z.y&0xfffff) - 1, l = 0; i >= 1 && l < opt->step && s->s[i] < 5; --i, ++l)
 							z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
 						if (s->s[i] == 5) break;
 						h = solid[z.x & (SUF_NUM - 1)];
-						zz.x = z.x >> (SUF_LEN<<1) << 2;
+						zz.high = z.x >> (SUF_LEN<<1) << 2;
 						k = kh_get(solid, h, zz);
 						++es->n_hash_qry;
 						es->n_hash_hit += (k != kh_end(h));
-						if (k != kh_end(h) && s->s[i] == (kh_key(h, k).x&3) + 1) { // in the hash table and the read base is the best
-							int v = kh_key(h, k).y, occ = (v&7)? (v&7) * ((v>>3)+1) : v>>3; // occ is the occurrences of the k-mer
+						if (k != kh_end(h) && s->s[i] == kh_key(h, k).b1 + 1) { // in the hash table and the read base is the best
+							solid1_t *p = &kh_key(h, k);
+							int occ = p->d2? p->d2 * (p->ratio+1) : p->ratio; // occ is the occurrences of the k-mer
 							if (fm_verbose >= 5) fprintf(stderr, "jump\ti=%d\t%c%d\t%d\n", i, "$ACGTN"[(int)s->s[i]], qual[i]-33, occ);
-							if ((v&7) <= 1 && occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
+							if (p->d2 <= 1 && occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
 								z.y = z.y>>20<<20 | (i + 1);
 								z0 = z; i0 = i;
 								occ_last = occ;
