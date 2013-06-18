@@ -198,7 +198,7 @@ static void ec_seq_rev(ecseq_t *s)
 
 static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fixaux_t *fa, ecstat1_t *es)
 {
-	int i, q, l, shift = (opt->w - 1) << 1, n_rst = 0;
+	int i, qual, l, shift = (opt->w - 1) << 1, n_rst = 0;
 	ku128_t z, rst[2];
 
 	memset(es, 0, sizeof(ecstat1_t));
@@ -230,9 +230,9 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 		}
 		if (n_rst && (int)(z.y>>48) > (int)(rst[0].y>>48) + MAX_SC_DIFF) break;
 		i = (z.y&0xfffff) - 1;
-		q = s->a[i].oq < MAX_QUAL? s->a[i].oq : MAX_QUAL;
-		if (q < 3) q = 3;
-		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->a[i].cb], q);
+		qual = s->a[i].oq < MAX_QUAL? s->a[i].oq : MAX_QUAL;
+		if (qual < 3) qual = 3;
+		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->a[i].cb], qual);
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
 		solid_set_key(&zz, z.x >> (SUF_LEN<<1));
@@ -245,11 +245,11 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 				int penalty[2];
 				ec_cal_penalty(p, penalty, s->a[i].cb - 1);
 				// if we have too many possibilities, keep the better path among the two
-				if (s->a[i].cb != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty[0] < q))
+				if (s->a[i].cb != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty[0] < qual))
 					save_state(fa, &z, opt->w + 1, s->a[i].cb - 1, penalty[0], shift, F_CHECKED); // the read path
-				if (s->a[i].cb == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty[0] > q)
-					save_state(fa, &z, opt->w + 1, p->b1, q, shift, F_CHECKED|F_CORRECTED); // the stack path
-				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->a[i].cb], q, "ACGT"[p->b1], penalty[0]);
+				if (s->a[i].cb == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty[0] > qual)
+					save_state(fa, &z, opt->w + 1, p->b1, qual, shift, F_CHECKED|F_CORRECTED); // the stack path
+				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->a[i].cb], qual, "ACGT"[p->b1], penalty[0]);
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				solid1_t *p = &kh_key(h, k);
@@ -279,7 +279,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 				}
 				save_state(fa, &z0, i00 - i0 + opt->w + 1, s->a[i0].cb - 1, 0, shift, F_BEST);
 			}
-		} else save_state(fa, &z, 0, s->a[i].cb - 1, MISS_PENALTY + (MAX_QUAL - q), shift, F_NOHIT);
+		} else save_state(fa, &z, 0, s->a[i].cb - 1, MISS_PENALTY + (MAX_QUAL - qual), shift, F_NOHIT);
 	}
 	assert(n_rst == 1 || n_rst == 2);
 	es->min_penalty = rst[0].y >> 48;
