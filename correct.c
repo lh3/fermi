@@ -15,12 +15,13 @@ static int SUF_LEN, SUF_NUM;
 KSEQ_DECLARE(gzFile)
 
 typedef struct {
-	uint32_t high;
-	uint16_t low:4, b1:2, b2:2, ratio:5, d2:3;
+	uint32_t key;
+	uint16_t b1:2, b2:2, ratio:6, d2:3, d3:3;
 } __attribute__ ((__packed__)) solid1_t;
 
-#define solid_hash(a) (__ac_Wang_hash((a).high)^(a).low)
-#define solid_eq(a, b) ((a).high == (b).high && (a).low == (b).low)
+#define solid_hash(a) (__ac_Wang_hash((a).key))
+#define solid_eq(a, b) ((a).key == (b).key)
+#define solid_set_key(p, x) ((p)->key = (x))
 #include "khash.h"
 KHASH_INIT(solid, solid1_t, char, 0, solid_hash, solid_eq)
 typedef khash_t(solid) shash_t;
@@ -61,22 +62,25 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 		if (ik.info>>4 == opt->w) { // keep the k-mer
 			solid1_t zz;
 			int max_c, max_c2, absent;
-			uint64_t max, max2, rest, key;
+			uint64_t max, max2, rest, key, sum;
 			double r;
-			for (c = 1, max = max2 = 0, max_c = max_c2 = 6; c <= 4; ++c)
+			for (c = 1, max = max2 = 0, max_c = max_c2 = 6, sum = 0; c <= 4; ++c) {
 				if (ok[c].x[2] > max) max2 = max, max_c2 = max_c, max = ok[c].x[2], max_c = c;
 				else if (ok[c].x[2] > max2) max2 = ok[c].x[2], max_c2 = c;
+				sum += ok[c].x[2];
+			}
 			if (max < opt->min_occ) continue; // then in the following max_c<6
 			++cnt[0];
-			rest = ik.x[2] - max - ok[0].x[2] - ok[5].x[2];
+			rest = sum - max;
 			r = rest == 0? max : (double)max / rest;
-			if (r > 31.) r = 31.; // we have maximally 5 bits of information (i.e. [0,31])
+			if (r > 63.) r = 63.; // we have maximally 6 bits of information (i.e. [0,63])
 			if (rest <= 7 && r >= opt->min_occ) ++cnt[1];
 			for (i = 0, key = 0; i < str.l; ++i)
 				key = (uint64_t)str.s[i]<<shift | key>>2;
-			zz.high = key>>4; zz.low = key & 0xf;
+			solid_set_key(&zz, key);
 			zz.b1 = max_c - 1; zz.b2 = max_c2 - 1;
 			zz.d2 = rest < 7? rest : 7;
+			zz.d3 = sum - max - max2 < 7? sum - max - max2 : 7;
 			zz.ratio = (int)(r + .499);
 			kh_put(solid, solid, zz, &absent);
 			assert(absent);
@@ -180,8 +184,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->s[i]], q);
 		// check the hash table
 		h = solid[z.x & (SUF_NUM - 1)];
-		zz.high = z.x >> (SUF_LEN<<1) >> 4;
-		zz.low  = z.x >> (SUF_LEN<<1) & 0xf;
+		solid_set_key(&zz, z.x >> (SUF_LEN<<1));
 		k = kh_get(solid, h, zz);
 		++es->n_hash_qry;
 		if (k != kh_end(h)) { // this (k+1)-mer has more than opt->min_occ occurrences
@@ -214,8 +217,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, kstring_t *s, c
 							z.x = (uint64_t)(s->s[i]-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
 						if (s->s[i] == 5) break;
 						h = solid[z.x & (SUF_NUM - 1)];
-						zz.high = z.x >> (SUF_LEN<<1) >> 4;
-						zz.low  = z.x >> (SUF_LEN<<1) & 0xf;
+						solid_set_key(&zz, z.x >> (SUF_LEN<<1));
 						k = kh_get(solid, h, zz);
 						++es->n_hash_qry;
 						es->n_hash_hit += (k != kh_end(h));
@@ -377,7 +379,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] set k-mer length to %d\n", __func__, opt->w);
 	}
-	compute_SUF(opt->w > 18? opt->w - 18 : 1);
+	compute_SUF(opt->w > 16? opt->w - 16 : 1);
 	// initialize "solid" and "tid"
 	assert(_n_threads <= SUF_NUM);
 	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
