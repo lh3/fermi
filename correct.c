@@ -289,9 +289,9 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 							pen_save = last_penalty < penalty[0]? last_penalty : penalty[0];
 							last_penalty = penalty[0];
 							parent = z.y>>20 & 0xfffffff;
-							while (l-- > 0) {
+							while (--l >= 0) {
 								uint64_t *q;
-								int pos = (z.y&0xfffff) - l;
+								int pos = (z.y&0xfffff) - 1 - l;
 								int qual = pen_save > s->a[pos].oq? pen_save : s->a[pos].oq;
 								kv_pushp(uint64_t, fa->stack, &q);
 								*q = (uint64_t)pos<<44 | (uint64_t)qual<<36 | (uint64_t)F_BEST<<32 | (uint32_t)(s->a[pos].cb-1)<<28 | parent;
