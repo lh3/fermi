@@ -111,7 +111,7 @@ typedef struct {
 #define F_CHECKED   0x4
 #define F_CORRECTED 0x8
 
-#define MAX_QUAL      40
+#define MAX_QUAL    41
 
 static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, int shift, int flag, int qual)
 {
@@ -164,6 +164,8 @@ static inline void ec_cal_penalty(const solid1_t *p, int penalty[2], int base)
 		penalty[1] = penalty[1] > 1? penalty[1] : 1;
 		//penalty[0] += penalty[1];
 	} else penalty[1] = 0;
+	penalty[0] = penalty[0] < MAX_QUAL? penalty[0] : MAX_QUAL;
+	penalty[1] = penalty[1] < MAX_QUAL? penalty[1] : MAX_QUAL;
 }
 
 typedef struct {
@@ -291,7 +293,6 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 								uint64_t *q;
 								int pos = (z.y&0xfffff) - l;
 								int qual = pen_save > s->a[pos].oq? pen_save : s->a[pos].oq;
-								qual = qual < MAX_QUAL? qual : MAX_QUAL;
 								kv_pushp(uint64_t, fa->stack, &q);
 								*q = (uint64_t)pos<<44 | (uint64_t)qual<<36 | (uint64_t)F_BEST<<32 | (uint32_t)(s->a[pos].cb-1)<<28 | parent;
 								parent = fa->stack.n - 1;
@@ -306,7 +307,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 				ec_cal_penalty(p, penalty, s->a[i0].cb - 1);
 				save_state(fa, &z0, s->a[i0].cb - 1, 0, shift, F_BEST, penalty[0]);
 			}
-		} else save_state(fa, &z, s->a[i].cb - 1, MISS_PENALTY + (MAX_QUAL - qual), shift, F_NOHIT, 1);
+		} else save_state(fa, &z, s->a[i].cb - 1, MISS_PENALTY + (MAX_QUAL - qual), shift, F_NOHIT, 0);
 	}
 	assert(n_rst == 1 || n_rst == 2);
 	es->min_penalty = rst[0].y >> 48;
@@ -316,9 +317,8 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 	// backtrack
 	l = rst[0].y>>20&0xfffffff;
 	while (l) {
-		int c = (uint32_t)fa->stack.a[l]>>28;
 		i = fa->stack.a[l]>>44;
-		if (s->a[i].cb - 1 != c) s->a[i].cb = c + 1; // correct
+		s->a[i].cb = ((uint32_t)fa->stack.a[l]>>28) + 1;
 		s->a[i].cq = fa->stack.a[l]>>36;
 		l = fa->stack.a[l] & 0xfffffff; // take the lowest 28 bits, the parent position in the stack
 	}
@@ -339,7 +339,6 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 	memset(&fa, 0, sizeof(fixaux_t));
 	for (i = 0; i < n_seqs; ++i) {
 		char *si = seq[i], *qi = qual[i];
-		int l_cov;
 		ecinfo1_t *ii = &info[i];
 		ecstat1_t es[2];
 
@@ -349,7 +348,6 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 		if (fm_verbose >= 5) fprintf(stderr, "=== index %d, forward ===\n", i);
 		ec_fix1(opt, solid, &s, &fa, &es[0]); // 0x7fff0000 if no correction; 0xffff if too short
 		n_query += es[0].n_hash_qry;
-		l_cov = es[0].l_cov;
 		ii->pen_diff = es[0].pen_diff;
 		ec_seq_rev(&s);
 		if (es[0].n_hash_qry) { // then we need to correct in the reverse direction
@@ -357,17 +355,17 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 			ec_fix1(opt, solid, &s, &fa, &es[1]);
 			n_query += es[1].n_hash_qry;
 			ii->pen_diff = ii->pen_diff < es[1].pen_diff? ii->pen_diff : es[1].pen_diff;
-			l_cov = l_cov > es[1].l_cov? l_cov : es[1].l_cov;
 		}
 		if (es[0].n_hash_hit || es[1].n_hash_hit) {
-			int j, n_corr = 0, q_corr = 0;
+			int j, n_corr = 0, q_corr = 0, l_cov = 0;
 			for (j = 0; j < s.n; ++j) {
 				ecbase_t *p = &s.a[j];
 				int is_diff = (p->ob != p->cb);
 				si[j] = is_diff? "$acgtn"[(int)p->cb] : "$ACGTN"[(int)p->cb];
-				qi[j] = (p->oq > p->cq? p->oq : p->cq) + 33;
+				if (p->cq) ++l_cov, qi[j] = (p->cq>>1<<1|1) + 33;
+				else qi[j] = (p->oq>>1<<1) + 33;
 				n_corr += is_diff;
-				q_corr += is_diff? qi[j] - 33 : 0;
+				q_corr += is_diff? p->oq : 0;
 			}
 			ii->no_hit = 0;
 			ii->q_corr = q_corr < 255? q_corr : 255;
