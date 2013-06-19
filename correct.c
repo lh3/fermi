@@ -618,6 +618,14 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 	return 0;
 }
 
+/* Failing examples:
+
+   AATGTAGGGATTGTTTTAATTCCCGCTCCCTTATGGGAGAAGGTTAACGCTCGGGTAACCCTTGCCGAATGTAGGCCGGATAAGGCGTTTACGCtGCATCC (NC_000913)
+   IHIIIHHIIIIIFIIIIIIIIIIIIIHIIIIIIIIIIGBIIGGHIHHIIHGIIFHEIIIIHIIHIIGBGIIIC<@BEEGB3EC<DED@CEDDDB43C?AAC
+
+   The lowercase 't' is an error but not corrected as the 22mer preceding it is a repeat.
+ */
+
 /***********************************
  * High-level error correction API *
  ***********************************/
