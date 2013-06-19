@@ -210,7 +210,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 	fa->heap.n = fa->stack.n = 0;
 	kv_push(uint64_t, fa->stack, 0);
 	// get the initial k-mer
-	for (i = s->n - 1, l = 0; i > 0 && l < opt->w; --i)
+	for (i = s->n - 1, l = 0, z.x = 0; i > 0 && l < opt->w; --i)
 		if (s->a[i].cb == 5) z.x = 0, l = 0;
 		else z.x = (uint64_t)(s->a[i].cb-1)<<shift | z.x>>2, ++l;
 	if (i == 0) return; // no good k-mer
