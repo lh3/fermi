@@ -103,7 +103,7 @@ static void ec_collect(const rld_t *e, const fmecopt_t *opt, int len, const fmin
 
 typedef struct {
 	ku128_v heap;
-	ku128_v stack;
+	ku64_v stack;
 } fixaux_t;
 
 #define F_NOHIT     0x1
@@ -113,20 +113,23 @@ typedef struct {
 
 #define MAX_QUAL      40
 
-static inline void save_state(fixaux_t *fa, const ku128_t *p, int len, int c, int score, int shift, int flag, int qual)
+static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, int shift, int flag, int qual)
 {
-	ku128_t w, *q;
-	if (score < 0) score = 0;
-	if (c >= 4) c = 0;
+	ku128_t w;
+	uint64_t *q;
+	int pos = (p->y&0xfffff) - 1;
+	assert(pos < 0x100000);
+	assert(c >= 0 && c < 4);
+	qual = qual < MAX_QUAL? qual : MAX_QUAL;
+	score = score > 0? score : 0;
 	// update heap; the structure of w.y -- score:16, pos_in_stack:28, seq_pos:20
 	w.x = (uint64_t)c<<shift | p->x>>2;
-	w.y = (uint64_t)((p->y>>48) + score)<<48 | fa->stack.n<<20 | ((p->y&0xfffff) - 1);
+	w.y = (uint64_t)((p->y>>48) + score)<<48 | fa->stack.n<<20 | pos;
 	kv_push(ku128_t, fa->heap, w);
 	ks_heapup_128y(fa->heap.n, fa->heap.a);
-	// update stack; structure of q->x -- dummy:20, qual:8, flag:4, base:4, parent_pos_in_stack:28
-	kv_pushp(ku128_t, fa->stack, &q);
-	q->x = (uint64_t)(qual < MAX_QUAL? qual : MAX_QUAL)<<36 | (uint64_t)flag<<32 | (uint32_t)c<<28 | (p->y>>20&0xfffffff);
-	q->y = ((p->y&0xfffff) - 1) << 32 | ((p->y&0xfffff) - 1 + len);
+	// update stack; seq_pos:20, qual:8, flag:4, base:4, parent_pos_in_stack:28
+	kv_pushp(uint64_t, fa->stack, &q);
+	*q = (uint64_t)pos<<44 | (uint64_t)qual<<36 | (uint64_t)flag<<32 | (uint32_t)c<<28 | (p->y>>20&0xfffffff);
 }
 
 #define RATIO_FACTOR  10
@@ -203,8 +206,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 	memset(es, 0, sizeof(ecstat1_t));
 	if (s->n <= opt->w) return;
 	fa->heap.n = fa->stack.n = 0;
-	z.x = z.y = 0;
-	kv_push(ku128_t, fa->stack, z);
+	kv_push(uint64_t, fa->stack, 0);
 	// get the initial k-mer
 	for (i = s->n - 1, l = 0; i > 0 && l < opt->w; --i)
 		if (s->a[i].cb == 5) z.x = 0, l = 0;
@@ -220,7 +222,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 		solid1_t zz;
 		int cq, qual, penalty[2];
 		// get the best so far
-		z = fa->heap.a[0];
+		z = fa->heap.a[0]; // $z is the best
 		fa->heap.a[0] = kv_pop(fa->heap);
 		ks_heapdown_128y(0, fa->heap.n, fa->heap.a);
 		if ((z.y&0xfffff) == 0) {
@@ -229,7 +231,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 			continue;
 		}
 		if (n_rst && (int)(z.y>>48) > (int)(rst[0].y>>48) + MAX_SC_DIFF) break;
-		i = (z.y&0xfffff) - 1;
+		i = (z.y&0xfffff) - 1; // $i points to the base to be checked
 		qual = s->a[i].oq < MAX_QUAL? s->a[i].oq : MAX_QUAL;
 		if (qual < 3) qual = 3;
 		if (fm_verbose >= 5) fprintf(stderr, "pop\tsc=%d\ti=%d\t%c%d\n", (int)(z.y>>48), i, "$ACGTN"[(int)s->a[i].cb], qual);
@@ -246,22 +248,24 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 				// if we have too many possibilities, keep the better path among the two
 				if (s->a[i].cb != 5 && (fa->heap.n + 2 <= MAX_HEAP || penalty[0] < qual)) { // the read path
 					cq = qual > penalty[0]? qual - penalty[0] : 2;
-					save_state(fa, &z, opt->w + 1, s->a[i].cb - 1, penalty[0], shift, F_CHECKED, cq);
+					save_state(fa, &z, s->a[i].cb - 1, penalty[0], shift, F_CHECKED, cq);
 				}
 				if (s->a[i].cb == 5 || fa->heap.n + 2 <= MAX_HEAP || penalty[0] > qual) { // the stack path
 					cq = penalty[0] > qual? penalty[0] - qual : 2;
-					save_state(fa, &z, opt->w + 1, p->b1, qual, shift, F_CHECKED|F_CORRECTED, cq);
+					save_state(fa, &z, p->b1, qual, shift, F_CHECKED|F_CORRECTED, cq);
 				}
 				if (fm_verbose >= 5) fprintf(stderr, "cmp\ti=%d\t%c%d => %c%d?\n", i, "$ACGTN"[(int)s->a[i].cb], qual, "ACGT"[p->b1], penalty[0]);
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				solid1_t *p = &kh_key(h, k);
-				int i0 = i, i00 = i, occ_last = p->d2? p->d2 * (p->ratio+1) : p->ratio;
+				int i0 = i, last_penalty, occ_last = p->d2? p->d2 * (p->ratio+1) : p->ratio;
+				ec_cal_penalty(p, penalty, s->a[i0].cb - 1);
+				last_penalty = penalty[0];
 				if (p->d2 <= 0 && opt->step > 1) {
 					while (i0 > 0) {
-						for (i = (z.y&0xfffff) - 1, l = 0; i >= 1 && l < opt->step && s->a[i].cb < 5; --i, ++l)
-							z.x = (uint64_t)(s->a[i].cb-1)<<shift | z.x>>2; // look opt->w/2 mer ahead
-						if (s->a[i].cb == 5) break;
+						for (i = (z.y&0xfffff) - 1, l = 0; i >= 1 && l < opt->step && s->a[i-1].cb < 5 && s->a[i-1].cb == s->a[i-1].ob; --i, ++l)
+							z.x = (uint64_t)(s->a[i].cb-1)<<shift | z.x>>2; // look opt->step mer ahead
+						if (l <= 1) break; // making no progress or only one step further; stop
 						h = solid[z.x & (SUF_NUM - 1)];
 						solid_set_key(&zz, z.x >> (SUF_LEN<<1));
 						k = kh_get(solid, h, zz);
@@ -271,7 +275,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 							solid1_t *p = &kh_key(h, k);
 							int occ = p->d2? p->d2 * (p->ratio+1) : p->ratio; // occ is the occurrences of the k-mer
 							if (fm_verbose >= 5) fprintf(stderr, "jump\ti=%d\t%c%d\t%d\n", i, "$ACGTN"[(int)s->a[i].cb], s->a[i].oq, occ);
-							if (p->d2 <= 1 && occ >= MIN_OCC && (double)occ / occ_last >= MIN_OCC_RATIO) { // if occ is good enough, jump again
+							if (p->d2 <= 1 && occ >= MIN_OCC && occ >= occ_last * MIN_OCC_RATIO) { // if occ is good enough, jump again
 								z.y = z.y>>20<<20 | (i + 1);
 								z0 = z; i0 = i;
 								occ_last = occ;
@@ -280,29 +284,23 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 					}
 				}
 				ec_cal_penalty(p, penalty, s->a[i0].cb - 1);
-				save_state(fa, &z0, i00 - i0 + opt->w + 1, s->a[i0].cb - 1, 0, shift, F_BEST, penalty[0]);
+				save_state(fa, &z0, s->a[i0].cb - 1, 0, shift, F_BEST, penalty[0]);
 			}
-		} else save_state(fa, &z, 0, s->a[i].cb - 1, MISS_PENALTY + (MAX_QUAL - qual), shift, F_NOHIT, 1);
+		} else save_state(fa, &z, s->a[i].cb - 1, MISS_PENALTY + (MAX_QUAL - qual), shift, F_NOHIT, 1);
 	}
 	assert(n_rst == 1 || n_rst == 2);
 	es->min_penalty = rst[0].y >> 48;
 	es->pen_diff = n_rst == 1? MAX_SC_DIFF : (int)(rst[1].y>>48) - (int)(rst[0].y>>48);
 	assert(es->pen_diff >= 0);
 	es->pen_diff = es->pen_diff < MAX_SC_DIFF? es->pen_diff : MAX_SC_DIFF;
-	{ // backtrack
-		int beg = 0, end = 0;
-		l = rst[0].y>>20&0xfffffff;
-		while (l) {
-			int c = (uint32_t)fa->stack.a[l].x>>28;
-			i = fa->stack.a[l].y>>32;
-			assert(i >= beg);
-			es->l_cov += i < end? i - beg : end - beg;
-			beg = i; end = (int)fa->stack.a[l].y;
-			if (s->a[i].cb - 1 != c) s->a[i].cb = c + 1; // correct
-			s->a[i].cq = fa->stack.a[l].x>>36;
-			l = fa->stack.a[l].x & 0xfffffff; // take the lowest 28 bits, the parent position in the stack
-		}
-		es->l_cov += end - beg;
+	// backtrack
+	l = rst[0].y>>20&0xfffffff;
+	while (l) {
+		int c = (uint32_t)fa->stack.a[l]>>28;
+		i = fa->stack.a[l]>>44;
+		if (s->a[i].cb - 1 != c) s->a[i].cb = c + 1; // correct
+		s->a[i].cq = fa->stack.a[l]>>36;
+		l = fa->stack.a[l] & 0xfffffff; // take the lowest 28 bits, the parent position in the stack
 	}
 }
 
