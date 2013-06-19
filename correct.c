@@ -484,7 +484,11 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		compute_SUF(opt->w > 16? opt->w - 16 : 1);
 		solid = calloc(SUF_NUM, sizeof(void*));
 		for (j = 0; j < SUF_NUM; ++j) solid[j] = kh_init(solid);
-	} else solid = restore_hash(fn_hash, opt);
+	} else {
+		fmecopt_t old = *opt;
+		solid = restore_hash(fn_hash, opt);
+		opt->step = old.step; opt->trim_l = old.trim_l;
+	}
 
 	assert(_n_threads <= SUF_NUM);
 	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
