@@ -257,7 +257,7 @@ int main_remap(int argc, char *argv[])
 int main_correct(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1;
-	rld_t *e;
+	rld_t *e = 0;
 	fmecopt_t opt;
 	opt.w = -1; opt.min_occ = 3; opt.trim_l = 0; opt.step = 5;
 	while ((c = getopt(argc, argv, "Mt:k:v:O:l:s:")) >= 0) {
@@ -271,7 +271,7 @@ int main_correct(int argc, char *argv[])
 			case 's': opt.step = atoi(optarg); break;
 		}
 	}
-	if (optind + 2 > argc) {
+	if (optind + 1 > argc) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   fermi correct [options] <reads.fmd> <reads.fq>\n\n");
 		fprintf(stderr, "Options: -k INT      k-mer length; -1 for auto [%d]\n", opt.w);
@@ -283,8 +283,12 @@ int main_correct(int argc, char *argv[])
 		return 1;
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	fm6_ec_correct(e, &opt, argv[optind+1], n_threads);
-	rld_destroy(e);
+	if (optind + 1 >= argc) {
+		if (fm_verbose >= 3)
+			fprintf(stderr, "[M::%s] sequence file is not specified; compute and dump the K-mer hash table\n", __func__);
+		fm6_ec_correct(e, &opt, 0, n_threads, 0);
+	} else fm6_ec_correct(e, &opt, argv[optind+1], n_threads, optind+2 < argc? argv[optind+2] : 0);
+	if (e) rld_destroy(e);
 	return 0;
 }
 

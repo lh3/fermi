@@ -378,6 +378,47 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 	return n_query;
 }
 
+/***************************
+ * Dump/restore K-mer hash *
+ ***************************/
+
+static void dump_hash(const char *fn, const fmecopt_t *opt, shash_t **solid)
+{
+	gzFile fp;
+	int i;
+	fp = strcmp(fn, "-")? gzopen(fn, "w1") : gzdopen(fileno(stdout), "w1");
+	gzwrite(fp, opt, sizeof(fmecopt_t));
+	gzwrite(fp, &SUF_LEN, sizeof(int));
+	for (i = 0; i < SUF_NUM; ++i) {
+		gzwrite(fp, solid[i], sizeof(shash_t)); // we don't actually need to dump pointers, but it does not matter too much
+		gzwrite(fp, solid[i]->flags, __ac_fsize(solid[i]->n_buckets) * 4);
+		gzwrite(fp, solid[i]->keys, solid[i]->n_buckets * sizeof(solid1_t));
+	}
+	gzclose(fp);
+}
+
+static shash_t **restore_hash(const char *fn, fmecopt_t *opt)
+{
+	gzFile fp;
+	int i;
+	shash_t **solid;
+	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
+	gzread(fp, opt, sizeof(fmecopt_t));
+	gzread(fp, &SUF_LEN, sizeof(int));
+	compute_SUF(SUF_LEN);
+	solid = calloc(SUF_NUM, sizeof(void*));
+	for (i = 0; i < SUF_NUM; ++i) {
+		solid[i] = malloc(sizeof(shash_t));
+		gzread(fp, solid[i], sizeof(shash_t));
+		solid[i]->flags = malloc(__ac_fsize(solid[i]->n_buckets) * 4);
+		gzread(fp, solid[i]->flags, __ac_fsize(solid[i]->n_buckets) * 4);
+		solid[i]->keys = malloc(solid[i]->n_buckets * sizeof(solid1_t));
+		gzread(fp, solid[i]->keys, solid[i]->n_buckets * sizeof(solid1_t));
+	}
+	gzclose(fp);
+	return solid;
+}
+
 /************************
  * Multi-thread workers *
  ************************/
@@ -426,31 +467,30 @@ static void *worker2(void *data)
 
 #define MAX_KMER 27
 
-int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_threads)
+int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_threads, const char *fn_hash)
 {
 	int j, n_threads;
 	int64_t i, cnt[2];
 	shash_t **solid;
 	pthread_t *tid;
-	pthread_attr_t attr;
 
-	if (opt->w < 0) { // determine k-mer
-		opt->w = (int)(log(e->mcnt[0]) / log(4) + 8.499);
-		if (opt->w >= MAX_KMER) opt->w = MAX_KMER;
-		if (fm_verbose >= 3)
-			fprintf(stderr, "[M::%s] set k-mer length to %d\n", __func__, opt->w);
-	}
-	compute_SUF(opt->w > 16? opt->w - 16 : 1);
-	// initialize "solid" and "tid"
+	if (!fn_hash) {
+		if (opt->w < 0) { // determine k-mer
+			opt->w = (int)(log(e->mcnt[0]) / log(4) + 8.499);
+			if (opt->w >= MAX_KMER) opt->w = MAX_KMER;
+			if (fm_verbose >= 3)
+				fprintf(stderr, "[M::%s] set k-mer length to %d\n", __func__, opt->w);
+		}
+		compute_SUF(opt->w > 16? opt->w - 16 : 1);
+		solid = calloc(SUF_NUM, sizeof(void*));
+		for (j = 0; j < SUF_NUM; ++j) solid[j] = kh_init(solid);
+	} else solid = restore_hash(fn_hash, opt);
+
 	assert(_n_threads <= SUF_NUM);
 	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
-	pthread_attr_init(&attr);
-	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-	solid = calloc(SUF_NUM, sizeof(void*));
-	for (j = 0; j < SUF_NUM; ++j) solid[j] = kh_init(solid);
 	cnt[0] = cnt[1] = 0;
 
-	{ // initialize and launch worker1
+	if (!fn_hash) { // initialize and launch worker1
 		worker1_t *w1;
 		fmintv_t *top;
 		int max_seqs;
@@ -472,7 +512,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 			w1[j].seqs[w1[j].n_seqs++] = i;
 			if (++j == n_threads) j = 0;
 		}
-		for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker1, w1 + j);
+		for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], 0, worker1, w1 + j);
 		for (j = 0; j < n_threads; ++j) {
 			pthread_join(tid[j], 0);
 			free(w1[j].seqs); free(w1[j].solid);
@@ -485,7 +525,9 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		free(top);
 	}
 
-	{ // initialize and launch worker2
+	if (!fn) { // no sequence file is given; dump the hash table only without correction
+		dump_hash("-", opt, solid);
+	} else { // initialize and launch worker2
 		gzFile fp;
 		kseq_t *seq;
 		worker2_t *w2;
@@ -512,7 +554,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 			ret = kseq_read(seq);
 			if (ret < 0 || (id && id%BATCH_SIZE == 0)) {
 				uint64_t n_query = 0, n_seq = 0;
-				for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], &attr, worker2, w2 + j);
+				for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], 0, worker2, w2 + j);
 				for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
 				for (j = 0; j < n_threads; ++j) {
 					n_seq += w2[j].n_seqs;
