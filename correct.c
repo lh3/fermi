@@ -279,14 +279,25 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 						es->n_hash_hit += (k != kh_end(h));
 						if (k != kh_end(h) && s->a[i].cb == kh_key(h, k).b1 + 1) { // in the hash table and the read base is the best
 							solid1_t *p = &kh_key(h, k);
-							int pen_cur, occ = p->d2? p->d2 * (p->ratio+1) : p->ratio; // occ is the occurrences of the k-mer
+							int pen_save, parent, occ = p->d2? p->d2 * (p->ratio+1) : p->ratio;
 							if (fm_verbose >= 5) fprintf(stderr, "jump\ti=%d\t%c%d\t%d\n", i, "$ACGTN"[(int)s->a[i].cb], s->a[i].oq, occ);
 							if (p->d2 > 1 || occ < MIN_OCC || occ < occ_last * MIN_OCC_RATIO) break; // if occ is not good enough; stop
 							// update stack
 							ec_cal_penalty(p, penalty, s->a[i].cb - 1);
-							pen_cur = last_penalty < penalty[0]? last_penalty : penalty[0];
+							pen_save = last_penalty < penalty[0]? last_penalty : penalty[0];
 							last_penalty = penalty[0];
-							z.y = z.y>>20<<20 | (i + 1);
+							parent = z.y>>20 & 0xfffffff;
+							while (l-- > 0) {
+								uint64_t *q;
+								int pos = (z.y&0xfffff) - l;
+								int qual = pen_save > s->a[pos].oq? pen_save : s->a[pos].oq;
+								qual = qual < MAX_QUAL? qual : MAX_QUAL;
+								kv_pushp(uint64_t, fa->stack, &q);
+								*q = (uint64_t)pos<<44 | (uint64_t)qual<<36 | (uint64_t)F_BEST<<32 | (uint32_t)(s->a[pos].cb-1)<<28 | parent;
+								parent = fa->stack.n - 1;
+							}
+							// prepare for the next round of iteration
+							z.y = z.y>>48<<48 | (uint64_t)parent<<20 | (i + 1);
 							z0 = z; i0 = i;
 							occ_last = occ;
 						} else break;
