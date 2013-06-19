@@ -289,7 +289,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 	es->pen_diff = n_rst == 1? MAX_SC_DIFF : (int)(rst[1].y>>48) - (int)(rst[0].y>>48);
 	assert(es->pen_diff >= 0);
 	es->pen_diff = es->pen_diff < MAX_SC_DIFF? es->pen_diff : MAX_SC_DIFF;
-	if (es->min_penalty > 0) { // backtrack
+	{ // backtrack
 		int beg = 0, end = 0;
 		l = rst[0].y>>20&0xfffffff;
 		while (l) {
@@ -303,7 +303,7 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 			l = fa->stack.a[l].x & 0xfffffff; // take the lowest 28 bits, the parent position in the stack
 		}
 		es->l_cov += end - beg;
-	} else es->l_cov = s->n; // no corrections are made
+	}
 }
 
 typedef struct {
