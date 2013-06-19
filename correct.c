@@ -258,10 +258,16 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 			} else { // the read base is the same as the best base
 				ku128_t z0 = z;
 				solid1_t *p = &kh_key(h, k);
-				int i0 = i, last_penalty, occ_last = p->d2? p->d2 * (p->ratio+1) : p->ratio;
-				ec_cal_penalty(p, penalty, s->a[i0].cb - 1);
-				last_penalty = penalty[0];
+				int i0 = i;
 				if (p->d2 <= 0 && opt->step > 1) {
+					/* The following is a complex block. In principle, we can
+					 * skip it altogether, which will yield a little better
+					 * accuracy. However, without this block, we will need
+					 * much more hash table lookups, which is the bottleneck.
+					 */
+					int last_penalty, occ_last = p->d2? p->d2 * (p->ratio+1) : p->ratio;
+					ec_cal_penalty(p, penalty, s->a[i0].cb - 1);
+					last_penalty = penalty[0];
 					while (i0 > 0) {
 						for (i = (z.y&0xfffff) - 1, l = 0; i >= 1 && l < opt->step && s->a[i-1].cb < 5 && s->a[i-1].cb == s->a[i-1].ob; --i, ++l)
 							z.x = (uint64_t)(s->a[i].cb-1)<<shift | z.x>>2; // look opt->step mer ahead
@@ -273,13 +279,16 @@ static void ec_fix1(const fmecopt_t *opt, shash_t *const* solid, ecseq_t *s, fix
 						es->n_hash_hit += (k != kh_end(h));
 						if (k != kh_end(h) && s->a[i].cb == kh_key(h, k).b1 + 1) { // in the hash table and the read base is the best
 							solid1_t *p = &kh_key(h, k);
-							int occ = p->d2? p->d2 * (p->ratio+1) : p->ratio; // occ is the occurrences of the k-mer
+							int pen_cur, occ = p->d2? p->d2 * (p->ratio+1) : p->ratio; // occ is the occurrences of the k-mer
 							if (fm_verbose >= 5) fprintf(stderr, "jump\ti=%d\t%c%d\t%d\n", i, "$ACGTN"[(int)s->a[i].cb], s->a[i].oq, occ);
-							if (p->d2 <= 1 && occ >= MIN_OCC && occ >= occ_last * MIN_OCC_RATIO) { // if occ is good enough, jump again
-								z.y = z.y>>20<<20 | (i + 1);
-								z0 = z; i0 = i;
-								occ_last = occ;
-							} else break; // if not good, reject and stop jumping
+							if (p->d2 > 1 || occ < MIN_OCC || occ < occ_last * MIN_OCC_RATIO) break; // if occ is not good enough; stop
+							// update stack
+							ec_cal_penalty(p, penalty, s->a[i].cb - 1);
+							pen_cur = last_penalty < penalty[0]? last_penalty : penalty[0];
+							last_penalty = penalty[0];
+							z.y = z.y>>20<<20 | (i + 1);
+							z0 = z; i0 = i;
+							occ_last = occ;
 						} else break;
 					}
 				}
