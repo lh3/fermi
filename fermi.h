@@ -15,13 +15,17 @@ typedef struct {
 	uint64_t info;
 } fmintv_t;
 
+typedef struct {
+	fmintv_t k[6];
+} fmintv6_t;
+
 typedef struct { size_t n, m; int32_t *a; } fm32s_v;
 typedef struct { size_t n, m; uint32_t *a; } fm32_v;
 typedef struct { size_t n, m; uint64_t *a; } fm64_v;
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
+typedef struct { size_t n, m; fmintv6_t *a; } fmintv6_v;
 
 struct __rld_t; // defined in rld.h
-struct __mog_t; // defined in mog.h
 
 typedef struct {
 	int w, min_occ, trim_l, step;

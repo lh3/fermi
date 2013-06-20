@@ -334,10 +334,19 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 	uint64_t n_query = 0;
 	ecseq_t s;
 	fixaux_t fa;
+	fmintv_v prev, curr;
+	fmintv6_v tmp;
+	fmec2opt_t opt2;
 
 	kv_init(s);
+	kv_init(prev); kv_init(curr); kv_init(tmp);
+	fmc_opt_init(&opt2);
 	memset(&fa, 0, sizeof(fixaux_t));
 	for (i = 0; i < n_seqs; ++i) {
+
+		fm6_ec2_core(&opt2, e, strlen(seq[i]), seq[i], qual[i], &prev, &curr, &tmp);
+		continue;
+
 		char *si = seq[i], *qi = qual[i];
 		ecinfo1_t *ii = &info[i];
 		ecstat1_t es[2];
@@ -375,6 +384,7 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 	}
 	free(s.a);
 	free(fa.heap.a); free(fa.stack.a);
+	free(prev.a); free(curr.a); free(tmp.a);
 	return n_query;
 }
 
