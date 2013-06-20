@@ -52,6 +52,7 @@ typedef struct {
 	double ratio_factor;
 } fmec2opt_t;
 
+void fmc_opt_init(fmec2opt_t *opt);
 int fm6_ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, char *seq, char *qual, fmintv_v *prev, fmintv_v *curr, fmintv6_v *tmp);
 
 #endif

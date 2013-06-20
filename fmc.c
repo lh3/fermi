@@ -97,7 +97,7 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 	fmintv_v *swap;
 	fmintv6_t ok;
 
-	//fprintf(stderr, "x=%d\n", x);
+	fprintf(stderr, "x=%d\n", x);
 	fm6_set_intv(e, seq[x].ob, ik);
 	ik.info = x + 1;
 	for (i = x + 1, curr->n = 0; i < l_seq; ++i) { // forward search
@@ -130,21 +130,23 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 
 	for (i = x - 1; i >= 0; --i) { // backward search
 		ecseq_t *si = &seq[i];
-		int c, call, is_ec;
+		int c, call, inspected;
 		kv_resize(fmintv6_t, *tmp, prev->n);
 		tmp->n = prev->n;
 		for (j = 0; j < prev->n; ++j) // collect all the intervals at the current position
 			fm6_extend(e, &prev->a[j], tmp->a[j].k, 1);
-		for (is_ec = 0, j = 0; j < prev->n; ++j) { // check if we need to make a correction
+		for (inspected = 0, j = 0; j < prev->n; ++j) { // check if we need to make a correction
+			//fprintf(stderr, "i=%d, w=%lld, l=%lld\n", i, prev->a[j].x[2], prev->a[j].info - i);
 			if (prev->a[j].info - i >= opt->min_l) {
 				uint8_t q[4];
 				ec_cns_gen(opt, tmp->a[j].k, q);
 				ec_cns_upd(si->pen, q, 0);
-				is_ec = 1;
+				inspected = 1;
 			}
 		}
-		if (is_ec) {
+		if (inspected) {
 			call = ec_cns_call(si->pen, si->ob - 1, si->oq);
+			fprintf(stderr, "[R,%d,%c]\tpen[4]={%d,%d,%d,%d}\teb=%c\teq=%d\n", i, "$ACGTN"[si->ob], si->pen[0], si->pen[1], si->pen[2], si->pen[3], "ACGT"[call>>8], call&0xff);
 			si->eb = (call >> 8) + 1;
 			si->eq = call & 0xff;
 		}
