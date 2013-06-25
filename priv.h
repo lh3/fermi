@@ -47,7 +47,7 @@ void fm6_unpack_rlo(const rld_t *e);
 // For the second correction algorithm
 
 typedef struct {
-	int min_l, min_occ, max_occ;
+	int min_l, min_occ_f, min_occ_r;
 	int max_pen, max_d, diff_factor;
 	double ratio_factor;
 } fmec2opt_t;

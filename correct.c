@@ -344,7 +344,7 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 	memset(&fa, 0, sizeof(fixaux_t));
 	for (i = 0; i < n_seqs; ++i) {
 
-		if (0) {
+		if (1) {
 			fm6_ec2_core(&opt2, e, strlen(seq[i]), seq[i], qual[i], &prev, &curr, &tmp);
 			continue;
 		}

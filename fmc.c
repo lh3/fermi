@@ -4,8 +4,8 @@
 void fmc_opt_init(fmec2opt_t *opt)
 {
 	opt->min_l = 19;
-	opt->min_occ = 6;
-	opt->max_occ = 100;
+	opt->min_occ_f = 6;
+	opt->min_occ_r = 3;
 
 	opt->max_pen = 60;
 	opt->max_d = 7;
@@ -37,10 +37,10 @@ static inline void ec_cns_upd(uint8_t q[4], const uint8_t q1[4], int is_comp)
 	int c;
 	if (is_comp) {
 		for (c = 0; c < 4; ++c)
-			q[c] = q[c] < q1[3-c]? q[c] : q1[3-c];
+			q[c] = q1[3-c];
 	} else {
 		for (c = 0; c < 4; ++c)
-			q[c] = q[c] < q1[c]? q[c] : q1[c];
+			q[c] = q1[c];
 	}
 }
 
@@ -90,6 +90,26 @@ static void ec_seq_rev(int l_seq, ecseq_t *seq)
 	}
 }
 
+static int ec2_best_intv(const fmec2opt_t *opt, int i, int n, fmintv_t *a)
+{
+	int k, max_k;
+	int64_t sum = 0, s;
+	double max, x;
+	for (k = n - 1; k >= 0; --k)
+		if (a[k].info - i >= opt->min_l) break;
+	n = k + 1;
+	if (n == 0) return -1;
+	if (n == 1) return 0;
+	// 2-mean
+	for (k = 0; k < n; ++k) sum += a[k].x[2];
+	for (k = 1, s = 0, max = 0., max_k = 0; k < n; ++k) {
+		s += a[k-1].x[2];
+		x = (double)s * s / k + (double)(sum - s) * (sum - s) / (n - k);
+		if (max < x) max = x, max_k = k;
+	}
+	return max_k - 1;
+}
+
 static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *seq, int x, fmintv_v *prev, fmintv_v *curr, fmintv6_v *tmp)
 { // this function is similar to fm6_smem1_core()
 	int i, j, ret;
@@ -97,28 +117,29 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 	fmintv_v *swap;
 	fmintv6_t ok;
 
-	fprintf(stderr, "x=%d\n", x);
+	if (fm_verbose >= 5) fprintf(stderr, "x=%d\n", x);
 	fm6_set_intv(e, seq[x].ob, ik);
 	ik.info = x + 1;
 	for (i = x + 1, curr->n = 0; i < l_seq; ++i) { // forward search
 		ecseq_t *si = &seq[i];
 		int c;
 		fm6_extend(e, &ik, ok.k, 0); // forward extension
-		if (i - x >= opt->min_l) { // then check the multi-alignment
+		if (0&&i - x >= opt->min_l) { // then check the multi-alignment
 			int call;
 			uint8_t q[4];
 			ec_cns_gen(opt, ok.k, q);
 			ec_cns_upd(si->pen, q, 1);
 			call = ec_cns_call(si->pen, fm6_comp(si->ob) - 1, si->oq);
-			//fprintf(stderr, "[F,%d,%c]\tpen[4]={%d,%d,%d,%d}\teb=%c\teq=%d\n", i, "$ACGTN"[si->ob], q[0], q[1], q[2], q[3], "ACGT"[call>>8], call&0xff);
 			si->eb = (call >> 8) + 1;
 			si->eq = call & 0xff;
+			if (fm_verbose >= 5 && si->eb != si->ob)
+				fprintf(stderr, "[F,%d,%c]\tpen[4]={%d,%d,%d,%d}\teb=%c\teq=%d\n", i, "$ACGTN"[si->ob], q[0], q[1], q[2], q[3], "ACGT"[call>>8], call&0xff);
 		}
 		c = si->eb? si->eb : si->ob;
 		c = fm6_comp(c);
 		if (ok.k[c].x[2] != ik.x[2]) { // change of interval size
 			kv_push(fmintv_t, *curr, ik);
-			if (ok.k[c].x[2] < opt->min_occ) break;
+			if (ok.k[c].x[2] < opt->min_occ_f) break;
 		}
 		ik = ok.k[c]; ik.info = i + 1;
 	}
@@ -130,30 +151,28 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 
 	for (i = x - 1; i >= 0; --i) { // backward search
 		ecseq_t *si = &seq[i];
-		int c, call, inspected;
+		int c, best_intv;
 		kv_resize(fmintv6_t, *tmp, prev->n);
 		tmp->n = prev->n;
 		for (j = 0; j < prev->n; ++j) // collect all the intervals at the current position
 			fm6_extend(e, &prev->a[j], tmp->a[j].k, 1);
-		for (inspected = 0, j = 0; j < prev->n; ++j) { // check if we need to make a correction
-			//fprintf(stderr, "i=%d, w=%lld, l=%lld\n", i, prev->a[j].x[2], prev->a[j].info - i);
-			if (prev->a[j].info - i >= opt->min_l) {
-				uint8_t q[4];
-				ec_cns_gen(opt, tmp->a[j].k, q);
-				ec_cns_upd(si->pen, q, 0);
-				inspected = 1;
-			}
-		}
-		if (inspected) {
-			call = ec_cns_call(si->pen, si->ob - 1, si->oq);
-			fprintf(stderr, "[R,%d,%c]\tpen[4]={%d,%d,%d,%d}\teb=%c\teq=%d\n", i, "$ACGTN"[si->ob], si->pen[0], si->pen[1], si->pen[2], si->pen[3], "ACGT"[call>>8], call&0xff);
-			si->eb = (call >> 8) + 1;
-			si->eq = call & 0xff;
-		}
 		c = si->eb? si->eb : si->ob;
+		best_intv = ec2_best_intv(opt, i, curr->n, curr->a);
+		if (best_intv >= 0) {
+			uint8_t q[4];
+			int call;
+			ec_cns_gen(opt, tmp->a[best_intv].k, q);
+			ec_cns_upd(si->pen, q, 0);
+			call = ec_cns_call(si->pen, si->ob - 1, si->oq);
+			si->eb = c = (call >> 8) + 1;
+			si->eq = call & 0xff;
+			//if (fm_verbose >= 5 && si->eb != si->ob)
+			if (fm_verbose >= 5)
+				fprintf(stderr, "[R,%d,%c]\tpen[4]={%d,%d,%d,%d}\teb=%c\teq=%d\tbest=%d\n", i, "$ACGTN"[si->ob], si->pen[0], si->pen[1], si->pen[2], si->pen[3], "ACGT"[call>>8], call&0xff, best_intv);
+		}
 		for (j = 0, curr->n = 0; j < prev->n; ++j) { // update $curr
 			fmintv_t *ok = tmp->a[j].k;
-			if (ok[c].x[2] >= opt->min_occ && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2])) {
+			if (ok[c].x[2] >= opt->min_occ_r && (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2])) {
 				ok[c].info = prev->a[j].info;
 				kv_push(fmintv_t, *curr, ok[c]);
 			}
