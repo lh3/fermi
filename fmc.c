@@ -3,9 +3,10 @@
 
 void fmc_opt_init(fmec2opt_t *opt)
 {
-	opt->min_l = 19;
+	opt->min_l = 15;
 	opt->min_occ_f = 6;
 	opt->min_occ_r = 3;
+	opt->avg_depth = 30;
 
 	opt->max_pen = 60;
 	opt->max_d = 7;
@@ -35,13 +36,8 @@ static inline void ec_cns_gen(const fmec2opt_t *opt, const fmintv_t k[6], uint8_
 static inline void ec_cns_upd(uint8_t q[4], const uint8_t q1[4], int is_comp)
 {
 	int c;
-	if (is_comp) {
-		for (c = 0; c < 4; ++c)
-			q[c] = q1[3-c];
-	} else {
-		for (c = 0; c < 4; ++c)
-			q[c] = q1[c];
-	}
+	if (is_comp) for (c = 0; c < 4; ++c) q[c] = q1[3-c];
+	else for (c = 0; c < 4; ++c) q[c] = q1[c];
 }
 
 static inline int ec_cns_call(const uint8_t q[4], int base, int qual)
@@ -58,6 +54,7 @@ static inline int ec_cns_call(const uint8_t q[4], int base, int qual)
 typedef struct {
 	uint8_t pen[4];
 	uint8_t ob, oq, eb, eq;
+	uint32_t depth;
 } ecseq_t;
 
 static ecseq_t *ec_seq_gen(int l_seq, const char *seq, const char *qual)
@@ -90,24 +87,20 @@ static void ec_seq_rev(int l_seq, ecseq_t *seq)
 	}
 }
 
-static int ec2_best_intv(const fmec2opt_t *opt, int i, int n, fmintv_t *a)
+#define MIN_A 1.0
+
+static int ec2_best_intv(const fmec2opt_t *opt, const rld_t *e, int i, int n, fmintv_t *a)
 {
-	int k, max_k;
-	int64_t sum = 0, s;
-	double max, x;
+	int k;
+	double tmp = (double)opt->avg_depth * e->mcnt[1] / e->mcnt[0];
 	for (k = n - 1; k >= 0; --k)
 		if (a[k].info - i >= opt->min_l) break;
-	n = k + 1;
-	if (n == 0) return -1;
-	if (n == 1) return 0;
-	// 2-mean
-	for (k = 0; k < n; ++k) sum += a[k].x[2];
-	for (k = 1, s = 0, max = 0., max_k = 0; k < n; ++k) {
-		s += a[k-1].x[2];
-		x = (double)s * s / k + (double)(sum - s) * (sum - s) / (n - k);
-		if (max < x) max = x, max_k = k;
+	if (k == -1) return -1;
+	for (; k >= 0; --k) {
+		double A = opt->avg_depth - (a[k].info - i) * tmp - a[k].x[2] * 0.693;
+		if (A >= MIN_A) return k;
 	}
-	return max_k - 1;
+	return -1;
 }
 
 static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *seq, int x, fmintv_v *prev, fmintv_v *curr, fmintv6_v *tmp)
@@ -124,17 +117,6 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 		ecseq_t *si = &seq[i];
 		int c;
 		fm6_extend(e, &ik, ok.k, 0); // forward extension
-		if (0&&i - x >= opt->min_l) { // then check the multi-alignment
-			int call;
-			uint8_t q[4];
-			ec_cns_gen(opt, ok.k, q);
-			ec_cns_upd(si->pen, q, 1);
-			call = ec_cns_call(si->pen, fm6_comp(si->ob) - 1, si->oq);
-			si->eb = (call >> 8) + 1;
-			si->eq = call & 0xff;
-			if (fm_verbose >= 5 && si->eb != si->ob)
-				fprintf(stderr, "[F,%d,%c]\tpen[4]={%d,%d,%d,%d}\teb=%c\teq=%d\n", i, "$ACGTN"[si->ob], q[0], q[1], q[2], q[3], "ACGT"[call>>8], call&0xff);
-		}
 		c = si->eb? si->eb : si->ob;
 		c = fm6_comp(c);
 		if (ok.k[c].x[2] != ik.x[2]) { // change of interval size
@@ -157,18 +139,21 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 		for (j = 0; j < prev->n; ++j) // collect all the intervals at the current position
 			fm6_extend(e, &prev->a[j], tmp->a[j].k, 1);
 		c = si->eb? si->eb : si->ob;
-		best_intv = ec2_best_intv(opt, i, curr->n, curr->a);
+		best_intv = ec2_best_intv(opt, e, i, prev->n, prev->a);
 		if (best_intv >= 0) {
 			uint8_t q[4];
 			int call;
 			ec_cns_gen(opt, tmp->a[best_intv].k, q);
-			ec_cns_upd(si->pen, q, 0);
+			if (prev->a[best_intv].x[2] > si->depth) {
+				ec_cns_upd(si->pen, q, 0);
+				si->depth = prev->a[best_intv].x[2] < 0xffffffffU? prev->a[best_intv].x[2] : 0xffffffffU;
+			}
 			call = ec_cns_call(si->pen, si->ob - 1, si->oq);
 			si->eb = c = (call >> 8) + 1;
 			si->eq = call & 0xff;
-			//if (fm_verbose >= 5 && si->eb != si->ob)
+//			if (fm_verbose >= 5 && si->eb != si->ob)
 			if (fm_verbose >= 5)
-				fprintf(stderr, "[R,%d,%c]\tpen[4]={%d,%d,%d,%d}\teb=%c\teq=%d\tbest=%d\n", i, "$ACGTN"[si->ob], si->pen[0], si->pen[1], si->pen[2], si->pen[3], "ACGT"[call>>8], call&0xff, best_intv);
+				fprintf(stderr, "[R,%d,%c]\tq[4]={%d,%d,%d,%d}\teb=%c\teq=%d\tlen=%ld\tdepth=%ld\n", i, "$ACGTN"[si->ob], q[0], q[1], q[2], q[3], "ACGT"[call>>8], call&0xff, (long)prev->a[best_intv].info - i, (long)prev->a[best_intv].x[2]);
 		}
 		for (j = 0, curr->n = 0; j < prev->n; ++j) { // update $curr
 			fmintv_t *ok = tmp->a[j].k;

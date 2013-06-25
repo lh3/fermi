@@ -50,6 +50,7 @@ typedef struct {
 	int min_l, min_occ_f, min_occ_r;
 	int max_pen, max_d, diff_factor;
 	double ratio_factor;
+	int avg_depth;
 } fmec2opt_t;
 
 void fmc_opt_init(fmec2opt_t *opt);
