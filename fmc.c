@@ -36,6 +36,8 @@ static inline void ec_cns_gen(const fmec2opt_t *opt, const fmintv_t k[6], uint8_
 static inline void ec_cns_upd(uint8_t q[4], const uint8_t q1[4], int is_comp)
 {
 	int c;
+//	if (is_comp) for (c = 0; c < 4; ++c) q[c] = q[c] > q1[3-c]? q[c] : q1[3-c];
+//	else for (c = 0; c < 4; ++c) q[c] = q[c] > q1[c]? q[c] : q1[c];
 	if (is_comp) for (c = 0; c < 4; ++c) q[c] = q1[3-c];
 	else for (c = 0; c < 4; ++c) q[c] = q1[c];
 }
@@ -117,6 +119,18 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 		ecseq_t *si = &seq[i];
 		int c;
 		fm6_extend(e, &ik, ok.k, 0); // forward extension
+		if (i - x >= opt->min_l) {
+			uint8_t q[4];
+			int call;
+			ec_cns_gen(opt, ok.k, q);
+			if (ik.x[2] > si->depth) {
+				ec_cns_upd(si->pen, q, 1);
+				si->depth = ik.x[2] < 0xffffffffU? ik.x[2] : 0xffffffffU;
+			}
+			call = ec_cns_call(si->pen, si->ob - 1, si->oq);
+			si->eb = (call >> 8) + 1;
+			si->eq = call & 0xff;
+		}
 		c = si->eb? si->eb : si->ob;
 		c = fm6_comp(c);
 		if (ok.k[c].x[2] != ik.x[2]) { // change of interval size
@@ -139,6 +153,12 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 		for (j = 0; j < prev->n; ++j) // collect all the intervals at the current position
 			fm6_extend(e, &prev->a[j], tmp->a[j].k, 1);
 		c = si->eb? si->eb : si->ob;
+		if (i == 16&&0) {
+			int j;
+			for (j = 0; j < tmp->n; ++j)
+				if (prev->a[j].info-i >= opt->min_l)
+					fprintf(stderr, "[%d] %lld,%lld,%lld,%lld\t%lld\t%lld\n", j, tmp->a[j].k[1].x[2], tmp->a[j].k[2].x[2], tmp->a[j].k[3].x[2], tmp->a[j].k[4].x[2], prev->a[j].info-i, prev->a[j].x[2]);
+		}
 		best_intv = ec2_best_intv(opt, e, i, prev->n, prev->a);
 		if (best_intv >= 0) {
 			uint8_t q[4];
