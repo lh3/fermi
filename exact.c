@@ -126,18 +126,6 @@ uint64_t fm6_retrieve(const rld_t *e, uint64_t x, kstring_t *s, fmintv_t *k2, in
 	return k;
 }
 
-void fm_reverse_fmivec(fmintv_v *p)
-{
-	if (p->n > 1) {
-		int j;
-		for (j = 0; j < p->n>>1; ++j) {
-			fmintv_t tmp = p->a[p->n - 1 - j];
-			p->a[p->n - 1 - j] = p->a[j];
-			p->a[j] = tmp;
-		}
-	}
-}
-
 fmintv_t *fm6_traverse(const rld_t *e, int depth)
 {
 	fmintv_t *rst, ok[6], ik;

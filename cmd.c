@@ -183,17 +183,6 @@ int main_unpack(int argc, char *argv[])
 	return 0;
 }
 
-static uint64_t *load_sorted(uint64_t n, const char *fn)
-{
-	FILE *fp;
-	uint64_t *sorted;
-	fp = fopen(fn, "rb");
-	sorted = malloc(n * 8);
-	fread(sorted, n, 8, fp);
-	fclose(fp);
-	return sorted;
-}
-
 int main_unitig(int argc, char *argv[])
 {
 	int c, use_mmap = 0, n_threads = 1, min_match = 30;
@@ -215,41 +204,6 @@ int main_unitig(int argc, char *argv[])
 	}
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	fm6_unitig(e, min_match, n_threads);
-	rld_destroy(e);
-	return 0;
-}
-
-int main_remap(int argc, char *argv[])
-{
-	int c, use_mmap = 0, n_threads = 1, skip = 50, min_pcv = 0, max_dist = 1000;
-	rld_t *e;
-	uint64_t *sorted = 0;
-	char *fn_sorted = 0;
-	while ((c = getopt(argc, argv, "Ml:t:c:r:D:")) >= 0) {
-		switch (c) {
-			case 'l': skip = atoi(optarg); break;
-			case 'M': use_mmap = 1; break;
-			case 'c': min_pcv = atoi(optarg); break;
-			case 't': n_threads = atoi(optarg); break;
-			case 'D': max_dist = atoi(optarg); break;
-			case 'r': fn_sorted = optarg; break;
-		}
-	}
-	if (optind + 2 > argc) {
-		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   fermi remap [options] <reads.fmd> <contigs.fq>\n\n");
-		fprintf(stderr, "Options: -l INT      skip ending INT bases of a read pair [%d]\n", skip);
-		fprintf(stderr, "         -c INT      minimum paired-end coverage [%d]\n", min_pcv);
-		fprintf(stderr, "         -D INT      maximum insert size (external distance) [%d]\n", max_dist);
-		fprintf(stderr, "         -r FILE     rank [null]\n");
-		fprintf(stderr, "         -t INT      number of threads [1]\n");
-		fprintf(stderr, "\n");
-		return 1;
-	}
-	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
-	if (fn_sorted) sorted = load_sorted(e->mcnt[1], fn_sorted);
-	fm6_remap(argv[optind+1], e, sorted, skip, min_pcv, max_dist, n_threads);
-	free(sorted);
 	rld_destroy(e);
 	return 0;
 }
@@ -294,21 +248,21 @@ int main_correct(int argc, char *argv[])
 
 int main_exact(int argc, char *argv[])
 {
-	int c, i, use_mmap = 0, self_match = 0;
+	int c, i, use_mmap = 0, min_occ = 1;
 	rld_t *e;
 	kseq_t *seq;
 	gzFile fp;
 	kstring_t str;
-	fmintv_v a;
+	fmsmem_v a;
 
-	while ((c = getopt(argc, argv, "Ms")) >= 0) {
+	while ((c = getopt(argc, argv, "Ms:")) >= 0) {
 		switch (c) {
 			case 'M': use_mmap = 1; break;
-			case 's': self_match = 1; break;
+			case 's': min_occ = atoi(optarg); break;
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: fermi exact [-Ms] <idxbase.bwt> <src.fa>\n");
+		fprintf(stderr, "Usage: fermi exact [-M] [-s minOcc] <idxbase.bwt> <src.fa>\n");
 		return 1;
 	}
 	fp = strcmp(argv[optind+1], "-")? gzopen(argv[optind+1], "r") : gzdopen(fileno(stdin), "r");
@@ -319,7 +273,7 @@ int main_exact(int argc, char *argv[])
 	str.m = str.l = 0; str.s = 0;
 	while (kseq_read(seq) >= 0) {
 		seq_char2nt6(seq->seq.l, (uint8_t*)seq->seq.s);
-		fm6_smem(e, seq->seq.l, (uint8_t*)seq->seq.s, &a, self_match);
+		fm6_smem(e, seq->seq.l, (uint8_t*)seq->seq.s, &a, min_occ);
 		str.l = 0; kputs("SQ\t", &str); kputs(seq->name.s, &str); kputc('\t', &str); kputw(seq->seq.l, &str); kputc('\t', &str); kputw(a.n, &str);
 		puts(str.s);
 		for (i = 0; i < a.n; ++i) {

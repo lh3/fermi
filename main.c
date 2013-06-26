@@ -19,7 +19,6 @@ int main_correct(int argc, char *argv[]);
 int main_unitig(int argc, char *argv[]);
 int main_clean(int argc, char *argv[]);
 int main_cnt2qual(int argc, char *argv[]);
-int main_remap(int argc, char *argv[]);
 int main_scaf(int argc, char *argv[]);
 int main_contrast(int argc, char *argv[]);
 int main_occflt(int argc, char *argv[]);
@@ -91,7 +90,6 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         correct   Error correction\n");
 		fprintf(stderr, "         unitig    Construct unitigs\n");
 		fprintf(stderr, "         clean     Clean the graph\n");
-		fprintf(stderr, "         remap     Compute the coverage and PE coverage\n");
 		fprintf(stderr, "         scaf      Generate scaftigs (not working)\n");
 		fprintf(stderr, "         contrast  Compare two FMD-indices\n");
 		fprintf(stderr, "         occflt    Filter reads containing k-mer with few occurrences\n");
@@ -117,7 +115,6 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "sub") == 0) ret = main_sub(argc-1, argv+1);
 	else if (strcmp(argv[1], "cnt2qual") == 0) ret = main_cnt2qual(argc-1, argv+1);
 	else if (strcmp(argv[1], "unitig") == 0) ret = main_unitig(argc-1, argv+1);
-	else if (strcmp(argv[1], "remap") == 0) ret = main_remap(argc-1, argv+1);
 	else if (strcmp(argv[1], "scaf") == 0) ret = main_scaf(argc-1, argv+1);
 	else if (strcmp(argv[1], "correct") == 0) ret = main_correct(argc-1, argv+1);
 	else if (strcmp(argv[1], "clean") == 0) ret = main_clean(argc-1, argv+1);

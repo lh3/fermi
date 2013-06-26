@@ -96,4 +96,14 @@ int main() {
 						  : (v).n <= (size_t)(i)? (v).n = (i)			\
 						  : 0), (v).a[(i)]
 
+#define kv_reverse(type, v) do { \
+		if ((v).m > 0) { \
+			size_t __i; \
+			for (__i = 0; __i < (v).n>>1; ++__i) { \
+				type __t = (v).a[(v).n - 1 - __i]; \
+				(v).a[(v).n - 1 - __i] = (v).a[__i]; (v).a[__i] = __t; \
+			} \
+		} \
+	} while (0)
+
 #endif

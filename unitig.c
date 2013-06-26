@@ -52,7 +52,7 @@ static fmintv_t overlap_intv(const rld_t *e, int len, const uint8_t *seq, int mi
 		}
 		ik = ok[c];
 	}
-	fm_reverse_fmivec(p); // reverse the array such that the smallest interval comes first
+	kv_reverse(fmintv_t, *p); // reverse the array such that the smallest interval comes first
 	return ik;
 }
 

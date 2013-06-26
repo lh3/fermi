@@ -6,8 +6,6 @@
 
 #define FERMI_VERSION "1.1-rlo-r800"
 
-#define FM_MASK30 0x3fffffff
-
 extern int fm_verbose;
 
 typedef struct {
@@ -19,11 +17,16 @@ typedef struct {
 	fmintv_t k[6];
 } fmintv6_t;
 
+typedef struct {
+	fmintv_t ik, ok[2][6];
+} fmsmem_t;
+
 typedef struct { size_t n, m; int32_t *a; } fm32s_v;
 typedef struct { size_t n, m; uint32_t *a; } fm32_v;
 typedef struct { size_t n, m; uint64_t *a; } fm64_v;
 typedef struct { size_t n, m; fmintv_t *a; } fmintv_v;
 typedef struct { size_t n, m; fmintv6_t *a; } fmintv6_v;
+typedef struct { size_t n, m; fmsmem_t *a; } fmsmem_v;
 
 struct __rld_t; // defined in rld.h
 
@@ -102,9 +105,9 @@ extern "C" {
 
 	fmintv_t *fm6_traverse(const struct __rld_t *e, int depth);
 
-	int fm6_smem1(const struct __rld_t *e, int len, const uint8_t *q, int x, fmintv_v *mem, int self_match);
-	int fm6_smem(const struct __rld_t *e, int len, const uint8_t *q, fmintv_v *mem, int self_match);
-	int fm6_write_smem(const struct __rld_t *e, const fmintv_t *a, kstring_t *s);
+	int fm6_smem1(const struct __rld_t *e, int len, const uint8_t *q, int x, fmsmem_v *mem, int min_occ);
+	int fm6_smem(const struct __rld_t *e, int len, const uint8_t *q, fmsmem_v *mem, int min_occ);
+	int fm6_write_smem(const struct __rld_t *e, const fmsmem_t *a, kstring_t *s);
 
 	/**
 	 * Merge two generic FM-Indexes

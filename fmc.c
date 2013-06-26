@@ -141,7 +141,7 @@ static int ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, ecseq_t *s
 	}
 
 	if (i == l_seq) kv_push(fmintv_t, *curr, ik);
-	fm_reverse_fmivec(curr);
+	kv_reverse(fmintv_t, *curr);
 	ret = curr->a[0].info;
 	swap = curr; curr = prev; prev = swap;
 
