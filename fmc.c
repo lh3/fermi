@@ -4,6 +4,146 @@
 void fmc_opt_init(fmec2opt_t *opt)
 {
 	opt->min_l = 15;
+	opt->min_occ = 6;
+
+	opt->max_pen = 60;
+	opt->max_d = 7;
+	opt->len_factor = 10;
+	opt->diff_factor = 13;
+	opt->ratio_factor = 10.;
+}
+
+void fmc_aux_destroy(fmec2aux_t *a)
+{
+	free(a->tmp[0].a); free(a->tmp[1].a); free(a->mem1.a); free(a->mem.a);
+	free(a->seq); free(a->qual); free(a->matrix);
+	free(a);
+}
+
+static inline void ec_cns_gen(const fmec2opt_t *opt, const fmintv_t k[6], uint8_t q[4])
+{
+	int c;
+	int64_t sum = 0;
+	for (c = 1; c <= 4; ++c) sum += k[c].x[2];
+	for (c = 1; c <= 4; ++c) {
+		int64_t d0, d1;
+		d0 = k[c].x[2]; d1 = sum - d0;
+		if (d0 < d1) {
+			int p, r;
+			p = ((d1 < opt->max_d? d1 : opt->max_d) - d0) * opt->diff_factor;
+			p = p > 1? p : 1;
+			p = p < opt->max_pen? p : opt->max_pen;
+			r = d0? (int)(opt->ratio_factor * d1 / d0 + .499) : opt->max_pen;
+			q[c-1] = p < r? p : r;
+		} else q[c-1] = 0;
+	}
+}
+
+void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual)
+{
+	int i, x = 0;
+	// allocate enough memory
+	if (l_seq > aux->max_len) {
+		aux->max_len = l_seq;
+		kroundup32(aux->max_len);
+		aux->seq = realloc(aux->seq, aux->max_len);
+		aux->qual = realloc(aux->qual, aux->max_len);
+	}
+	// change encoding
+	for (i = 0; i < l_seq; ++i) {
+		aux->seq[i] = seq[i] >= 0? seq_nt6_table[(int)seq[i]] : 5;
+		aux->qual[i] = qual[i] - 33;
+	}
+	// fill the aux->mem vector
+	aux->mem.n = 0;
+	do {
+		x = fm6_smem1_core(e, opt->min_occ, l_seq, aux->seq, x, &aux->mem1, &aux->tmp[0], &aux->tmp[1]);
+		for (i = 0; i < aux->mem1.n; ++i) {
+			fmsmem_t *p = &aux->mem1.a[i];
+			if ((uint32_t)p->ik.info - (p->ik.info>>32) >= opt->min_l) {
+				fmintv_t tmp;
+				fm6_extend(e, &p->ik, p->ok[1], 0);
+				tmp = p->ok[1][1]; p->ok[1][1] = p->ok[1][4]; p->ok[1][4] = tmp;
+				tmp = p->ok[1][2]; p->ok[1][2] = p->ok[1][3]; p->ok[1][3] = tmp;
+				kv_push(fmsmem_t, aux->mem, *p);
+			}
+		}
+	} while (x < l_seq);
+	// make sure the memory allocated to matrix is large enough
+	x = (aux->mem.n + 1) * (aux->mem.n + 1);
+	if (x > aux->max_matrix) {
+		aux->max_matrix = x;
+		kroundup32(aux->max_matrix);
+		aux->matrix = calloc(aux->max_matrix, sizeof(int));
+	}
+	// compute the consensus at the ends of segments
+	for (i = 0; i < aux->mem.n; ++i) {
+		fmsmem_t *p = &aux->mem.a[i];
+		int c, j, coor[2];
+		coor[0] = (int)(p->ik.info>>32) - 1; coor[1] = (int32_t)p->ik.info;
+		for (j = 0; j < 2; ++j) {
+			uint8_t q[4];
+			ec_cns_gen(opt, p->ok[j], q);
+			for (c = 0; c < 4; ++c) p->ok[j][c+1].info = q[c];
+			p->ok[j][5].info = 0;
+			if (coor[j] >= 0 && coor[j] < l_seq) { // FIXME: more carefully deal with triallelic sites!
+				int min, min2, min_c, min2_c, b_read, b_cns, q_cns, penalty;
+				b_read = aux->seq[coor[j]];
+				for (c = 0; c < 4; ++c)
+					if (c != b_read - 1)
+						q[c] += aux->qual[coor[j]];
+				for (c = 0, min = min2 = 256; c < 4; ++c) {
+					if (min > q[c]) min2 = min, min2_c = min_c, min = q[c], min_c = c;
+					else if (min2 > q[c]) min2 = q[c], min2_c = c;
+				}
+				b_cns = min_c; // top consensus base
+				q_cns = min2 - min; // consensus quality
+				q_cns = q_cns < opt->max_pen? q_cns : opt->max_pen;
+				penalty = b_read < 5? q[b_read-1] - min : 0;
+				penalty = penalty < opt->max_pen? penalty : opt->max_pen;
+				p->ok[j][0].info = b_cns | q_cns << 4 | penalty << 16;
+			} else p->ok[j][0].info = 0;
+		}
+	}
+	// fill the scoring matrix
+	for (i = 0; i < aux->mem.n; ++i) {
+		fmsmem_t *p = &aux->mem.a[i];
+		aux->matrix[i + 1] = opt->len_factor * ((int32_t)p->ik.info - (p->ik.info>>32));
+	}
+	for (i = 0; i < aux->mem.n; ++i) {
+		fmsmem_t *pi = &aux->mem.a[i];
+		int j, *mat = &aux->matrix[i * (aux->mem.n+1)];
+		for (j = i + 1; j < aux->mem.n; ++j) {
+			fmsmem_t *pj = &aux->mem.a[j];
+			if (pj->ik.info>>32 <= (int32_t)pi->ik.info) { // has overlap
+				int l = (int32_t)pj->ik.info - (int32_t)pi->ik.info - 2;
+				mat[j+1] = l * opt->len_factor - (int)(pi->ok[1][0].info>>16) - (int)(pj->ok[0][0].info>>16);
+			} else { // no overlap
+				mat[j+1] = ((int32_t)pi->ik.info - (pi->ik.info>>32)) * opt->len_factor;
+			}
+		}
+	}
+	//
+	for (i = 0; i < aux->mem.n; ++i) {
+		fmsmem_t *p = &aux->mem.a[i];
+		int j, *mat = &aux->matrix[i * (aux->mem.n+1)], beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
+		printf("%d\t%d\t%ld\t%c%c |", beg, end, (long)p->ik.x[2], "$ACGTN"[beg?aux->seq[beg-1]:0], "$ACGTN"[end<l_seq?aux->seq[end]:0]);
+		for (j = 1; j < 5; ++j)
+			printf(" %c:%ld", "$ACGTN"[j], (long)p->ok[0][j].x[2]);
+		printf(" |");
+		for (j = 1; j < 5; ++j)
+			printf(" %c:%ld", "$ACGTN"[j], (long)p->ok[1][j].x[2]);
+		printf(" | %5ld%5ld |", (long)p->ok[0][0].info>>16, (long)p->ok[1][0].info>>16);
+		for (j = i + 1; j < aux->mem.n; ++j)
+			printf("%5d", mat[j+1]);
+		putchar('\n');
+	}
+}
+
+/*
+void fmc_opt_init(fmec2opt_t *opt)
+{
+	opt->min_l = 15;
 	opt->min_occ_f = 6;
 	opt->min_occ_r = 3;
 	opt->avg_depth = 30;
@@ -211,3 +351,4 @@ int fm6_ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, char *seq, ch
 	free(s);
 	return 0;
 }
+*/

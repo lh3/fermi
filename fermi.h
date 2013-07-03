@@ -108,6 +108,7 @@ extern "C" {
 	int fm6_smem1(const struct __rld_t *e, int len, const uint8_t *q, int x, fmsmem_v *mem, int min_occ);
 	int fm6_smem(const struct __rld_t *e, int len, const uint8_t *q, fmsmem_v *mem, int min_occ);
 	int fm6_write_smem(const struct __rld_t *e, const fmsmem_t *a, kstring_t *s);
+	int fm6_smem1_core(const struct __rld_t *e, int min_occ, int len, const uint8_t *q, int x, fmsmem_v *mem, fmintv_v *prev, fmintv_v *curr);
 
 	/**
 	 * Merge two generic FM-Indexes

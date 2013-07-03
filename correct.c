@@ -328,7 +328,7 @@ typedef struct {
 	uint32_t q_corr:8, pen_diff:8, p_cov:7, no_hit:1, p_corr:7, dummy:1;
 } ecinfo1_t;
 
-static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, ecinfo1_t *info)
+static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* solid, int n_seqs, char **seq, char **qual, ecinfo1_t *info, const fmec2opt_t *opt2, fmec2aux_t *aux2)
 {
 	int i;
 	uint64_t n_query = 0;
@@ -336,16 +336,14 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 	fixaux_t fa;
 	fmintv_v prev, curr;
 	fmintv6_v tmp;
-	fmec2opt_t opt2;
 
 	kv_init(s);
 	kv_init(prev); kv_init(curr); kv_init(tmp);
-	fmc_opt_init(&opt2);
 	memset(&fa, 0, sizeof(fixaux_t));
 	for (i = 0; i < n_seqs; ++i) {
 
 		if (1) {
-			fm6_ec2_core(&opt2, e, strlen(seq[i]), seq[i], qual[i], &prev, &curr, &tmp);
+			fmc_ec_core(opt2, e, aux2, strlen(seq[i]), seq[i], qual[i]);
 			continue;
 		}
 
@@ -459,6 +457,8 @@ static void *worker1(void *data)
 typedef struct {
 	const rld_t *e;
 	const fmecopt_t *opt;
+	const fmec2opt_t *opt2;
+	fmec2aux_t *aux2;
 	shash_t *const* solid;
 	int n_seqs;
 	ecinfo1_t *info;
@@ -469,7 +469,7 @@ typedef struct {
 static void *worker2(void *data)
 {
 	worker2_t *w = (worker2_t*)data;
-	w->n_query = ec_fix(w->e, w->opt, w->solid, w->n_seqs, w->seq, w->qual, w->info);
+	w->n_query = ec_fix(w->e, w->opt, w->solid, w->n_seqs, w->seq, w->qual, w->info, w->opt2, w->aux2);
 	return 0;
 }
 
@@ -485,6 +485,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 	int64_t i, cnt[2];
 	shash_t **solid;
 	pthread_t *tid;
+	fmec2opt_t opt2;
 
 	if (!fn_hash) {
 		if (opt->w < 0) { // determine k-mer
@@ -551,6 +552,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		uint64_t k, id = 0, pre_id = 0;
 		kstring_t out;
 
+		fmc_opt_init(&opt2);
 		n_threads = _n_threads;
 		g_tc = cputime(); g_tr = realtime();
 		out.m = out.l = 0; out.s = 0;
@@ -559,10 +561,11 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		w2 = calloc(n_threads, sizeof(worker2_t));
 		max_seqs = ((BATCH_SIZE < e->mcnt[1]/2? BATCH_SIZE : e->mcnt[1]/2) + n_threads - 1) / n_threads;
 		for (j = 0; j < n_threads; ++j) {
-			w2[j].e = e, w2[j].solid = solid, w2[j].opt = opt;
+			w2[j].e = e, w2[j].solid = solid, w2[j].opt = opt, w2[j].opt2 = &opt2;
 			w2[j].seq  = calloc(max_seqs, sizeof(void*));
 			w2[j].qual = calloc(max_seqs, sizeof(void*));
 			w2[j].info = calloc(max_seqs, sizeof(ecinfo1_t));
+			w2[j].aux2 = calloc(1, sizeof(fmec2aux_t));
 		}
 		for (;;) {
 			int ret;
@@ -617,6 +620,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 			++id;
 		}
 		for (j = 0; j < n_threads; ++j) {
+			fmc_aux_destroy(w2[j].aux2);
 			free(w2[j].seq); free(w2[j].qual); free(w2[j].info);
 		}
 		free(w2); free(out.s);
@@ -682,7 +686,7 @@ int fm6_api_correct(int kmer, int64_t l, char *_seq, char *_qual)
 	for (i = j = 1; i < l - 1; ++i)
 		if (_seq[i] == 0)
 			seq2[j] = &_seq[i + 1], qual2[j++] = &qual[i + 1];
-	ec_fix(e, &opt, solid, e->mcnt[1]/2, seq2, qual2, info);
+	ec_fix(e, &opt, solid, e->mcnt[1]/2, seq2, qual2, info, 0, 0);
 	free(seq2); free(qual2); free(info);
 	// free
 	for (i = 0; i < SUF_NUM; ++i) kh_destroy(solid, solid[i]);

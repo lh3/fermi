@@ -47,13 +47,21 @@ void fm6_unpack_rlo(const rld_t *e);
 // For the second correction algorithm
 
 typedef struct {
-	int min_l, min_occ_f, min_occ_r;
-	int max_pen, max_d, diff_factor;
+	int min_l, min_occ;
+	int max_pen, max_d, len_factor, diff_factor;
 	double ratio_factor;
-	int avg_depth;
 } fmec2opt_t;
 
+typedef struct {
+	int max_len, max_matrix;
+	uint8_t *seq, *qual;
+	int *matrix;
+	fmintv_v tmp[2];
+	fmsmem_v mem1, mem;
+} fmec2aux_t;
+
 void fmc_opt_init(fmec2opt_t *opt);
-int fm6_ec2_core(const fmec2opt_t *opt, const rld_t *e, int l_seq, char *seq, char *qual, fmintv_v *prev, fmintv_v *curr, fmintv6_v *tmp);
+void fmc_aux_destroy(fmec2aux_t *a);
+void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual);
 
 #endif
