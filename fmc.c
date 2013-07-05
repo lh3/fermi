@@ -17,6 +17,7 @@ void fmc_aux_destroy(fmec2aux_t *a)
 {
 	free(a->tmp[0].a); free(a->tmp[1].a); free(a->mem1.a); free(a->mem.a);
 	free(a->seq); free(a->qual); free(a->matrix);
+	free(a->f.a); free(a->b.a);
 	free(a);
 }
 
@@ -41,7 +42,7 @@ static inline void ec_cns_gen(const fmec2opt_t *opt, const fmintv_t k[6], uint8_
 
 void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual)
 {
-	int i, x = 0;
+	int i, n_row, x = 0;
 	// allocate enough memory
 	if (l_seq > aux->max_len) {
 		aux->max_len = l_seq;
@@ -70,7 +71,8 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 		}
 	} while (x < l_seq);
 	// make sure the memory allocated to matrix is large enough
-	x = (aux->mem.n + 1) * (aux->mem.n + 1);
+	n_row = aux->mem.n + 2;
+	x = n_row * n_row;
 	if (x > aux->max_matrix) {
 		aux->max_matrix = x;
 		kroundup32(aux->max_matrix);
@@ -106,34 +108,55 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 		}
 	}
 	// fill the scoring matrix
-	for (i = 0; i < aux->mem.n; ++i) {
+	for (i = 0; i < aux->mem.n; ++i) { // first row
 		fmsmem_t *p = &aux->mem.a[i];
 		aux->matrix[i + 1] = opt->len_factor * ((int32_t)p->ik.info - (p->ik.info>>32));
 	}
-	for (i = 0; i < aux->mem.n; ++i) {
+	for (i = 0; i < aux->mem.n; ++i) { // second to (n_row-2)-th row
 		fmsmem_t *pi = &aux->mem.a[i];
-		int j, *mat = &aux->matrix[i * (aux->mem.n+1)];
+		int j, *mat = &aux->matrix[(i + 1) * n_row];
 		for (j = i + 1; j < aux->mem.n; ++j) {
 			fmsmem_t *pj = &aux->mem.a[j];
 			if (pj->ik.info>>32 <= (int32_t)pi->ik.info) { // has overlap
 				int l = (int32_t)pj->ik.info - (int32_t)pi->ik.info - 2;
 				mat[j+1] = l * opt->len_factor - (int)(pi->ok[1][0].info>>16) - (int)(pj->ok[0][0].info>>16);
 			} else { // no overlap
-				mat[j+1] = ((int32_t)pi->ik.info - (pi->ik.info>>32)) * opt->len_factor;
+				mat[j+1] = ((int32_t)pj->ik.info - (pj->ik.info>>32)) * opt->len_factor;
 			}
 		}
+	}
+	// dynamic programming
+	kv_resize(int32_t, aux->f, n_row);
+	kv_resize(int32_t, aux->b, n_row);
+	aux->f.n = aux->b.n = n_row;
+	aux->f.a[0] = aux->b.a[0] = 0;
+	for (i = 1; i < n_row; ++i) {
+		int j, max, max_j, *mat = &aux->matrix[(i-1) * n_row + i];
+		for (j = i - 1, max_j = -1, max = -0x3fffffff; j >= 0; --j, mat -= n_row) {
+			int x = aux->f.a[j] + (*mat); // (*mat) = aux->matrix[j * n_row + i]
+			if (max < x) max = x, max_j = j;
+		}
+		aux->f.a[i] = max; aux->b.a[i] = max_j;
+	}
+	// backtrack
+	aux->f.n = 0;
+	i = aux->b.a[n_row-1];
+	while (i) {
+		kv_push(int, aux->f, i - 1);
+		printf("%d\n", i - 1);
+		i = aux->b.a[i];
 	}
 	//
 	for (i = 0; i < aux->mem.n; ++i) {
 		fmsmem_t *p = &aux->mem.a[i];
-		int j, *mat = &aux->matrix[i * (aux->mem.n+1)], beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
-		printf("%d\t%d\t%ld\t%c%c |", beg, end, (long)p->ik.x[2], "$ACGTN"[beg?aux->seq[beg-1]:0], "$ACGTN"[end<l_seq?aux->seq[end]:0]);
+		int j, *mat = &aux->matrix[(i+1) * n_row], beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
+		printf("%4d%4d%4ld  %c%c |", beg, end, (long)p->ik.x[2], "$ACGTN"[beg?aux->seq[beg-1]:0], "$ACGTN"[end<l_seq?aux->seq[end]:0]);
 		for (j = 1; j < 5; ++j)
-			printf(" %c:%ld", "$ACGTN"[j], (long)p->ok[0][j].x[2]);
+			printf(" %c:%-2ld", "$ACGTN"[j], (long)p->ok[0][j].x[2]);
 		printf(" |");
 		for (j = 1; j < 5; ++j)
-			printf(" %c:%ld", "$ACGTN"[j], (long)p->ok[1][j].x[2]);
-		printf(" | %5ld%5ld |", (long)p->ok[0][0].info>>16, (long)p->ok[1][0].info>>16);
+			printf(" %c:%-2ld", "$ACGTN"[j], (long)p->ok[1][j].x[2]);
+		printf(" |%3ld%3ld |", (long)p->ok[0][0].info>>16, (long)p->ok[1][0].info>>16);
 		for (j = i + 1; j < aux->mem.n; ++j)
 			printf("%5d", mat[j+1]);
 		putchar('\n');

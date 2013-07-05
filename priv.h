@@ -58,6 +58,7 @@ typedef struct {
 	int *matrix;
 	fmintv_v tmp[2];
 	fmsmem_v mem1, mem;
+	fm32s_v f, b; // for dynamic programming
 } fmec2aux_t;
 
 void fmc_opt_init(fmec2opt_t *opt);
