@@ -110,7 +110,7 @@ int main_ropebwt(int argc, char *argv[])
 			for (j = l = 0, s = t; j < ks->seq.l; ++j) {
 				if (t[j] == 5 && (flag&FLAG_CUTN)) {
 					if (l) insert1(flag, l, s, bpr, bcr);
-					s = t + l + 1; l = 0;
+					s = t + j + 1; l = 0;
 				} else ++l;
 			}
 			if (l) insert1(flag, l, s, bpr, bcr);
