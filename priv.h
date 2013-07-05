@@ -53,8 +53,13 @@ typedef struct {
 } fmec2opt_t;
 
 typedef struct {
+	uint8_t oq, cb[2], cq[2], cf;
+} fmec2seq_t;
+
+typedef struct {
 	int max_len, max_matrix;
-	uint8_t *seq, *qual;
+	uint8_t *seq;
+	fmec2seq_t *s;
 	int *matrix;
 	fmintv_v tmp[2];
 	fmsmem_v mem1, mem;

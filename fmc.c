@@ -16,7 +16,7 @@ void fmc_opt_init(fmec2opt_t *opt)
 void fmc_aux_destroy(fmec2aux_t *a)
 {
 	free(a->tmp[0].a); free(a->tmp[1].a); free(a->mem1.a); free(a->mem.a);
-	free(a->seq); free(a->qual); free(a->matrix);
+	free(a->seq); free(a->s); free(a->matrix);
 	free(a->f.a); free(a->b.a);
 	free(a);
 }
@@ -40,6 +40,30 @@ static inline void ec_cns_gen(const fmec2opt_t *opt, const fmintv_t k[6], uint8_
 	}
 }
 
+static long ec_ecinfo(const fmec2opt_t *opt, const fmintv_t k[6], int l_seq, const uint8_t *seq, const fmec2seq_t *s, int pos)
+{
+	int c;
+	uint8_t q[4];
+	ec_cns_gen(opt, k, q);
+	if (pos >= 0 && pos < l_seq) { // FIXME: more carefully deal with triallelic sites!
+		int min, min2, min_c, min2_c, b_read, b_cns, q_cns, penalty;
+		b_read = seq[pos];
+		for (c = 0; c < 4; ++c)
+			if (c != b_read - 1)
+				q[c] += s[pos].oq;
+		for (c = 0, min = min2 = 256; c < 4; ++c) {
+			if (min > q[c]) min2 = min, min2_c = min_c, min = q[c], min_c = c;
+			else if (min2 > q[c]) min2 = q[c], min2_c = c;
+		}
+		b_cns = min_c; // top consensus base
+		q_cns = min2 - min; // consensus quality
+		q_cns = q_cns < opt->max_pen? q_cns : opt->max_pen;
+		penalty = b_read < 5? q[b_read-1] - min : 0;
+		penalty = penalty < opt->max_pen? penalty : opt->max_pen;
+		return b_cns | q_cns << 4 | (long)penalty << 16;
+	} else return 0;
+}
+
 void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual)
 {
 	int i, n_row, x = 0;
@@ -47,13 +71,13 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 	if (l_seq > aux->max_len) {
 		aux->max_len = l_seq;
 		kroundup32(aux->max_len);
+		aux->s = realloc(aux->s, aux->max_len * sizeof(fmec2seq_t));
 		aux->seq = realloc(aux->seq, aux->max_len);
-		aux->qual = realloc(aux->qual, aux->max_len);
 	}
 	// change encoding
 	for (i = 0; i < l_seq; ++i) {
 		aux->seq[i] = seq[i] >= 0? seq_nt6_table[(int)seq[i]] : 5;
-		aux->qual[i] = qual[i] - 33;
+		aux->s[i].oq = qual[i] - 33;
 	}
 	// fill the aux->mem vector
 	aux->mem.n = 0;
@@ -83,29 +107,8 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 		fmsmem_t *p = &aux->mem.a[i];
 		int c, j, coor[2];
 		coor[0] = (int)(p->ik.info>>32) - 1; coor[1] = (int32_t)p->ik.info;
-		for (j = 0; j < 2; ++j) {
-			uint8_t q[4];
-			ec_cns_gen(opt, p->ok[j], q);
-			for (c = 0; c < 4; ++c) p->ok[j][c+1].info = q[c];
-			p->ok[j][5].info = 0;
-			if (coor[j] >= 0 && coor[j] < l_seq) { // FIXME: more carefully deal with triallelic sites!
-				int min, min2, min_c, min2_c, b_read, b_cns, q_cns, penalty;
-				b_read = aux->seq[coor[j]];
-				for (c = 0; c < 4; ++c)
-					if (c != b_read - 1)
-						q[c] += aux->qual[coor[j]];
-				for (c = 0, min = min2 = 256; c < 4; ++c) {
-					if (min > q[c]) min2 = min, min2_c = min_c, min = q[c], min_c = c;
-					else if (min2 > q[c]) min2 = q[c], min2_c = c;
-				}
-				b_cns = min_c; // top consensus base
-				q_cns = min2 - min; // consensus quality
-				q_cns = q_cns < opt->max_pen? q_cns : opt->max_pen;
-				penalty = b_read < 5? q[b_read-1] - min : 0;
-				penalty = penalty < opt->max_pen? penalty : opt->max_pen;
-				p->ok[j][0].info = b_cns | q_cns << 4 | penalty << 16;
-			} else p->ok[j][0].info = 0;
-		}
+		for (j = 0; j < 2; ++j)
+			p->ok[j][0].info = ec_ecinfo(opt, p->ok[j], l_seq, aux->seq, aux->s, coor[j]);
 	}
 	// fill the scoring matrix
 	for (i = 0; i < aux->mem.n; ++i) { // first row
@@ -143,9 +146,9 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 	i = aux->b.a[n_row-1];
 	while (i) {
 		kv_push(int, aux->f, i - 1);
-		printf("%d\n", i - 1);
 		i = aux->b.a[i];
 	}
+	kv_reverse(int, aux->f);
 	//
 	for (i = 0; i < aux->mem.n; ++i) {
 		fmsmem_t *p = &aux->mem.a[i];
@@ -160,6 +163,15 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 		for (j = i + 1; j < aux->mem.n; ++j)
 			printf("%5d", mat[j+1]);
 		putchar('\n');
+	}
+	//
+	aux->mem.n = 0;
+	for (i = 0; i < aux->f.n; ++i)
+		kv_push(fmsmem_t, aux->mem, aux->mem.a[aux->f.a[i]]);
+	for (i = 0; i < aux->mem.n; ++i) {
+		fmsmem_t *p = &aux->mem.a[i];
+		int j, beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
+		printf("%4d%4d\n", beg, end);
 	}
 }
 
