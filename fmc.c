@@ -68,11 +68,13 @@ static long ec_ecinfo(const fmec2opt_t *opt, const fmintv_t k[6], int l_seq, con
 static void ec_patch(const fmec2opt_t *opt, const rld_t *e, fmintv_t k[6], int beg, int end, int l_seq, const uint8_t *seq, fmec2seq_t *s)
 {
 	int i, is_back = (beg > end), step = is_back? -1 : 1;
-	for (i = beg; i != end + step; i += step) {
+	printf("[%d, %d)\n", beg, end);
+	for (i = beg; i != end; i += step) {
 		int c;
 		s[i].cb[is_back] = (k[0].info & 0xf) + 1;
 		s[i].cq[is_back] = k[0].info >> 4 & 0xff;
 		s[i].cf |= 2<<is_back;
+		printf("[%d] %c%d => %c%d\n", i, "$ACGTN"[seq[i]], s[i].oq, "$ACGTN"[s[i].cb[is_back]], s[i].cq[is_back]);
 		c = is_back? s[i].cb[is_back] : fm6_comp(s[i].cb[is_back]);
 		if (k[c].x[2] < opt->min_occ_patch) break;
 		fm6_extend(e, &k[c], k, is_back);
@@ -183,15 +185,11 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 	for (i = 0; i < aux->mem.n; ++i) {
 		fmsmem_t *p = &aux->mem.a[i];
 		int j, prev, next, beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
+		printf("==> [%d, %d) <==\n", beg, end);
 		for (j = beg; j < end; ++j) aux->s[j].cf |= 1;
 		prev = i? (uint32_t)(p-1)->ik.info : 0;
 		next = i < aux->mem.n-1? (p+1)->ik.info>>32 : l_seq;
-		if (prev < beg) ec_patch(opt, e, p->ok[0], beg, prev, l_seq, aux->seq, aux->s);
+		if (prev < beg) ec_patch(opt, e, p->ok[0], beg-1, prev-1, l_seq, aux->seq, aux->s);
 		if (next > end) ec_patch(opt, e, p->ok[1], end, next, l_seq, aux->seq, aux->s);
-	}
-	for (i = 0; i < aux->mem.n; ++i) {
-		fmsmem_t *p = &aux->mem.a[i];
-		int beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
-		printf("%4d%4d\n", beg, end);
 	}
 }
