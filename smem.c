@@ -11,7 +11,7 @@ int fm6_smem1_core(const rld_t *e, int min_occ, int len, const uint8_t *q, int x
 
 	fm6_set_intv(e, q[x], ik);
 	ik.info = x + 1;
-	for (i = x + 1; i < len; ++i) { // forward extension
+	for (i = x + 1, curr->n = 0; i < len; ++i) { // forward extension
 		c = fm6_comp(q[i]);
 		fm6_extend(e, &ik, ok, 0);
 		if (ok[c].x[2] != ik.x[2]) {
