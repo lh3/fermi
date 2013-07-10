@@ -344,6 +344,8 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 
 		if (1) {
 			fmc_ec_core(opt2, e, aux2, strlen(seq[i]), seq[i], qual[i]);
+			//fmc_ec_core(opt2, e, aux2, strlen(seq[i]), seq[i], qual[i]);
+			//fmc_ec_core(opt2, e, aux2, strlen(seq[i]), seq[i], qual[i]);
 			continue;
 		}
 

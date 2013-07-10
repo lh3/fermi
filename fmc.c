@@ -7,6 +7,7 @@ void fmc_opt_init(fmec2opt_t *opt)
 	opt->min_occ = 6;
 	opt->min_occ_patch = 3;
 
+	opt->qual_plus = 10;
 	opt->max_pen = 60;
 	opt->max_d = 7;
 	opt->len_factor = 10;
@@ -68,13 +69,19 @@ static long ec_ecinfo(const fmec2opt_t *opt, const fmintv_t k[6], int l_seq, con
 static void ec_patch(const fmec2opt_t *opt, const rld_t *e, fmintv_t k[6], int beg, int end, int l_seq, const uint8_t *seq, fmec2seq_t *s)
 {
 	int i, is_back = (beg > end), step = is_back? -1 : 1;
-	printf("[%d, %d)\n", beg, end);
+	if (fm_verbose >= 5) fprintf(stderr, "===> Patching region [%d, %d) <===\n", beg, end);
 	for (i = beg; i != end; i += step) {
 		int c;
 		s[i].cb[is_back] = (k[0].info & 0xf) + 1;
 		s[i].cq[is_back] = k[0].info >> 4 & 0xff;
 		s[i].cf |= 2<<is_back;
-		printf("[%d] %c%d => %c%d\n", i, "$ACGTN"[seq[i]], s[i].oq, "$ACGTN"[s[i].cb[is_back]], s[i].cq[is_back]);
+		if (fm_verbose >= 6 || (fm_verbose >= 5 && seq[i] != s[i].cb[is_back])) {
+			int c;
+			fprintf(stderr, "pos=%d, %c%d => %c%d, depth=(%ld", i, "$ACGTN"[seq[i]], s[i].oq, "$ACGTN"[s[i].cb[is_back]], s[i].cq[is_back], (long)k[0].x[2]);
+			if (is_back) for (c = 1; c < 5; ++c) fprintf(stderr, ",%ld", (long)k[c].x[2]);
+			else for (c = 4; c > 0; --c) fprintf(stderr, ",%ld", (long)k[c].x[2]);
+			fprintf(stderr, ",%ld)\n", (long)k[5].x[2]);
+		}
 		c = is_back? s[i].cb[is_back] : fm6_comp(s[i].cb[is_back]);
 		if (k[c].x[2] < opt->min_occ_patch) break;
 		fm6_extend(e, &k[c], k, is_back);
@@ -125,6 +132,7 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 		p->ok[1][0].info = ec_ecinfo(opt, p->ok[1], l_seq, aux->seq, aux->s, (int32_t)p->ik.info, 1);
 	}
 	// fill the scoring matrix
+	memset(aux->matrix, 0, n_row * n_row * sizeof(int));
 	for (i = 0; i < aux->mem.n; ++i) { // first row
 		fmsmem_t *p = &aux->mem.a[i];
 		aux->matrix[i + 1] = opt->len_factor * ((int32_t)p->ik.info - (p->ik.info>>32));
@@ -163,33 +171,60 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 		i = aux->b.a[i];
 	}
 	kv_reverse(int, aux->f);
-	//
-	for (i = 0; i < aux->mem.n; ++i) {
-		fmsmem_t *p = &aux->mem.a[i];
-		int j, *mat = &aux->matrix[(i+1) * n_row], beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
-		printf("%4d%4d%4ld  %c%c |", beg, end, (long)p->ik.x[2], "$ACGTN"[beg?aux->seq[beg-1]:0], "$ACGTN"[end<l_seq?aux->seq[end]:0]);
-		for (j = 1; j < 5; ++j)
-			printf(" %c:%-2ld", "$ACGTN"[j], (long)p->ok[0][j].x[2]);
-		printf(" |");
-		for (j = 1; j < 5; ++j)
-			printf(" %c:%-2ld", "$ACGTN"[j], (long)p->ok[1][j].x[2]);
-		printf(" |%3ld%3ld |", (long)p->ok[0][0].info>>16, (long)p->ok[1][0].info>>16);
-		for (j = i + 1; j < aux->mem.n; ++j)
-			printf("%5d", mat[j+1]);
-		putchar('\n');
+	// debugging information
+	if (fm_verbose >= 5) {
+		fprintf(stderr, "===> %ld segments <===\n", aux->mem.n);
+		for (i = 0; i < aux->mem.n; ++i) {
+			fmsmem_t *p = &aux->mem.a[i];
+			int j, *mat = &aux->matrix[(i+1) * n_row], beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
+			fprintf(stderr, "%4d%4d%4ld  %c%c |", beg, end, (long)p->ik.x[2], "$ACGTN"[beg?aux->seq[beg-1]:0], "$ACGTN"[end<l_seq?aux->seq[end]:0]);
+			for (j = 1; j < 5; ++j)
+				fprintf(stderr, " %c:%-2ld", "$ACGTN"[j], (long)p->ok[0][j].x[2]);
+			fprintf(stderr, " |");
+			for (j = 1; j < 5; ++j)
+				fprintf(stderr, " %c:%-2ld", "$ACGTN"[j], (long)p->ok[1][j].x[2]);
+			fprintf(stderr, " |%3ld%3ld |", (long)p->ok[0][0].info>>16, (long)p->ok[1][0].info>>16);
+			for (j = i + 1; j < aux->mem.n; ++j)
+				fprintf(stderr, "%5d", mat[j+1]);
+			fputc('\n', stderr);
+		}
+		fprintf(stderr, "===> %ld segments selected <===\n", aux->f.n);
+		for (i = 0; i < aux->f.n; ++i) {
+			fmsmem_t *p = &aux->mem.a[aux->f.a[i]];
+			fprintf(stderr, "%d\t%d\n", (int)(p->ik.info>>32), (uint32_t)p->ik.info);
+		}
 	}
-	//
+	// propose corrections
 	aux->mem.n = 0;
 	for (i = 0; i < aux->f.n; ++i)
 		kv_push(fmsmem_t, aux->mem, aux->mem.a[aux->f.a[i]]);
 	for (i = 0; i < aux->mem.n; ++i) {
 		fmsmem_t *p = &aux->mem.a[i];
 		int j, prev, next, beg = p->ik.info>>32, end = (uint32_t)p->ik.info;
-		printf("==> [%d, %d) <==\n", beg, end);
 		for (j = beg; j < end; ++j) aux->s[j].cf |= 1;
 		prev = i? (uint32_t)(p-1)->ik.info : 0;
 		next = i < aux->mem.n-1? (p+1)->ik.info>>32 : l_seq;
 		if (prev < beg) ec_patch(opt, e, p->ok[0], beg-1, prev-1, l_seq, aux->seq, aux->s);
 		if (next > end) ec_patch(opt, e, p->ok[1], end, next, l_seq, aux->seq, aux->s);
+	}
+	// correct errors
+	for (i = 0; i < l_seq; ++i) {
+		fmec2seq_t *si = &aux->s[i];
+		int c = aux->seq[i], q = si->oq;
+		if ((si->cf>>1&3) == 3) { // inspected from both strands
+			if (si->cb[0] != si->cb[1]) {
+				if (si->cq[0] > si->cq[1]) c = si->cb[0], q = si->cq[0] - si->cq[1];
+				else c = si->cb[1], q = si->cq[1] - si->cq[0];
+			} else {
+				c = si->cb[0], q = si->cq[0] > si->cq[1]? si->cq[0] : si->cq[1];
+			}
+		} else if (si->cf>>1&1) { // inspected from one strand
+			c = si->cb[0], q = si->cq[0];
+		} else if (si->cf>>1&2) {
+			c = si->cb[1], q = si->cq[1];
+		} else if (si->cf&1) { // covered by a SMEM
+		}
+		seq[i] = aux->seq[i] == c? "$ACGTN"[c] : "$acgtn"[c];
+		qual[i] = (q < 40? q : 40) + 33;
 	}
 }

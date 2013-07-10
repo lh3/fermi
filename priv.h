@@ -49,6 +49,7 @@ void fm6_unpack_rlo(const rld_t *e);
 typedef struct {
 	int min_l, min_occ, min_occ_patch;
 	int max_pen, max_d, len_factor, diff_factor;
+	int qual_plus;
 	double ratio_factor;
 } fmec2opt_t;
 
