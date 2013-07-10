@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define FERMI_VERSION "1.1-rlo-r800"
+#define FERMI_VERSION "1.1-rlo-r815"
 
 extern int fm_verbose;
 
