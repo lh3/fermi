@@ -3,7 +3,7 @@
 
 void fmc_opt_init(fmec2opt_t *opt)
 {
-	opt->min_l = 15;
+	opt->min_l = 17;
 	opt->min_occ = 6;
 	opt->min_occ_patch = 3;
 
@@ -48,7 +48,7 @@ static long ec_ecinfo(const fmec2opt_t *opt, const fmintv_t k[6], int l_seq, con
 	uint8_t q[4];
 	ec_cns_gen(opt, k, q);
 	if (pos >= 0 && pos < l_seq) { // FIXME: more carefully deal with triallelic sites!
-		int min, min2, min_c, min2_c, b_read, b_cns, q_cns, penalty;
+		int min, min2, min_c = -1, min2_c = -1, b_read, b_cns, q_cns, penalty;
 		b_read = is_comp? fm6_comp(seq[pos]) : seq[pos];
 		for (c = 0; c < 4; ++c)
 			if (c != b_read - 1)
@@ -83,15 +83,15 @@ static void ec_patch(const fmec2opt_t *opt, const rld_t *e, fmintv_t k[6], int b
 			fprintf(stderr, ",%ld)\n", (long)k[5].x[2]);
 		}
 		c = is_back? s[i].cb[is_back] : fm6_comp(s[i].cb[is_back]);
-		if (k[c].x[2] < opt->min_occ_patch) break;
+		if (i == end + step || k[c].x[2] < opt->min_occ_patch) break;
 		fm6_extend(e, &k[c], k, is_back);
-		k[0].info = ec_ecinfo(opt, k, l_seq, seq, s, i, !is_back);
+		k[0].info = ec_ecinfo(opt, k, l_seq, seq, s, i + step, !is_back);
 	}
 }
 
-void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual)
+uint64_t fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual)
 {
-	int i, n_row, x = 0;
+	int i, n_row, x = 0, n_corr, l_cov;
 	// allocate enough memory
 	if (l_seq > aux->max_len) {
 		aux->max_len = l_seq;
@@ -208,9 +208,9 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 		if (next > end) ec_patch(opt, e, p->ok[1], end, next, l_seq, aux->seq, aux->s);
 	}
 	// correct errors
-	for (i = 0; i < l_seq; ++i) {
+	for (i = 0, n_corr = l_cov = 0; i < l_seq; ++i) {
 		fmec2seq_t *si = &aux->s[i];
-		int c = aux->seq[i], q = si->oq;
+		int c = aux->seq[i], q = si->oq>>1<<1;
 		if ((si->cf>>1&3) == 3) { // inspected from both strands
 			if (si->cb[0] != si->cb[1]) {
 				if (si->cq[0] > si->cq[1]) c = si->cb[0], q = si->cq[0] - si->cq[1];
@@ -218,13 +218,21 @@ void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_s
 			} else {
 				c = si->cb[0], q = si->cq[0] > si->cq[1]? si->cq[0] : si->cq[1];
 			}
+			++l_cov;
 		} else if (si->cf>>1&1) { // inspected from one strand
 			c = si->cb[0], q = si->cq[0];
+			++l_cov;
 		} else if (si->cf>>1&2) {
 			c = si->cb[1], q = si->cq[1];
+			++l_cov;
 		} else if (si->cf&1) { // covered by a SMEM
+			q = q + opt->qual_plus < opt->max_pen? q + opt->qual_plus : opt->max_pen;
+			q = q>>1<<1 | 1;
+			++l_cov;
 		}
+		n_corr += (aux->seq[i] != c);
 		seq[i] = aux->seq[i] == c? "$ACGTN"[c] : "$acgtn"[c];
 		qual[i] = (q < 40? q : 40) + 33;
 	}
+	return (uint64_t)l_cov<<32 | n_corr;
 }

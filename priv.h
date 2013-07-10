@@ -69,6 +69,6 @@ typedef struct {
 
 void fmc_opt_init(fmec2opt_t *opt);
 void fmc_aux_destroy(fmec2aux_t *a);
-void fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual);
+uint64_t fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual);
 
 #endif

@@ -343,9 +343,13 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 	for (i = 0; i < n_seqs; ++i) {
 
 		if (1) {
-			fmc_ec_core(opt2, e, aux2, strlen(seq[i]), seq[i], qual[i]);
-			//fmc_ec_core(opt2, e, aux2, strlen(seq[i]), seq[i], qual[i]);
-			//fmc_ec_core(opt2, e, aux2, strlen(seq[i]), seq[i], qual[i]);
+			int l_seq, l_last;
+			uint64_t ret = 0;
+			l_seq = strlen(seq[i]);
+			do {
+				l_last = ret >> 32;
+				ret = fmc_ec_core(opt2, e, aux2, l_seq, seq[i], qual[i]);
+			} while (ret>>32 != l_last && ret>>32 != l_seq);
 			continue;
 		}
 
