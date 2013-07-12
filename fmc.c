@@ -6,11 +6,11 @@ void fmc_opt_init(fmec2opt_t *opt)
 	opt->min_l = 17;
 	opt->min_occ = 6;
 	opt->min_occ_patch = 3;
+	opt->len_factor = 3;
 
 	opt->qual_plus = 10;
 	opt->max_pen = 60;
 	opt->max_d = 7;
-	opt->len_factor = 10;
 	opt->diff_factor = 13;
 	opt->ratio_factor = 10.;
 }
@@ -89,7 +89,7 @@ static void ec_patch(const fmec2opt_t *opt, const rld_t *e, fmintv_t k[6], int b
 	}
 }
 
-uint64_t fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual)
+int fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int l_seq, char *seq, char *qual)
 {
 	int i, n_row, x = 0, n_corr, l_cov;
 	// allocate enough memory
@@ -215,15 +215,14 @@ uint64_t fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int
 			if (si->cb[0] != si->cb[1]) {
 				if (si->cq[0] > si->cq[1]) c = si->cb[0], q = si->cq[0] - si->cq[1];
 				else c = si->cb[1], q = si->cq[1] - si->cq[0];
-			} else {
-				c = si->cb[0], q = si->cq[0] > si->cq[1]? si->cq[0] : si->cq[1];
-			}
+			} else c = si->cb[0], q = si->cq[0] > si->cq[1]? si->cq[0] : si->cq[1];
+			q = q>>1<<1 | 1;
 			++l_cov;
 		} else if (si->cf>>1&1) { // inspected from one strand
-			c = si->cb[0], q = si->cq[0];
+			c = si->cb[0], q = si->cq[0]>>1<<1 | 1;
 			++l_cov;
 		} else if (si->cf>>1&2) {
-			c = si->cb[1], q = si->cq[1];
+			c = si->cb[1], q = si->cq[1]>>1<<1 | 1;
 			++l_cov;
 		} else if (si->cf&1) { // covered by a SMEM
 			q = q + opt->qual_plus < opt->max_pen? q + opt->qual_plus : opt->max_pen;
@@ -232,7 +231,7 @@ uint64_t fmc_ec_core(const fmec2opt_t *opt, const rld_t *e, fmec2aux_t *aux, int
 		}
 		n_corr += (aux->seq[i] != c);
 		seq[i] = aux->seq[i] == c? "$ACGTN"[c] : "$acgtn"[c];
-		qual[i] = (q < 40? q : 40) + 33;
+		qual[i] = q + 33;
 	}
-	return (uint64_t)l_cov<<32 | n_corr;
+	return l_cov;
 }

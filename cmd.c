@@ -210,38 +210,53 @@ int main_unitig(int argc, char *argv[])
 
 int main_correct(int argc, char *argv[])
 {
-	int c, use_mmap = 0, n_threads = 1;
+	int c, use_mmap = 0, n_threads = 1, algo = 3, algo_tmp = 0;
 	rld_t *e = 0;
 	fmecopt_t opt;
+	fmec2opt_t opt2;
+
+	fmc_opt_init(&opt2);
 	opt.w = -1; opt.min_occ = 3; opt.trim_l = 0; opt.step = 5;
-	while ((c = getopt(argc, argv, "Mt:k:v:O:l:s:")) >= 0) {
+	while ((c = getopt(argc, argv, "12Mt:k:v:o:l:s:K:O:")) >= 0) {
 		switch (c) {
+			case '1': algo_tmp |= 1; break;
 			case 'M': use_mmap = 1; break;
 			case 't': n_threads = atoi(optarg); break;
 			case 'k': opt.w = atoi(optarg); break;
 			case 'v': fm_verbose = atoi(optarg); break;
-			case 'O': opt.min_occ = atoi(optarg); break;
+			case 'o': opt.min_occ = opt2.min_occ_patch = atoi(optarg); break;
 			case 'l': opt.trim_l = atoi(optarg); break;
 			case 's': opt.step = atoi(optarg); break;
+
+			case '2': algo_tmp |= 2; break;
+			case 'K': opt2.min_l = atoi(optarg); break;
+			case 'O': opt2.min_occ = atoi(optarg); break;
 		}
 	}
 	if (optind + 1 > argc) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   fermi correct [options] <reads.fmd> <reads.fq>\n\n");
-		fprintf(stderr, "Options: -k INT      k-mer length; -1 for auto [%d]\n", opt.w);
-		fprintf(stderr, "         -O INT      minimum (k+1)-mer occurrences [%d]\n", opt.min_occ);
+		fprintf(stderr, "Options: -1          use the original algorithm only\n");
+		fprintf(stderr, "         -k INT      k-mer length; -1 for auto [%d]\n", opt.w);
+		fprintf(stderr, "         -o INT      minimum (k+1)-mer occurrences [%d]\n", opt.min_occ);
 		fprintf(stderr, "         -t INT      number of threads [%d]\n", n_threads);
 		fprintf(stderr, "         -l INT      trim read down to INT bp; 0 to disable [0]\n");
-		fprintf(stderr, "         -s INT      step size for the jumping heuristic; 0 to disable [%d]\n", opt.step);
+		fprintf(stderr, "         -s INT      step size for the jumping heuristic; 0 to disable [%d]\n\n", opt.step);
+		fprintf(stderr, "         -2          use the FMC algorithm only\n");
+		fprintf(stderr, "         -K INT      minimum k-mer length for FMC [%d]\n", opt2.min_l);
+		fprintf(stderr, "         -O INT      minimum SMEM occurrences [%d]\n", opt2.min_occ);
 		fprintf(stderr, "\n");
 		return 1;
 	}
+	if (algo_tmp == 1 || algo_tmp == 2) algo = algo_tmp;
+	if (optind + 2 > argc) algo = 1;
+
 	e = use_mmap? rld_restore_mmap(argv[optind]) : rld_restore(argv[optind]);
 	if (optind + 1 >= argc) {
 		if (fm_verbose >= 3)
 			fprintf(stderr, "[M::%s] sequence file is not specified; compute and dump the K-mer hash table\n", __func__);
-		fm6_ec_correct(e, &opt, 0, n_threads, 0);
-	} else fm6_ec_correct(e, &opt, argv[optind+1], n_threads, optind+2 < argc? argv[optind+2] : 0);
+		fm6_ec_correct(e, &opt, 0, 0, n_threads, 0);
+	} else fm6_ec_correct(e, algo&1? &opt : 0, algo&2? &opt2 : 0, argv[optind+1], n_threads, optind+2 < argc? argv[optind+2] : 0);
 	if (e) rld_destroy(e);
 	return 0;
 }

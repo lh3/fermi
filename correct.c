@@ -335,41 +335,50 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 	ecseq_t s;
 	fixaux_t fa;
 	fmintv_v prev, curr;
-	fmintv6_v tmp;
+	kstring_t tmp_s, tmp_q;
 
-	kv_init(s);
-	kv_init(prev); kv_init(curr); kv_init(tmp);
+	memset(&tmp_s, 0, sizeof(kstring_t));
+	memset(&tmp_q, 0, sizeof(kstring_t));
+	kv_init(s); kv_init(prev); kv_init(curr);
 	memset(&fa, 0, sizeof(fixaux_t));
 	for (i = 0; i < n_seqs; ++i) {
-
-		if (1) {
-			int l_seq, l_last;
-			uint64_t ret = 0;
-			l_seq = strlen(seq[i]);
-			do {
-				l_last = ret >> 32;
-				ret = fmc_ec_core(opt2, e, aux2, l_seq, seq[i], qual[i]);
-			} while (ret>>32 != l_last && ret>>32 != l_seq);
-			continue;
-		}
-
+		int run_fmc = 0;
 		char *si = seq[i], *qi = qual[i];
 		ecinfo1_t *ii = &info[i];
 		ecstat1_t es[2];
 
-		memset(es, 0, sizeof(ecstat1_t) * 2);
 		ec_seq_gen(&s, strlen(si), si, qi);
-		ec_seq_rev(&s);
-		if (fm_verbose >= 5) fprintf(stderr, "=== index %d, forward ===\n", i);
-		ec_fix1(opt, solid, &s, &fa, &es[0]); // 0x7fff0000 if no correction; 0xffff if too short
-		n_query += es[0].n_hash_qry;
-		ii->pen_diff = es[0].pen_diff;
-		ec_seq_rev(&s);
-		if (es[0].n_hash_qry) { // then we need to correct in the reverse direction
-			if (fm_verbose >= 5) fprintf(stderr, "=== index %d, reverse ===\n", i);
-			ec_fix1(opt, solid, &s, &fa, &es[1]);
-			n_query += es[1].n_hash_qry;
-			ii->pen_diff = ii->pen_diff < es[1].pen_diff? ii->pen_diff : es[1].pen_diff;
+		if (opt) {
+			memset(es, 0, sizeof(ecstat1_t) * 2);
+			ec_seq_rev(&s);
+			if (fm_verbose >= 5) fprintf(stderr, "=== index %d, forward ===\n", i);
+			ec_fix1(opt, solid, &s, &fa, &es[0]); // 0x7fff0000 if no correction; 0xffff if too short
+			n_query += es[0].n_hash_qry;
+			ii->pen_diff = es[0].pen_diff;
+			ec_seq_rev(&s);
+			if (es[0].n_hash_qry) { // then we need to correct in the reverse direction
+				if (fm_verbose >= 5) fprintf(stderr, "=== index %d, reverse ===\n", i);
+				ec_fix1(opt, solid, &s, &fa, &es[1]);
+				n_query += es[1].n_hash_qry;
+				ii->pen_diff = ii->pen_diff < es[1].pen_diff? ii->pen_diff : es[1].pen_diff;
+			}
+		} else run_fmc = 1;
+		if (opt2 && run_fmc) {
+			int l_last, l_cov = 0, j;
+			tmp_s.l = tmp_q.l = 0;
+			kputs(si, &tmp_s); kputs(qi, &tmp_q);
+			do {
+				l_last = l_cov;
+				l_cov = fmc_ec_core(opt2, e, aux2, tmp_s.l, tmp_s.s, tmp_q.s);
+			} while (l_cov != l_last && l_cov != tmp_s.l);
+			es[0].n_hash_hit = es[1].n_hash_hit = 1;
+			for (j = 0; j < tmp_s.l; ++j) {
+				ecbase_t *p = &s.a[j];
+				if ((tmp_q.s[j] - 33) & 1) {
+					p->cb = seq_nt6_table[(int)tmp_s.s[j]];
+					p->cq = tmp_q.s[j] - 33;
+				}
+			}
 		}
 		if (es[0].n_hash_hit || es[1].n_hash_hit) {
 			int j, n_corr = 0, q_corr = 0, l_cov = 0;
@@ -388,9 +397,10 @@ static uint64_t ec_fix(const rld_t *e, const fmecopt_t *opt, shash_t *const* sol
 			ii->p_corr = (int)(100. * n_corr / s.n + .499);
 		} else ii->no_hit = 1;
 	}
+	free(tmp_s.s); free(tmp_q.s);
 	free(s.a);
 	free(fa.heap.a); free(fa.stack.a);
-	free(prev.a); free(curr.a); free(tmp.a);
+	free(prev.a); free(curr.a);
 	return n_query;
 }
 
@@ -485,13 +495,17 @@ static void *worker2(void *data)
 
 #define MAX_KMER 27
 
-int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_threads, const char *fn_hash)
+int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, fmec2opt_t *opt2, const char *fn, int _n_threads, const char *fn_hash)
 {
 	int j, n_threads;
 	int64_t i, cnt[2];
-	shash_t **solid;
+	shash_t **solid = 0;
 	pthread_t *tid;
-	fmec2opt_t opt2;
+
+	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
+	cnt[0] = cnt[1] = 0;
+
+	if (opt == 0) goto go_correct;
 
 	if (!fn_hash) {
 		if (opt->w < 0) { // determine k-mer
@@ -508,10 +522,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		solid = restore_hash(fn_hash, opt);
 		opt->step = old.step; opt->trim_l = old.trim_l;
 	}
-
 	assert(_n_threads <= SUF_NUM);
-	tid = (pthread_t*)calloc(_n_threads, sizeof(pthread_t));
-	cnt[0] = cnt[1] = 0;
 
 	if (!fn_hash) { // initialize and launch worker1
 		worker1_t *w1;
@@ -548,6 +559,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		free(top);
 	}
 
+go_correct:
 	if (!fn) { // no sequence file is given; dump the hash table only without correction
 		dump_hash("-", opt, solid);
 	} else { // initialize and launch worker2
@@ -558,7 +570,6 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		uint64_t k, id = 0, pre_id = 0;
 		kstring_t out;
 
-		fmc_opt_init(&opt2);
 		n_threads = _n_threads;
 		g_tc = cputime(); g_tr = realtime();
 		out.m = out.l = 0; out.s = 0;
@@ -567,7 +578,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 		w2 = calloc(n_threads, sizeof(worker2_t));
 		max_seqs = ((BATCH_SIZE < e->mcnt[1]/2? BATCH_SIZE : e->mcnt[1]/2) + n_threads - 1) / n_threads;
 		for (j = 0; j < n_threads; ++j) {
-			w2[j].e = e, w2[j].solid = solid, w2[j].opt = opt, w2[j].opt2 = &opt2;
+			w2[j].e = e, w2[j].solid = solid, w2[j].opt = opt, w2[j].opt2 = opt2;
 			w2[j].seq  = calloc(max_seqs, sizeof(void*));
 			w2[j].qual = calloc(max_seqs, sizeof(void*));
 			w2[j].info = calloc(max_seqs, sizeof(ecinfo1_t));
@@ -603,7 +614,7 @@ int fm6_ec_correct(const rld_t *e, fmecopt_t *opt, const char *fn, int _n_thread
 					kputc('_', &out); kputw(info->p_cov, &out);
 					kputc('\n', &out);
 					tmp = strlen(w->seq[w->n_seqs]);
-					if (opt->trim_l && opt->trim_l < tmp) tmp = opt->trim_l;
+					if (opt && opt->trim_l && opt->trim_l < tmp) tmp = opt->trim_l;
 					kputsn(w->seq[w->n_seqs], tmp, &out);
 					kputsn("\n+\n", 3, &out); kputsn(w->qual[w->n_seqs], tmp, &out);
 					puts(out.s);
