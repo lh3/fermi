@@ -60,16 +60,6 @@ int main_test(int argc, char *argv[])
 }
 */
 
-#include "rld.h"
-int main_test(int argc, char *argv[])
-{
-	extern void fm6_bfs_traverse(const rld_t *e, uint64_t k0, uint64_t l0);
-	rld_t *e;
-	e = rld_restore(argv[1]);
-	fm6_bfs_traverse(e, 0, e->mcnt[0]);
-	return 0;
-}
-
 int main(int argc, char *argv[])
 {
 	int i, ret = 0;
@@ -129,7 +119,6 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "occflt") == 0) ret = main_occflt(argc-1, argv+1);
 	else if (strcmp(argv[1], "bitand") == 0) ret = main_bitand(argc-1, argv+1);
 	else if (strcmp(argv[1], "ropebwt") == 0) ret = main_ropebwt(argc-1, argv+1);
-	else if (strcmp(argv[1], "test") == 0) ret = main_test(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command.\n", __func__);
 		return -1;
