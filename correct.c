@@ -119,7 +119,6 @@ static inline void save_state(fixaux_t *fa, const ku128_t *p, int c, int score, 
 	uint64_t *q;
 	int pos = (p->y&0xfffff) - 1;
 	assert(pos < 0x100000);
-	assert(c >= 0 && c < 4);
 	qual = qual < MAX_QUAL? qual : MAX_QUAL;
 	score = score > 0? score : 0;
 	// update heap; the structure of w.y -- score:16, pos_in_stack:28, seq_pos:20
