@@ -435,6 +435,7 @@ static shash_t **restore_hash(const char *fn, fmecopt_t *opt)
 	for (i = 0; i < SUF_NUM; ++i) {
 		solid[i] = malloc(sizeof(shash_t));
 		gzread(fp, solid[i], sizeof(shash_t));
+		assert(solid[i] && solid[i]->size < solid[i]->n_buckets);
 		solid[i]->flags = malloc(__ac_fsize(solid[i]->n_buckets) * 4);
 		gzread(fp, solid[i]->flags, __ac_fsize(solid[i]->n_buckets) * 4);
 		solid[i]->keys = malloc(solid[i]->n_buckets * sizeof(solid1_t));
@@ -589,8 +590,10 @@ go_correct:
 			ret = kseq_read(seq);
 			if (ret < 0 || (id && id%BATCH_SIZE == 0)) {
 				uint64_t n_query = 0, n_seq = 0;
-				for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], 0, worker2, w2 + j);
-				for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
+				if (n_threads > 1) {
+					for (j = 0; j < n_threads; ++j) pthread_create(&tid[j], 0, worker2, w2 + j);
+					for (j = 0; j < n_threads; ++j) pthread_join(tid[j], 0);
+				} else worker2(&w2[0]);
 				for (j = 0; j < n_threads; ++j) {
 					n_seq += w2[j].n_seqs;
 					n_query += w2[j].n_query;
