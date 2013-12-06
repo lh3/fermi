@@ -271,8 +271,7 @@ static int unitig1(aux_t *a, int64_t seed, kstring_t *s, kstring_t *cov, uint64_
 	size_t i;
 
 	*n_reads = nei[0].n = nei[1].n = 0;
-	k = a->e->mcnt[1] - 1 - seed;
-	if (a->used[k>>6]>>(k&0x3f)&1) return -2; // used
+	if (a->used[seed>>6]>>(seed&0x3f)&1) return -2; // used
 	// retrieve the sequence pointed by seed
 	k = fm6_retrieve(a->e, seed, s, &intv0, &contained);
 	seq_reverse(s->l, (uint8_t*)s->s);
